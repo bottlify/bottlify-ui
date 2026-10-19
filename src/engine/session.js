@@ -462,7 +462,7 @@ function requestedLog(settings) {
 
 export async function launch({ bundle, media, canvas, report, silentInstall = false }) {
   const settings = loadSettings();
-  const { networking, cork: corkConfig, graphics: graphicsConfig } = await getConfig();
+  const { networking, cork: corkConfig, graphics: graphicsConfig, cpu: cpuConfig } = await getConfig();
   // The clock the loader's "elapsed" line reads, started before the engine is
   // even imported: fetching it is part of the wait the person is in.
   const beganAt = performance.now();
@@ -746,8 +746,12 @@ export async function launch({ bundle, media, canvas, report, silentInstall = fa
     // why. Named none, the engine chooses.
     // Without it, the bottle's `multithreading`: false -- also when it says
     // nothing -- runs on one core; true leaves the cores to the engine.
-    ...(coresAsked(query) !== undefined ? { cpu: { cores: coresAsked(query) } }
-      : bundle && multithreadingFor(settings, bundle) ? {} : { cpu: { cores: 1 } }),
+    // The deployment's own settings (`config.json`'s `cpu`), under the cores
+    // the address or the title's settings ask for.
+    ...(coresAsked(query) !== undefined ? { cpu: { ...cpuConfig, cores: coresAsked(query) } }
+      : bundle && multithreadingFor(settings, bundle)
+        ? Object.keys(cpuConfig).length > 0 ? { cpu: cpuConfig } : {}
+        : { cpu: { ...cpuConfig, cores: 1 } }),
     canvas,
     // Handed over rather than copied: the two binaries are megabytes nothing
     // on this side reads again.

@@ -72,6 +72,12 @@ export function PlayScreen({ bundle, media, title, onClose, onExited }) {
   });
   const [attempt, setAttempt] = useState(0);
   const [showTrace, setShowTrace] = useState(false);
+  // A page opened by a link has had no click yet, and the browser will not
+  // start its sound without one: the run waits for a press on the canvas. One
+  // reached through the library was clicked into, and starts at once. A
+  // browser that cannot say is taken at its word that sound may start.
+  const [pressed, setPressed] = useState(
+    () => /** @type {any} */ (navigator).userActivation?.hasBeenActive ?? true);
   // The pixel box the game's picture occupies -- the canvas's own box. Before
   // the first frame there is no frame to take a size from, so it is the
   // display the launcher configured, fitted to the stage the same way; the
@@ -103,7 +109,7 @@ export function PlayScreen({ bundle, media, title, onClose, onExited }) {
   })), []);
 
   useEffect(() => {
-    if (!bundle && !media) return undefined;
+    if ((!bundle && !media) || !pressed) return undefined;
     let live = true;
     setState({
       stage: "fetch", detail: "", note: "", off: [], frame: null, error: null,
@@ -135,7 +141,7 @@ export function PlayScreen({ bundle, media, title, onClose, onExited }) {
       controls.current?.stop();
       controls.current = null;
     };
-  }, [bundle, media, attempt, report]);
+  }, [bundle, media, attempt, report, pressed]);
 
   const { stage } = state;
   const running = stage === "running" || stage === "loading" || stage === "installing";
@@ -446,7 +452,17 @@ export function PlayScreen({ bundle, media, title, onClose, onExited }) {
               the loader spins on black from the first moment until the first
               frame, saying which stage this is and what is known about how far
               it has got. */}
-            {!drawn && !over && <Starting state={state} />}
+            {!pressed && (
+              <Box sx={{ position: "absolute", inset: 0, zIndex: 1, display: "flex",
+                alignItems: "center", justifyContent: "center" }}>
+                <Button variant="contained" size="large" onClick={() => setPressed(true)}
+                  startIcon={<span className="glyphicon glyphicon-play" />}
+                  sx={{ px: 4, py: 1.5, fontWeight: 700, bgcolor: "text.primary", color: "#1e2022" }}>
+                  Press to Start
+                </Button>
+              </Box>
+            )}
+            {pressed && !drawn && !over && <Starting state={state} />}
             <PerfOverlay
               app={controls.current?.app ?? null}
               active={drawn}

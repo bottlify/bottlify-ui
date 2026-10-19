@@ -19,6 +19,7 @@
  *   "preloadBottles": true,
  *   "cork": { "ordered": false },
  *   "graphics": { "compressedTextures": true },
+ *   "cpu": { "placement": "auto" },
  *   "server": { "url": "/", "token": "..." },
  *   "editableTypes": ["txt", "cfg", "ini"]
  *
@@ -53,6 +54,10 @@
  * GPU that samples BC as they are, rather than decoded first. A knob in the
  * page's address goes over it. Left out, the engine's defaults.
  *
+ * `cpu` is laid over the processor's settings for every run (`cpu` of the
+ * engine's createApp): `placement` says where a process of several cores runs
+ * its threads. The cores a page or a title's settings ask for go over it.
+ *
  * `editableTypes` are the extensions the file explorer opens in its editor:
  * text a person may change by hand. Left out, `EDITABLE_TYPES`.
  * }
@@ -71,6 +76,7 @@ export const EDITABLE_TYPES = ["txt", "cfg", "log", "conf", "json", "wtf", "ini"
  * @property {boolean} preloadBottles  Whether a bottle not here whole is offered a download first.
  * @property {Record<string, unknown>} cork  Laid over the translator's settings for every run.
  * @property {Record<string, unknown>} graphics  Laid over the graphics layer's settings for every run.
+ * @property {Record<string, unknown>} cpu  Laid over the processor's settings for every run.
  * @property {boolean} networking  Whether the page has the network relay beside it
  *     (`/networking/` and `/relay`, which only the launcher's own server serves): a
  *     site of static files has none, and a run there must not ask for its client.
@@ -102,6 +108,7 @@ export function getConfig() {
       cork: raw.cork && typeof raw.cork === "object" && !Array.isArray(raw.cork) ? raw.cork : {},
       graphics: raw.graphics && typeof raw.graphics === "object" && !Array.isArray(raw.graphics)
         ? raw.graphics : {},
+      cpu: raw.cpu && typeof raw.cpu === "object" && !Array.isArray(raw.cpu) ? raw.cpu : {},
     }));
   return asked;
 }
