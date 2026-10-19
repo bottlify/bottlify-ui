@@ -1,0 +1,13 @@
+node_modules/
+dist/
+*.log
+
+# The deployment's own settings, with the bottle server's token: never committed.
+/public/config.json
+
+# Local working material, kept out of the repository: briefs and the task list,
+# design sources, and game art that is not ours to publish.
+/TASK-*.md
+/TODO.md
+/design/
+/public/covers/

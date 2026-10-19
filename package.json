@@ -1,0 +1,38 @@
+{
+  "name": "@bottlify/ui",
+  "private": true,
+  "type": "module",
+  "version": "1.0.0",
+  "description": "The Bottlify launcher: the app and the server that hosts it",
+  "license": "MPL-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bottlify/bottlify-ui.git"
+  },
+  "scripts": {
+    "dev:link": "npm install --no-save ../bottlify/modules/core ../bottlify/modules/cork ../bottlify/modules/installer ../bottlify/modules/networking",
+    "start": "node server.mjs",
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "lint": "eslint . --max-warnings 0",
+    "test": "node --test \"src/**/*.test.js\""
+  },
+  "dependencies": {
+    "@bottlify/core": "^1.0.3",
+    "@bottlify/installer": "^1.0.1",
+    "@bottlify/networking": "^1.0.1",
+    "@emotion/react": "^11.13.0",
+    "@emotion/styled": "^11.13.0",
+    "@mui/material": "^7.3.11",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@vitejs/plugin-react": "^6.1.1",
+    "eslint": "^10.11.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "vite": "^8.2.2"
+  }
+}

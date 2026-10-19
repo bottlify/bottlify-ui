@@ -1,0 +1,50 @@
+/*
+ * Copyright Bottlify Project 2026
+ * Licenses and contributions: THIRD-PARTY-NOTICES.md
+ */
+
+/*
+ * Glyphicons Halflings — icon font (Bootstrap-derived asset).
+ * Font files live in /fonts/glyphicons-halflings-regular.* and are vendored
+ * from the bootstrap distribution. See THIRD-PARTY-NOTICES.md.
+ */
+@font-face {
+  font-family: "glyphicons-halflings";
+  src: url("/fonts/glyphicons-halflings-regular.woff2") format("woff2"),
+    url("/fonts/glyphicons-halflings-regular.woff") format("woff"),
+    url("/fonts/glyphicons-halflings-regular.ttf") format("truetype");
+}
+
+.glyphicon {
+  position: relative;
+  top: 1px;
+  display: inline-block;
+  font-family: "glyphicons-halflings";
+  font-style: normal;
+  font-weight: normal;
+  line-height: 1;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.glyphicon-folder-open:before { content: "\e118"; }
+.glyphicon-play:before { content: "\e072"; }
+.glyphicon-pause:before { content: "\e073"; }
+.glyphicon-cog:before { content: "\e019"; }
+.glyphicon-remove:before { content: "\e014"; }
+.glyphicon-search:before { content: "\e003"; }
+.glyphicon-cd:before { content: "\e005"; }
+.glyphicon-picture:before { content: "\e060"; }
+.glyphicon-info-sign:before { content: "\e086"; }
+.glyphicon-chevron-left:before { content: "\e079"; }
+.glyphicon-stop:before { content: "\e074"; }
+.glyphicon-repeat:before { content: "\e030"; }
+.glyphicon-ok:before { content: "\e013"; }
+.glyphicon-minus:before { content: "\e082"; }
+.glyphicon-plus:before { content: "\e081"; }
+.glyphicon-fullscreen:before { content: "\e140"; }
+.glyphicon-pencil:before { content: "\270f"; }
+.glyphicon-volume-off:before { content: "\e036"; }
+.glyphicon-volume-down:before { content: "\e037"; }
+.glyphicon-volume-up:before { content: "\e038"; }
+.glyphicon-download-alt:before { content: "\e025"; }

@@ -1,0 +1,22 @@
+{
+  "allowInstall": true,
+  "networking": true,
+  "libraryTags": true,
+  "preloadBottles": true,
+  "server": {
+    "url": "/",
+    "token": "set-your-own"
+  },
+  "editableTypes": [
+    "txt",
+    "cfg",
+    "log",
+    "conf",
+    "json",
+    "wtf",
+    "ini",
+    "lua",
+    "toc",
+    "xml"
+  ]
+}
