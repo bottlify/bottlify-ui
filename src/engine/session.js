@@ -462,7 +462,7 @@ function requestedLog(settings) {
 
 export async function launch({ bundle, media, canvas, report, silentInstall = false }) {
   const settings = loadSettings();
-  const { networking, cork: corkConfig } = await getConfig();
+  const { networking, cork: corkConfig, graphics: graphicsConfig } = await getConfig();
   // The clock the loader's "elapsed" line reads, started before the engine is
   // even imported: fetching it is part of the wait the person is in.
   const beganAt = performance.now();
@@ -693,6 +693,9 @@ export async function launch({ bundle, media, canvas, report, silentInstall = fa
     // `?guestTraps=getters,ring` keeps those parts of it, or methods named, as
     // traps while the rest stays in the guest.
     graphics: {
+      // The deployment's own settings (`config.json`'s `graphics`), under
+      // what the address asks for.
+      ...graphicsConfig,
       ...(query.get("guestCode") === "off" ? { guestCode: false } : {}),
       ...(query.get("guestTraps") ? { guestTraps: (query.get("guestTraps") ?? "").split(",") } : {}),
       // `?lendMemory=off`: what a Direct3D 8 or 9 program unlocks is copied

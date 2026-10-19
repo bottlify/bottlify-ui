@@ -18,6 +18,7 @@
  *   "libraryTags": true,
  *   "preloadBottles": true,
  *   "cork": { "ordered": false },
+ *   "graphics": { "compressedTextures": true },
  *   "server": { "url": "/", "token": "..." },
  *   "editableTypes": ["txt", "cfg", "ini"]
  *
@@ -47,6 +48,11 @@
  * as plain wasm stores on any host, where the engine would otherwise order
  * them on one that reorders plain accesses. Left out, the engine decides.
  *
+ * `graphics` is laid over the graphics layer's settings for every run (`graphics`
+ * of the engine's createApp): `compressedTextures: true` sends DXT textures to a
+ * GPU that samples BC as they are, rather than decoded first. A knob in the
+ * page's address goes over it. Left out, the engine's defaults.
+ *
  * `editableTypes` are the extensions the file explorer opens in its editor:
  * text a person may change by hand. Left out, `EDITABLE_TYPES`.
  * }
@@ -64,6 +70,7 @@ export const EDITABLE_TYPES = ["txt", "cfg", "log", "conf", "json", "wtf", "ini"
  * @property {boolean} libraryTags  Whether the library offers its tags as filters.
  * @property {boolean} preloadBottles  Whether a bottle not here whole is offered a download first.
  * @property {Record<string, unknown>} cork  Laid over the translator's settings for every run.
+ * @property {Record<string, unknown>} graphics  Laid over the graphics layer's settings for every run.
  * @property {boolean} networking  Whether the page has the network relay beside it
  *     (`/networking/` and `/relay`, which only the launcher's own server serves): a
  *     site of static files has none, and a run there must not ask for its client.
@@ -93,6 +100,8 @@ export function getConfig() {
       libraryTags: raw.libraryTags === true,
       preloadBottles: raw.preloadBottles === true,
       cork: raw.cork && typeof raw.cork === "object" && !Array.isArray(raw.cork) ? raw.cork : {},
+      graphics: raw.graphics && typeof raw.graphics === "object" && !Array.isArray(raw.graphics)
+        ? raw.graphics : {},
     }));
   return asked;
 }
