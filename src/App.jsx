@@ -6,7 +6,7 @@
 
 import { Alert, Box, CircularProgress, Typography } from "@mui/material";
 import { useEffect, useRef, useState } from "react";
-import { getAvailableBundles } from "./api/bundles.js";
+import { getAvailableBundles, getUnlistedBundle } from "./api/bundles.js";
 import { importBottle } from "./engine/bottles.js";
 import { formatOf, unsupportedNotice } from "./engine/formats.js";
 import { residency } from "./engine/btl.js";
@@ -109,7 +109,21 @@ export default function App() {
   const playMatch = /^\/play\/([^/]+)\/?$/.exec(path);
   const playId = playMatch ? decodeURIComponent(playMatch[1]) : null;
   const playing = playId !== null;
-  const playBundle = playId === null ? null : bundles.find((one) => one.id === playId) ?? null;
+  // A bottle the library does not list is still played by its address: the
+  // server keeps some out of the list and hands their links out instead.
+  const [unlisted, setUnlisted] = useState(/** @type {{ id: string, bundle: any } | null} */ (null));
+  useEffect(() => {
+    if (playId === null) return undefined;
+    let cancelled = false;
+    getUnlistedBundle(playId).then((bundle) => {
+      if (!cancelled) setUnlisted({ id: playId, bundle });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [playId]);
+  const playBundle = playId === null ? null : bundles.find((one) => one.id === playId)
+    ?? (unlisted?.id === playId ? unlisted.bundle : null);
   /** @param {any} bundle @param {boolean} [preload] */
   const play = (bundle, preload = false) =>
     navigate(`/play/${encodeURIComponent(bundle.id)}${preload ? "?preload=1" : ""}`);
@@ -339,7 +353,7 @@ export default function App() {
       {playBundle && <PlayScreen key={playBundle.id} bundle={playBundle} onClose={handleClosePlay} />}
       {playing && !playBundle && (
         <Box sx={{ p: 4, display: "flex", justifyContent: "center" }}>
-          {error || bundles.length > 0 ? (
+          {unlisted?.id === playId && (error || bundles.length > 0) ? (
             <Typography color="error">
               No bottle {playId} in the library. <a href="/library">Back to the library</a>
             </Typography>

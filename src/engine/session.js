@@ -767,7 +767,7 @@ export async function launch({ bundle, media, canvas, report, silentInstall = fa
     // started allowing it. Without it the program has no network.
     ...(networking ? { network: {
       module: new URL("/networking/client/index.js", window.location.href).href,
-      url: `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host}/relay`,
+      url: `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host}/networking/relay`,
       room: bundle?.id ?? "installer",
     } } : {}),
     // An unattended install answers for itself, and a disc says what its

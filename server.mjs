@@ -20,7 +20,8 @@ import { createRelayServer, permits } from "@bottlify/networking/server";
  *  - `/engine/...`    → the engine package's build (`@bottlify/core`'s `dist/`),
  *                       so its relative imports resolve beside it;
  *  - `/networking/...`→ the networking package's sources, the relay client the
- *                       engine loads by URL;
+ *                       engine loads by URL (`/networking/client/index.js`), and
+ *                       the relay's own socket at `/networking/relay`;
  *  - `/cork/...`      → the translator package (`@bottlify/cork`), which the
  *                       engine imports from `../../cork/src/index.js` beside
  *                       its own build when a launch selects it; absent when the
@@ -276,11 +277,13 @@ const host = tls ? "0.0.0.0" : "127.0.0.1";
 const scheme = tls ? "https" : "http";
 
 // The network relay Winsock reaches the world through, on this same server at
-// /relay -- a page served over TLS may only open wss://, and this is the
-// server that holds the certificate. Peers naming the same room share a
+// /networking/relay -- a page served over TLS may only open wss://, and this is
+// the server that holds the certificate. Peers naming the same room share a
 // private network; anything outside a room is refused unless `RELAY_ALLOW`
 // names the host (`a.example.com,*.example.net`, or `*` for any), so an
-// unconfigured launcher is a LAN between tabs and not an open proxy.
+// unconfigured launcher is a LAN between tabs and not an open proxy. Only `*`
+// also reaches this machine and its private networks. `RELAY_RESUME_SECONDS`
+// is how long a game whose link dropped is kept for its page to come back to.
 const allow = (process.env.RELAY_ALLOW ?? "").split(",").map(rule=>rule.trim()).filter(Boolean);
 
 /**
@@ -306,7 +309,9 @@ const bottleAllow = async room=>{
 };
 
 const relay = createRelayServer({
-  server, path: "/relay",
+  server, path: "/networking/relay",
+  privateNetworks: allow.includes("*"),
+  resumeWindowMs: Number(process.env.RELAY_RESUME_SECONDS ?? 10) * 1000,
   // A bottle that names its hosts reaches those and no others, whatever the
   // launcher allows; every other run goes by `RELAY_ALLOW`.
   policy: async asked=>permits(await bottleAllow(String(asked.room ?? "")) ?? allow, asked.host),
@@ -315,6 +320,6 @@ server.listen(port, host, async()=>{
   await relay.listen();
   console.log(
     `ui: ${scheme}://127.0.0.1:${port}/  debug: ${scheme}://127.0.0.1:${port}/debug/`
-    + `  relay: ${scheme === "https" ? "wss" : "ws"}://127.0.0.1:${port}/relay`
+    + `  relay: ${scheme === "https" ? "wss" : "ws"}://127.0.0.1:${port}/networking/relay`
     + (allow.length > 0 ? ` (outbound to ${allow.join(", ")})` : " (rooms only)"));
 });

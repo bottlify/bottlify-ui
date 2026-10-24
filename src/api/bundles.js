@@ -229,6 +229,19 @@ export async function getSidecarSymbols(id) {
 }
 
 /**
+ * A bottle the server has and does not list -- reached by its address alone,
+ * as a link given to someone is. Null where there is no such bottle.
+ *
+ * @param {string} id
+ * @returns {Promise<BundleManifest | null>}
+ */
+export async function getUnlistedBundle(id) {
+  const response = await fetch(`/bundles/${encodeURIComponent(id)}/manifest.json`).catch(() => null);
+  if (!response?.ok) return null;
+  return describeBundle(id, await response.json().catch(() => ({})));
+}
+
+/**
  * @returns {Promise<BundleManifest[]>}
  */
 export async function getAvailableBundles() {
