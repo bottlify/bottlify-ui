@@ -3,6 +3,9 @@
   "networking": true,
   "libraryTags": true,
   "preloadBottles": true,
+  "graphics": {
+    "maxFrameLatency": 6
+  },
   "server": {
     "url": "/",
     "token": "set-your-own"
