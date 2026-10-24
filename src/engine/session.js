@@ -487,7 +487,7 @@ function openBox(bundle) {
   const began = performance.now();
   /** @type {import("./blackbox.js").RunRecord} */
   const record = { id: bundle.id, title: bundle.title ?? bundle.id, startedAt: Date.now(),
-    elapsed: 0, stage: "fetch" };
+    elapsed: 0, stage: "fetch", query: window.location.search };
   const write = () => {
     record.elapsed = (performance.now() - began) / 1000;
     noteRun(localStorage, record);
@@ -527,7 +527,17 @@ async function run({ bundle, media, canvas, report: show, silentInstall = false 
     }
     show(patch);
   };
-  const settings = loadSettings();
+  const asked = new URLSearchParams(window.location.search);
+  // `?sound=0`, `?video=0`, `?memory=256`: a run without the audio thread,
+  // without the decoder, or with that many megabytes of guest memory, over the
+  // settings -- one part taken out at a time, for a device that says nothing
+  // of why it took the page away.
+  const settings = {
+    ...loadSettings(),
+    ...(asked.get("sound") === "0" ? { sound: false } : {}),
+    ...(asked.get("video") === "0" ? { video: false } : {}),
+  };
+  const memoryAsked = Number(asked.get("memory")) * 1024 * 1024;
   // A phone is told a desktop of its own landscape shape (`screen.js`);
   // everything else the screen of the settings.
   const screen = isTouchScreen(window) ? phoneScreen(viewOf(window)) : settings.screen;
@@ -800,14 +810,19 @@ async function run({ bundle, media, canvas, report: show, silentInstall = false 
     // under another key.
     // The deployment's own settings for the translator (`config.json`'s
     // `cork`), under what the address asks for.
+    // `?translate=0`: every instruction interpreted, nothing compiled to wasm;
+    // `?translateWorker=0`: translated on the engine's own thread, no worker.
     ...(query.has("blockProfile") || query.get("checkReads") === "1"
-      || query.get("traceStore") === "1" || Object.keys(corkConfig).length > 0
+      || query.get("traceStore") === "1" || query.get("translate") === "0"
+      || query.get("translateWorker") === "0" || Object.keys(corkConfig).length > 0
       ? { cork: { config: {
         ...corkConfig,
         ...(query.has("blockProfile")
           ? { blockProfile: true, blockProfileFrom: Number(query.get("blockProfile")) || 0 } : {}),
         ...(query.get("checkReads") === "1" ? { checkReads: true } : {}),
         ...(query.get("traceStore") === "1" ? { traceStore: true } : {}),
+        ...(query.get("translate") === "0" ? { translate: false } : {}),
+        ...(query.get("translateWorker") === "0" ? { worker: false } : {}),
       } } }
       : {}),
     // `?cores=3` (`?executors=3` of old): the virtual cores the machine has,
@@ -978,7 +993,8 @@ async function run({ bundle, media, canvas, report: show, silentInstall = false 
     // what it touches costs anything.
     // A game, as much as the person gave it or its bottle.
     ...(prefix ? { memorySize: INSTALLER_MEMORY }
-      : bundle ? { memorySize: memorySizeFor(settings, bundle) } : {}),
+      : memoryAsked > 0 ? { memorySize: memoryAsked }
+        : bundle ? { memorySize: memorySizeFor(settings, bundle) } : {}),
   };
 
   app = await createApp(options).catch((e) => {

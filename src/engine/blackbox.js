@@ -26,6 +26,7 @@ const KEY = "bottlify.run-in-progress";
  * @property {number} [frames]  Frames presented by then, when the run had drawn.
  * @property {number} [instructions] Guest instructions retired by then.
  * @property {string} [detail]  The last line the run showed about itself.
+ * @property {string} [query]   The page's address switches, `?graphicsWorker=off` and the like.
  */
 
 /**
@@ -101,6 +102,7 @@ export function describeCutOff(record) {
   if (record.instructions) {
     parts.push(`${(record.instructions / 1e9).toFixed(2)} billion guest instructions`);
   }
-  return `The last start of this game ended without a word from the browser: ${parts.join(", ")}. `
-    + "The browser closed the page, which it does when a page holds more memory than it allows.";
+  return `The last start of this game ended without a word from the browser: ${parts.join(", ")}`
+    + `${record.query ? `, run as ${record.query}` : ""}.`
+    + `${record.detail ? ` Its last line: ${record.detail}.` : ""}`;
 }

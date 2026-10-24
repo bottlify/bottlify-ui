@@ -55,4 +55,6 @@ test("a store that throws or holds nonsense is no record", () => {
 test("the sentence says how far the run got", () => {
   assert.match(describeCutOff(RECORD), /12\.3 s in, while at "loading", no frame drawn yet, 3\.20 billion guest instructions/);
   assert.match(describeCutOff({ ...RECORD, stage: "running", frames: 1500 }), /1,500 frames drawn/);
+  assert.match(describeCutOff({ ...RECORD, query: "?translate=0", detail: "binding imports" }),
+    /run as \?translate=0\. Its last line: binding imports\./);
 });
