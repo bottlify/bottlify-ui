@@ -36,6 +36,9 @@ import { bundleUrl, httpRanges, readBundle } from "./btl.js";
 import { bottleFile } from "./bottles.js";
 import { shownToThePerson } from "./boxes.js";
 import { keepEnding, reportParts } from "./journal.js";
+import { endRun, noteRun } from "./blackbox.js";
+import { isTouchScreen } from "./touch.js";
+import { phoneScreen, viewOf } from "../screen.js";
 import {
   CHANGED, GPU_JOURNAL, SHADER_CHOICES, bottleConfigFor, driverRulesFor, loadSettings,
   multithreadingFor,
@@ -377,6 +380,8 @@ function cursorStyle(cursor, picture) {
  *                               decline nobody is told about reads from the
  *                               outside as the engine being broken and silent.
  * @property {{ width: number, height: number }} [frame]
+ * @property {{ width: number, height: number, bitsPerPixel: number }} [screen]
+ *            The display the program is told it has, before it has drawn.
  * @property {{ reason: string, message: string, trace: string }} [error]
  * @property {{ id: number, text: string, caption: string, type: number,
  *             buttons: { id: number, label: string }[], defaultButton: number,
@@ -409,30 +414,6 @@ async function journalTail(app) {
  */
 
 /**
- * Starts a title and hands back the controls for it.
- *
- * Resolves once the guest is running -- not once it has finished -- so the
- * caller has something to press while it loads.
- *
- * Either a bundle or a distribution: a bundle is a finished game, mounted
- * read-only under a writable layer, and a distribution is a program run in a
- * prefix with nothing beneath it at all -- an installer, or a disc image, which
- * the engine mounts as a CD-ROM drive of its own and starts the program it
- * names from. Everything between those lines -- the device, the sound, the
- * input, the frames -- is the same run, which is why there is one function
- * rather than several.
- *
- * @param {Object} options
- * @param {import("../api/bundles.js").BundleManifest} [options.bundle]
- * @param {import("@bottlify/installer/prefix").InstallMedia
- *     | import("@bottlify/installer/disc").DiscMedia} [options.media]
- * @param {HTMLCanvasElement} options.canvas
- * @param {(report: SessionReport) => void} options.report
- * @param {boolean} [options.silentInstall]  Run an installer in its silent mode, with no
- *     dialogs: for installs with no screen. The launcher has one, and leaves it off.
- * @returns {Promise<SessionControls>}
- */
-/**
  * What is recorded from the first instruction, and how much of it is kept.
  *
  * The saved settings are the base; the address bar adds to them and wins on the
@@ -460,8 +441,97 @@ function requestedLog(settings) {
   };
 }
 
-export async function launch({ bundle, media, canvas, report, silentInstall = false }) {
+/**
+ * Starts a title and hands back the controls for it.
+ *
+ * Resolves once the guest is running -- not once it has finished -- so the
+ * caller has something to press while it loads.
+ *
+ * Either a bundle or a distribution: a bundle is a finished game, mounted
+ * read-only under a writable layer, and a distribution is a program run in a
+ * prefix with nothing beneath it at all -- an installer, or a disc image, which
+ * the engine mounts as a CD-ROM drive of its own and starts the program it
+ * names from. Everything between those lines -- the device, the sound, the
+ * input, the frames -- is the same run, which is why there is one function
+ * rather than several.
+ *
+ * @param {Object} options
+ * @param {import("../api/bundles.js").BundleManifest} [options.bundle]
+ * @param {import("@bottlify/installer/prefix").InstallMedia
+ *     | import("@bottlify/installer/disc").DiscMedia} [options.media]
+ * @param {HTMLCanvasElement} options.canvas
+ * @param {(report: SessionReport) => void} options.report
+ * @param {boolean} [options.silentInstall]  Run an installer in its silent mode, with no
+ *     dialogs: for installs with no screen. The launcher has one, and leaves it off.
+ * @returns {Promise<SessionControls>}
+ */
+export async function launch(options) {
+  const box = openBox(options.bundle);
+  try {
+    return await run(options, box);
+  } catch (e) {
+    box.end();
+    throw e;
+  }
+}
+
+/**
+ * Where a run is, written down once a second while it goes (`blackbox.js`):
+ * a page the browser kills for its memory leaves no other trace. The record
+ * is closed by every end the page sees, a reload or a navigation among them.
+ *
+ * @param {import("../api/bundles.js").BundleManifest | undefined} bundle
+ */
+function openBox(bundle) {
+  if (!bundle) return { update() {}, end() {} };
+  const began = performance.now();
+  /** @type {import("./blackbox.js").RunRecord} */
+  const record = { id: bundle.id, title: bundle.title ?? bundle.id, startedAt: Date.now(),
+    elapsed: 0, stage: "fetch" };
+  const write = () => {
+    record.elapsed = (performance.now() - began) / 1000;
+    noteRun(localStorage, record);
+  };
+  write();
+  const timer = setInterval(write, 1000);
+  let open = true;
+  const end = () => {
+    if (!open) return;
+    open = false;
+    clearInterval(timer);
+    window.removeEventListener("pagehide", end);
+    endRun(localStorage);
+  };
+  window.addEventListener("pagehide", end);
+  return {
+    /** @param {Partial<import("./blackbox.js").RunRecord>} patch */
+    update(patch) {
+      if (open) Object.assign(record, patch);
+    },
+    end,
+  };
+}
+
+/**
+ * @param {Parameters<typeof launch>[0]} options
+ * @param {ReturnType<typeof openBox>} box
+ */
+async function run({ bundle, media, canvas, report: show, silentInstall = false }, box) {
+  /** @param {SessionReport} patch */
+  const report = (patch) => {
+    if (patch.stage || patch.detail) {
+      box.update({
+        ...(patch.stage ? { stage: patch.stage } : {}),
+        ...(patch.detail ? { detail: patch.detail } : {}),
+      });
+    }
+    show(patch);
+  };
   const settings = loadSettings();
+  // A phone is told a desktop of its own landscape shape (`screen.js`);
+  // everything else the screen of the settings.
+  const screen = isTouchScreen(window) ? phoneScreen(viewOf(window)) : settings.screen;
+  report({ screen });
   const { networking, cork: corkConfig, graphics: graphicsConfig, cpu: cpuConfig } = await getConfig();
   // The clock the loader's "elapsed" line reads, started before the engine is
   // even imported: fetching it is part of the wait the person is in.
@@ -478,7 +548,7 @@ export async function launch({ bundle, media, canvas, report, silentInstall = fa
   // none of it before the first frame. A picture that cannot be made leaves
   // the desktop its colour; it is never a reason not to start.
   const backdrop = bundle
-    ? await desktopPicture(bundle, settings.screen).catch(() => null)
+    ? await desktopPicture(bundle, screen).catch(() => null)
     : null;
 
   // The engine and the frames it presents while the work below is still going.
@@ -514,6 +584,7 @@ export async function launch({ bundle, media, canvas, report, silentInstall = fa
       const bundleReads = tableNamed(appTables, "app")?.metrics?.bundle ?? {};
       const blocks = bundleReads.distinct ?? 0;
       const fetched = bundleReads.rangeBytes ?? 0;
+      box.update({ instructions: cpu.instructions ?? 0 });
       const parts = [`${(cpu.instructions ?? 0).toLocaleString()} guest instructions`];
       if (images > 0) parts.push(`${images} PE image${images === 1 ? "" : "s"} loaded`);
       if (blocks > 0) parts.push(`${blocks.toLocaleString()} bundle blocks read`);
@@ -804,7 +875,7 @@ export async function launch({ bundle, media, canvas, report, silentInstall = fa
     // default, because the default here and the engine's are the same number
     // and a screen the person chose has to reach every layer that answers for
     // one, not only the ones a launch happens to mention.
-    screen: settings.screen,
+    screen,
     maxFps: settings.maxFps,
     quantum: settings.quantum,
     // Which engine runs the program: the emulator alone, or with the
@@ -1163,6 +1234,7 @@ export async function launch({ bundle, media, canvas, report, silentInstall = fa
       });
     }
     frames = presented;
+    box.update({ frames: presented });
   });
 
   /** @type {number | null} */
@@ -1187,6 +1259,7 @@ export async function launch({ bundle, media, canvas, report, silentInstall = fa
   app
     .run({ maxTurns: Number.MAX_SAFE_INTEGER })
     .then(async (code) => {
+      box.end();
       if (stopping) return;
       handBackTheScreen();
       // The journal's tail goes with it: an exit has no backtrace, and what the
@@ -1195,6 +1268,7 @@ export async function launch({ bundle, media, canvas, report, silentInstall = fa
       report({ stage: "exited", exitCode: code, detail: "", trace: await journalTail(app) });
     })
     .catch(async (e) => {
+      box.end();
       if (stopping) return;
       handBackTheScreen();
       // Taken now, while what is left of the engine still answers.
@@ -1284,6 +1358,7 @@ export async function launch({ bundle, media, canvas, report, silentInstall = fa
     async stop() {
       if (stopping) return;
       stopping = true;
+      box.end();
       clearInterval(progressTimer);
       if (painting !== null) cancelAnimationFrame(painting);
       stopMuting?.();

@@ -25,6 +25,7 @@ import {
 } from "../api/bundles.js";
 import { exportBottle, removeBottle, saveLocalManifest } from "../engine/bottles.js";
 import { removePatch } from "../engine/patches.js";
+import { touchLayout } from "../engine/touch.js";
 import { clearTranslations, opfsSession } from "@bottlify/core/storage";
 
 /**
@@ -113,6 +114,10 @@ export function BottleSettingsDialog({
   const [memory, setMemory] = useState(own.memory ?? 0);
   // Kept in this browser as the memory is: a way to compare two answers, not the bottle's own.
   const [driverRules, setDriverRules] = useState(own.driverRules ?? "legacy");
+  // The controls on a touch screen: this browser's, as the hands holding it are.
+  const [touch, setTouch] = useState(() => touchLayout(own.touch));
+  /** @param {Partial<ReturnType<typeof touchLayout>>} patch */
+  const changeTouch = (patch) => setTouch((held) => touchLayout({ ...held, ...patch }));
   const [title, setTitle] = useState(bundle.title ?? "");
   const [description, setDescription] = useState(bundle.description ?? "");
   const [cover, setCover] = useState(null);
@@ -170,7 +175,7 @@ export function BottleSettingsDialog({
    * @param {object} config
    */
   const withMemory = (config) => {
-    const next = { ...config, memory, driverRules };
+    const next = { ...config, memory, driverRules, touch };
     if (!memory) delete next.memory;
     if (driverRules !== "current") delete next.driverRules;
     return next;
@@ -332,6 +337,34 @@ export function BottleSettingsDialog({
               onChange={(event) => setDriverRules(event.target.value)}>
               {DRIVER_RULES_CHOICES.map((one) => <MenuItem key={one.value} value={one.value}>{one.label}</MenuItem>)}
             </TextField>
+            <TextField select size="small" label="Touch controls" value={touch.controls} disabled={saving}
+              helperText="On a phone or a tablet, over the picture; kept in this browser"
+              onChange={(event) => changeTouch({ controls: event.target.value })}>
+              <MenuItem value="keys">Keyboard and mouse (a stick for the keys, a drag to look)</MenuItem>
+              <MenuItem value="pad">Gamepad (for a game that reads one)</MenuItem>
+              <MenuItem value="off">Off (taps are clicks)</MenuItem>
+            </TextField>
+            <Stack direction="row" spacing={2}>
+              <TextField select size="small" label="Stick keys" value={touch.move} sx={{ flex: 1 }}
+                disabled={saving || touch.controls !== "keys"}
+                onChange={(event) => changeTouch({ move: event.target.value })}>
+                <MenuItem value="wasd">W A S D</MenuItem>
+                <MenuItem value="arrows">Arrows</MenuItem>
+              </TextField>
+              <TextField select size="small" label="Stick under" value={touch.hand} sx={{ flex: 1 }}
+                disabled={saving || touch.controls === "off"}
+                onChange={(event) => changeTouch({ hand: event.target.value })}>
+                <MenuItem value="right">The left thumb</MenuItem>
+                <MenuItem value="left">The right thumb</MenuItem>
+              </TextField>
+              <TextField select size="small" label="Size" value={touch.size} sx={{ flex: 1 }}
+                disabled={saving || touch.controls === "off"}
+                onChange={(event) => changeTouch({ size: Number(event.target.value) })}>
+                <MenuItem value={0.8}>Small</MenuItem>
+                <MenuItem value={1}>Medium</MenuItem>
+                <MenuItem value={1.25}>Large</MenuItem>
+              </TextField>
+            </Stack>
           </>)}
           {failure && <Alert severity="error" variant="outlined">{failure}</Alert>}
           {cleared && (

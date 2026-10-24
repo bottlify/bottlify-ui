@@ -18,6 +18,7 @@
  */
 
 import { SORTS, TAGS } from "./api/libraryView.js";
+import { touchLayout } from "./engine/touch.js";
 
 const KEY = "bottlify.settings";
 
@@ -100,6 +101,8 @@ const SCREEN = Object.freeze({ width: 1024, height: 768, bitsPerPixel: 32 });
  * @property {string} [driverRules] One of `DRIVER_RULES_CHOICES`; absent, legacy.
  * @property {boolean} [multithreading] Whether its threads run on several cores
  *     at once; absent, the manifest's, else not.
+ * @property {ReturnType<typeof touchLayout>} [touch] Its controls on a touch
+ *     screen (`engine/touch.js`); absent, the defaults.
  */
 
 /**
@@ -340,6 +343,7 @@ function bottleConfigOf(raw) {
     if (MEMORY_CHOICES.some((one) => one.value === config.memory)) kept.memory = config.memory;
     if (config.driverRules === "current") kept.driverRules = config.driverRules;
     if (typeof config.multithreading === "boolean") kept.multithreading = config.multithreading;
+    if (config.touch && typeof config.touch === "object") kept.touch = touchLayout(config.touch);
     if (Object.keys(kept).length > 0) out[bundle] = kept;
   }
   return out;
@@ -391,6 +395,16 @@ export function multithreadingFor(settings, bundle) {
   const own = settings.bottleConfig[bundle.id]?.multithreading;
   if (typeof own === "boolean") return own;
   return typeof bundle.multithreading === "boolean" ? bundle.multithreading : false;
+}
+
+/**
+ * The controls a bottle plays with on a touch screen.
+ *
+ * @param {RunSettings} settings
+ * @param {{ id: string }} bundle
+ */
+export function touchLayoutFor(settings, bundle) {
+  return touchLayout(settings.bottleConfig[bundle.id]?.touch);
 }
 
 /**

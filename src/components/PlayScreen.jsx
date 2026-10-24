@@ -8,9 +8,12 @@ import {
   Alert, Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle,
   IconButton, LinearProgress, Snackbar, Stack, Tooltip, Typography,
 } from "@mui/material";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from "react";
 import { launch } from "../engine/session.js";
-import { loadSettings } from "../settings.js";
+import { describeCutOff, takeCutOffRun } from "../engine/blackbox.js";
+import { loadSettings, touchLayoutFor } from "../settings.js";
+import { isTouchScreen } from "../engine/touch.js";
+import { TouchControls } from "./TouchControls.jsx";
 import { PerfOverlay } from "./PerfOverlay.jsx";
 import { SettingsDrawer } from "./SettingsDrawer.jsx";
 import { VolumeControl } from "./AppHeader.jsx";
@@ -68,8 +71,20 @@ export function PlayScreen({ bundle, media, title, onClose, onExited }) {
   const controls = useRef(null);
   const [state, setState] = useState({
     stage: "fetch", detail: "", note: "", off: [], frame: null, error: null,
-    messageBox: null, hooks: null, progress: null, usual: null, elapsed: undefined,
+    messageBox: null, hooks: null, progress: null, usual: null, elapsed: undefined, screen: null,
   });
+  // A touch screen plays with controls over the picture and is held sideways;
+  // asked once, since a phone does not become a desktop while a game runs.
+  const [touch] = useState(() => isTouchScreen(window));
+  const [portrait, setPortrait] = useState(() => touch
+    && window.matchMedia?.("(orientation: portrait)").matches === true);
+  useEffect(() => {
+    if (!touch) return undefined;
+    const query = window.matchMedia?.("(orientation: portrait)");
+    const turned = () => setPortrait(query?.matches === true);
+    query?.addEventListener?.("change", turned);
+    return () => query?.removeEventListener?.("change", turned);
+  }, [touch]);
   const [attempt, setAttempt] = useState(0);
   const [showTrace, setShowTrace] = useState(false);
   // A page opened by a link has had no click yet, and the browser will not
@@ -108,16 +123,37 @@ export function PlayScreen({ bundle, media, title, onClose, onExited }) {
     off: patch.off && !held.off.includes(patch.off) ? [...held.off, patch.off] : held.off,
   })), []);
 
+  // The last start of this game, when the browser took the page away in the
+  // middle of it: said once, over the stage, until it is closed.
+  const [cutOff, setCutOff] = useState(/** @type {string | null} */ (null));
   useEffect(() => {
-    if ((!bundle && !media) || !pressed) return undefined;
+    if (!bundle?.id) return;
+    let record = null;
+    try {
+      record = takeCutOffRun(localStorage, bundle.id);
+    } catch {
+      // No storage: nothing was written either.
+    }
+    if (record) setCutOff(describeCutOff(record));
+  }, [bundle?.id]);
+
+  // A run is keyed by its bottle's id, not by the object: a page opened by its
+  // link is handed the bottle twice, read by id and then found in the library's
+  // list, and restarting for the second object started a second engine beside
+  // the first while the first was still going down.
+  const bundleId = bundle?.id ?? null;
+  const startRun = useEffectEvent(() => launch({ bundle, media, canvas: canvasRef.current, report }));
+
+  useEffect(() => {
+    if ((bundleId === null && !media) || !pressed) return undefined;
     let live = true;
     setState({
       stage: "fetch", detail: "", note: "", off: [], frame: null, error: null,
-      messageBox: null, hooks: null, progress: null, usual: null, elapsed: undefined,
+      messageBox: null, hooks: null, progress: null, usual: null, elapsed: undefined, screen: null,
     });
     setShowTrace(false);
 
-    launch({ bundle, media, canvas: canvasRef.current, report })
+    startRun()
       .then((session) => {
         controls.current = session;
         // Unmounted, or stopped, while the launch was still assembling: the
@@ -141,7 +177,7 @@ export function PlayScreen({ bundle, media, title, onClose, onExited }) {
       controls.current?.stop();
       controls.current = null;
     };
-  }, [bundle, media, attempt, report, pressed]);
+  }, [bundleId, media, attempt, report, pressed]);
 
   const { stage } = state;
   const running = stage === "running" || stage === "loading" || stage === "installing";
@@ -185,7 +221,7 @@ export function PlayScreen({ bundle, media, title, onClose, onExited }) {
       // The frame once the program has drawn one; until then the display the
       // program was told it has, which is the launcher's best account of the
       // box the first frame will arrive in.
-      const source = state.frame ?? loadSettings().screen;
+      const source = state.frame ?? state.screen ?? loadSettings().screen;
       const scale = Math.min(room.width / source.width, room.height / source.height);
       setViewport({
         width: Math.max(1, Math.floor(source.width * scale)),
@@ -196,7 +232,7 @@ export function PlayScreen({ bundle, media, title, onClose, onExited }) {
     const watching = new ResizeObserver(fit);
     watching.observe(box);
     return () => watching.disconnect();
-  }, [state.frame]);
+  }, [state.frame, state.screen]);
 
   // The program ended on its own, which for an install is the signal that the
   // prefix is finished. Announced once and only for a run that got that far:
@@ -288,6 +324,9 @@ export function PlayScreen({ bundle, media, title, onClose, onExited }) {
     };
   }, []);
 
+  /** What the touch controls send, to the engine running now. @param {any} event */
+  const sendInput = useCallback((event) => controls.current?.app?.input.send(event), []);
+
   const handlePlay = () => {
     if (stage === "paused") {
       controls.current?.resume();
@@ -326,8 +365,11 @@ export function PlayScreen({ bundle, media, title, onClose, onExited }) {
           display: "flex",
           alignItems: "center",
           gap: 1,
-          px: { xs: 2.5, md: 6 },
-          py: 1.5,
+          // Held sideways a phone has few lines to give the bar.
+          px: touch ? 1.5 : { xs: 2.5, md: 6 },
+          py: touch ? 0.25 : 1.5,
+          pl: touch ? "max(12px, env(safe-area-inset-left))" : undefined,
+          pr: touch ? "max(12px, env(safe-area-inset-right))" : undefined,
           borderBottom: "1px solid",
           borderColor: "divider",
           bgcolor: "rgba(26,27,29,0.85)",
@@ -384,7 +426,14 @@ export function PlayScreen({ bundle, media, title, onClose, onExited }) {
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            p: 2,
+            // On a touch screen the picture takes the whole stage, inside the
+            // safe area; the controls lie over it and the bars beside it.
+            p: touch ? 0 : 2,
+            pl: touch ? "env(safe-area-inset-left)" : undefined,
+            pr: touch ? "env(safe-area-inset-right)" : undefined,
+            pb: touch ? "env(safe-area-inset-bottom)" : undefined,
+            bgcolor: touch ? "#000" : undefined,
+            touchAction: touch ? "none" : undefined,
             // The overlay below is placed against this box.
             position: "relative",
             // Fullscreen, the stage is the screen: no gutter, and black around
@@ -392,6 +441,32 @@ export function PlayScreen({ bundle, media, title, onClose, onExited }) {
             "&:fullscreen": { p: 0, bgcolor: "#000" },
           }}
         >
+          {touch && started && controls.current?.app
+            && touchLayoutFor(loadSettings(), bundle ?? { id: "" }).controls !== "off" && (
+            <TouchControls
+              send={sendInput}
+              layout={touchLayoutFor(loadSettings(), bundle ?? { id: "" })}
+              canvas={canvasRef}
+              frame={state.frame}
+            />
+          )}
+          {touch && portrait && (
+            <Box sx={{ position: "absolute", inset: 0, zIndex: 4, display: "flex", flexDirection: "column",
+              alignItems: "center", justifyContent: "center", gap: 2, p: 3, textAlign: "center",
+              bgcolor: "rgba(0,0,0,0.85)" }}>
+              <Box component="span" className="glyphicon glyphicon-repeat" sx={{ fontSize: 40 }} />
+              <Typography variant="h6">Turn your phone sideways</Typography>
+              <Typography variant="body2" color="text.secondary">
+                The game is drawn for a screen held in landscape.
+              </Typography>
+            </Box>
+          )}
+          {cutOff && (
+            <Alert severity="warning" onClose={() => setCutOff(null)}
+              sx={{ position: "absolute", top: 8, left: 8, right: 8, zIndex: 2 }}>
+              {cutOff}
+            </Alert>
+          )}
           {/* Inside the stage, because in fullscreen nothing outside it is
             drawn. A click is the game's, so only the clock or the cross
             closes it. */}
