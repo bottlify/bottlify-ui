@@ -97,8 +97,13 @@ export function blobRanges(file) {
 async function decodeBlock(codec, stored, length) {
   if (codec === Codec.STORED) return stored;
   if (codec === Codec.DEFLATE_RAW) {
-    const stream = new Blob([stored]).stream().pipeThrough(new DecompressionStream("deflate-raw"));
-    return new Uint8Array(await new Response(stream).arrayBuffer());
+    // Written into the stream, not through a Blob: WebKit keeps a Blob's bytes
+    // in a file on the disk until it is collected, a file a block.
+    const stream = new DecompressionStream("deflate-raw");
+    const writer = stream.writable.getWriter();
+    writer.write(stored.buffer instanceof ArrayBuffer ? stored : stored.slice()).catch(() => {});
+    writer.close().catch(() => {});
+    return new Uint8Array(await new Response(stream.readable).arrayBuffer());
   }
   if (codec === Codec.ZSTD) return decompressZstd(stored, length ?? 0);
   throw new Error(`this bottle has a block packed with codec ${codec}, which this page does not know`);
