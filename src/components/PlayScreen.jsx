@@ -11,6 +11,7 @@ import {
 import { useCallback, useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { engineNow, launch, loadEngine, openRunSpeaker, soundWanted } from "../engine/session.js";
 import { describeCutOff, takeCutOffRun } from "../engine/blackbox.js";
+import { MANIFEST_SIZES, TAB_SIZE, TOUCH_SIZE, drawIcon, gameManifest, showGame } from "../engine/bookmark.js";
 import { loadSettings, touchLayoutFor } from "../settings.js";
 import { isTouchScreen } from "../engine/touch.js";
 import { TouchControls } from "./TouchControls.jsx";
@@ -65,6 +66,26 @@ const STAGE_STEP = { fetch: 1, init: 2, loading: 3, installing: 3 };
  * @param {() => void} props.onClose
  * @param {(app: any, code: number) => void} [props.onExited]  The run is over; read what it left.
  */
+/** How long into a run the header goes up, and stays down when reached for on a touch screen. */
+const HEADER_HIDES_MS = 5000;
+/** How long the header stays after the pointer leaves it. */
+const HEADER_LEAVE_MS = 1200;
+
+/**
+ * A game's icons: the tab's, and the home screen's with the bottle beside it.
+ *
+ * @param {NonNullable<import("../engine/session.js").SessionReport["icon"]>} icon
+ */
+async function drawGameIcons(icon) {
+  const badge = new Image();
+  badge.src = "/favicon.svg";
+  const mark = await badge.decode().then(() => badge, () => null);
+  const [tab, home, ...sized] = await Promise.all([drawIcon(icon, TAB_SIZE, null),
+    drawIcon(icon, TOUCH_SIZE, mark), ...MANIFEST_SIZES.map((size) => drawIcon(icon, size, mark))]);
+  return { tab, touch: home,
+    sized: sized.map((src, index) => ({ src, size: MANIFEST_SIZES[index] })) };
+}
+
 /** How long a speaker opened with no press in hand is given to start on its own. */
 const STARTS_ALONE_MS = 300;
 
@@ -174,6 +195,34 @@ export function PlayScreen({ bundle, media, title, onClose, onExited }) {
     if (record) setCutOff(describeCutOff(record));
   }, [bundle?.id]);
 
+  // While a game plays, the tab, a bookmark and a home-screen icon are the
+  // game's: its title at once, its own icon once the run has read its
+  // executable (`bookmark.js`).
+  const icon = state.icon ?? null;
+  const gameId = bundle?.id ?? null;
+  const gameTitle = bundle?.title ?? null;
+  useEffect(() => {
+    if (!gameId || !gameTitle) return undefined;
+    const id = gameId;
+    const name = gameTitle;
+    const origin = window.location.origin;
+    let undo = showGame(document, { title: name, manifest: gameManifest({ title: name, id, origin,
+      icons: MANIFEST_SIZES.map((size) => ({ src: `${origin}/icons/icon-${size}.png`, size })) }) });
+    let live = true;
+    if (icon) {
+      drawGameIcons(icon).then(({ tab, touch: home, sized }) => {
+        if (!live) return;
+        undo();
+        undo = showGame(document, { title: name, tabIcon: tab, touchIcon: home,
+          manifest: gameManifest({ title: name, id, origin, icons: sized }) });
+      }, () => {});
+    }
+    return () => {
+      live = false;
+      undo();
+    };
+  }, [gameId, gameTitle, icon]);
+
   // A run is keyed by its bottle's id, not by the object: a page opened by its
   // link is handed the bottle twice, read by id and then found in the library's
   // list, and restarting for the second object started a second engine beside
@@ -244,6 +293,35 @@ export function PlayScreen({ bundle, media, title, onClose, onExited }) {
   const over = stage === "stopped" || stage === "failed" || stage === "exited";
   const drawn = state.frame !== null;
   const started = running || stage === "paused";
+  // The header goes up out of the way five seconds into a run, so the picture
+  // has the whole screen; it stays while the panel with the logs is open, and
+  // comes back when the run pauses or ends, or when it is reached for -- the
+  // pointer at the top edge, or on a touch screen the handle there.
+  const playing = pressed && !over && stage !== "paused";
+  const [headerHidden, setHeaderHidden] = useState(false);
+  const [headerPeek, setHeaderPeek] = useState(false);
+  const peekTimer = useRef(/** @type {ReturnType<typeof setTimeout> | undefined} */ (undefined));
+  useEffect(() => {
+    if (!playing || settings) {
+      setHeaderHidden(false);
+      return undefined;
+    }
+    const timer = setTimeout(() => setHeaderHidden(true), HEADER_HIDES_MS);
+    return () => clearTimeout(timer);
+  }, [playing, settings]);
+  /** @param {boolean} on */
+  const peekHeader = (on) => {
+    clearTimeout(peekTimer.current);
+    if (on) {
+      setHeaderPeek(true);
+      // A finger cannot leave the bar the way a pointer does: it goes up again on its own.
+      if (touch) peekTimer.current = setTimeout(() => setHeaderPeek(false), HEADER_HIDES_MS);
+    } else {
+      peekTimer.current = setTimeout(() => setHeaderPeek(false), HEADER_LEAVE_MS);
+    }
+  };
+  useEffect(() => () => clearTimeout(peekTimer.current), []);
+  const headerAway = headerHidden && !headerPeek;
   // A run that ended on its own is told the way a run that broke is: same
   // screen, same buttons, only the title differs.
   const outcome = state.error ?? (stage === "exited"
@@ -440,11 +518,37 @@ export function PlayScreen({ bundle, media, title, onClose, onExited }) {
         },
       }}
     >
+      {headerHidden && (
+        // Where the header is reached for once it has gone up: the top edge
+        // under a pointer, a handle a finger can find on a touch screen.
+        <Box
+          data-control="header-handle"
+          aria-label="Show the header"
+          onPointerEnter={(event) => event.pointerType === "mouse" && peekHeader(true)}
+          onPointerDown={() => peekHeader(true)}
+          sx={touch
+            ? { position: "absolute", top: "env(safe-area-inset-top)", left: "50%", zIndex: 6,
+              transform: "translateX(-50%)", width: 64, height: 22, borderRadius: "0 0 10px 10px",
+              bgcolor: "rgba(26,27,29,0.6)", display: "flex", alignItems: "center",
+              justifyContent: "center", color: "rgba(255,255,255,0.7)", fontSize: 12,
+              touchAction: "manipulation" }
+            : { position: "absolute", top: 0, left: 0, right: 0, height: 8, zIndex: 6 }}
+        >
+          {touch && <span className="glyphicon glyphicon-chevron-down" />}
+        </Box>
+      )}
       <Box
+        onPointerEnter={() => headerHidden && peekHeader(true)}
+        onPointerLeave={(event) => headerHidden && event.pointerType === "mouse" && peekHeader(false)}
         sx={{
           display: "flex",
           alignItems: "center",
           gap: 1,
+          // Gone up, the bar lies over the stage rather than above it, so the
+          // picture keeps the whole height and does not jump when it comes back.
+          ...(headerHidden ? { position: "absolute", top: 0, left: 0, right: 0 } : {}),
+          transform: headerAway ? "translateY(-100%)" : "none",
+          transition: "transform .25s ease",
           // Held sideways a phone has few lines to give the bar.
           px: touch ? 1.5 : { xs: 2.5, md: 6 },
           py: touch ? 0.25 : 1.5,
@@ -457,8 +561,7 @@ export function PlayScreen({ bundle, media, title, onClose, onExited }) {
           // The blur makes the bar a layer of its own, and the stage after it
           // in the page would be drawn over anything that opens below the bar
           // -- the volume's slider among them -- whatever its own z-index.
-          position: "relative",
-          zIndex: 1,
+          ...(headerHidden ? { zIndex: 7 } : { position: "relative", zIndex: 1 }),
         }}
       >
         <Typography variant="subtitle2" sx={{ flex: 1, minWidth: 0 }} noWrap>

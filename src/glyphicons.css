@@ -37,6 +37,7 @@
 .glyphicon-picture:before { content: "\e060"; }
 .glyphicon-info-sign:before { content: "\e086"; }
 .glyphicon-chevron-left:before { content: "\e079"; }
+.glyphicon-chevron-down:before { content: "\e114"; }
 .glyphicon-stop:before { content: "\e074"; }
 .glyphicon-repeat:before { content: "\e030"; }
 .glyphicon-ok:before { content: "\e013"; }

@@ -376,6 +376,8 @@ function cursorStyle(cursor, picture) {
  * @property {number} [images]   PE images the loader has placed so far.
  * @property {number} [blocks]   Distinct bundle blocks the guest has read.
  * @property {string} [note]     The last thing the engine said about itself.
+ * @property {{ width: number, height: number, rgba?: Uint8ClampedArray, png?: Uint8Array } | null} [icon]
+ *            The program's own icon (the engine's `programIcon`), null when it has none.
  * @property {string} [off]      A subsystem that has switched itself off for the
  *                               whole run. Unlike a note, which is the latest
  *                               line of a running log and is replaced by the
@@ -655,6 +657,8 @@ async function run({ bundle, media, canvas, report: show, silentInstall = false,
         .catch((e) => {
           throw failure("entry image could not be read", `${bundleUrl(bundle)}: ${e.message}`);
         });
+  // The program's own icon, for the tab and the home screen to show the game by.
+  if (bundle) report({ icon: engine.programIcon?.(executable) ?? null });
   // Beside the bundle's manifest, never inside it -- absent for most bundles.
   const sidecarHooks = bundle && !kept ? await getSidecarHooks(bundle.id) : undefined;
   // Same convention: the perf overlay's "guest code" block folds the cpu
