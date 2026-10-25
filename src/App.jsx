@@ -8,6 +8,7 @@ import { Alert, Box, CircularProgress, Typography } from "@mui/material";
 import { useEffect, useRef, useState } from "react";
 import { getAvailableBundles, getUnlistedBundle } from "./api/bundles.js";
 import { importBottle } from "./engine/bottles.js";
+import { opensAsPage } from "./engine/bookmark.js";
 import { formatOf, unsupportedNotice } from "./engine/formats.js";
 import { residency } from "./engine/btl.js";
 import { DownloadDialog } from "./components/DownloadDialog.jsx";
@@ -125,8 +126,11 @@ export default function App() {
   const playBundle = playId === null ? null : bundles.find((one) => one.id === playId)
     ?? (unlisted?.id === playId ? unlisted.bundle : null);
   /** @param {any} bundle @param {boolean} [preload] */
-  const play = (bundle, preload = false) =>
-    navigate(`/play/${encodeURIComponent(bundle.id)}${preload ? "?preload=1" : ""}`);
+  const play = (bundle, preload = false) => {
+    const to = `/play/${encodeURIComponent(bundle.id)}${preload ? "?preload=1" : ""}`;
+    if (opensAsPage(bundle)) window.location.assign(to);
+    else navigate(to);
+  };
   /** A bottle not here whole, and how much of it is: Download or Play anyway. */
   const [asking, setAsking] = useState(null);
   const handlePlay = async () => {
@@ -145,6 +149,10 @@ export default function App() {
     play(selected);
   };
   const handleClosePlay = () => {
+    if (playBundle && opensAsPage(playBundle)) {
+      window.location.assign("/library");
+      return;
+    }
     navigate("/library");
     setSelected(null);
   };

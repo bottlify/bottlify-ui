@@ -67,6 +67,24 @@ export function showGame(page, game) {
 }
 
 /**
+ * Whether a bottle is opened, and left, by loading its address as a page of
+ * its own rather than by a history entry. Apple's WebKit -- every browser on
+ * an iPhone, Safari on a Mac -- reads a page's manifest once per load, against
+ * the address the page was loaded at (WebCore's
+ * DocumentLoader::loadApplicationManifest), so a game reached by pushState was
+ * added to the home screen as the launcher, its address and its icon, whatever
+ * the head said by then. Loaded, /play/<id> comes with the game's head from
+ * the server. A bottle kept only in this browser has no page there.
+ *
+ * @param {{ local?: boolean }} bottle
+ * @param {{ userAgent?: string }} [browser]
+ */
+export function opensAsPage(bottle, browser = globalThis.navigator ?? {}) {
+  const agent = String(browser.userAgent ?? "");
+  return !bottle.local && /AppleWebKit\//.test(agent) && !/Chrome\/|Chromium\/|Android/.test(agent);
+}
+
+/**
  * What the head says for a bottle the server holds: its own manifest and
  * icons, from the first moment.
  *
