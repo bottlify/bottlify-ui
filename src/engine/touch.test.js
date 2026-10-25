@@ -8,7 +8,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   DEAD_ZONE, createLook, frameScale, isTouchScreen, keyChanges, keyTap, stickAxes, stickKeys,
-  stickVector, tapEvents, touchLayout, typedEvents,
+  stickVector, tapEvents, touchLayout,
 } from "./touch.js";
 
 /** A vector at an angle, degrees clockwise from straight up, at a length. */
@@ -95,17 +95,6 @@ test("a control key types its character between its press and release", () => {
     { kind: "key", code: "Space", down: true },
     { kind: "key", code: "Space", down: false },
   ]);
-});
-
-test("the phone's keyboard types text, and Enter and Backspace as keys", () => {
-  assert.deepEqual(typedEvents({ inputType: "insertText", data: "hé" }), [
-    { kind: "text", text: "h" }, { kind: "text", text: "é" },
-  ]);
-  assert.deepEqual(typedEvents({ inputType: "insertLineBreak" }), keyTap("Enter"));
-  assert.deepEqual(typedEvents({ inputType: "insertText", data: "\n" }), keyTap("Enter"));
-  assert.deepEqual(typedEvents({ inputType: "deleteContentBackward" }), keyTap("Backspace"));
-  assert.deepEqual(typedEvents({ inputType: "formatBold" }), [], "an edit that types nothing sends nothing");
-  assert.deepEqual(typedEvents({ inputType: "insertText", data: null }), []);
 });
 
 test("a bottle's touch layout keeps only what the controls know", () => {

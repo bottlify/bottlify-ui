@@ -8,7 +8,7 @@ import {
   Alert, Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle,
   IconButton, LinearProgress, Snackbar, Stack, Tooltip, Typography,
 } from "@mui/material";
-import { useCallback, useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { launch } from "../engine/session.js";
 import { describeCutOff, takeCutOffRun } from "../engine/blackbox.js";
 import { loadSettings, touchLayoutFor } from "../settings.js";
@@ -326,6 +326,12 @@ export function PlayScreen({ bundle, media, title, onClose, onExited }) {
 
   /** What the touch controls send, to the engine running now. @param {any} event */
   const sendInput = useCallback((event) => controls.current?.app?.input.send(event), []);
+  /** The engine's on-screen keyboard, for the touch controls' Keys. */
+  const keyboard = useMemo(() => ({
+    show: () => controls.current?.app?.input.showKeyboard?.() ?? false,
+    hide: () => controls.current?.app?.input.hideKeyboard?.(),
+    shown: () => controls.current?.app?.input.keyboardShown?.() ?? false,
+  }), []);
 
   const handlePlay = () => {
     if (stage === "paused") {
@@ -448,6 +454,7 @@ export function PlayScreen({ bundle, media, title, onClose, onExited }) {
               layout={touchLayoutFor(loadSettings(), bundle ?? { id: "" })}
               canvas={canvasRef}
               frame={state.frame}
+              keyboard={keyboard}
             />
           )}
           {touch && portrait && (

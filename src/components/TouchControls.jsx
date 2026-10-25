@@ -8,7 +8,6 @@ import { Box } from "@mui/material";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   createLook, frameScale, keyChanges, keyTap, stickAxes, stickKeys, stickVector, tapEvents,
-  typedEvents,
 } from "../engine/touch.js";
 
 /** How far a finger may move, in CSS pixels, and still be a tap rather than a drag. */
@@ -45,6 +44,13 @@ const BUTTONS = {
 const holdEvent = (hold, down) => ({ ...hold, down });
 
 /**
+ * @typedef {Object} TouchKeyboard
+ * @property {() => boolean} show  Inside a tap's own handler only.
+ * @property {() => void} hide
+ * @property {() => boolean} shown
+ */
+
+/**
  * The controls a touch screen plays with, over the stage: a stick under one
  * thumb and buttons under the other, every finger its own, and the rest of the
  * screen the game's -- a tap there a click where it landed; with keys, a drag
@@ -56,8 +62,9 @@ const holdEvent = (hold, down) => ({ ...hold, down });
  * @param {{ controls: "keys" | "pad" | "off", move: string, hand: string, size: number }} props.layout
  * @param {React.RefObject<HTMLCanvasElement>} props.canvas  Where taps land.
  * @param {{ width: number, height: number } | null} props.frame  The picture the program draws.
+ * @param {TouchKeyboard} props.keyboard  The engine's on-screen keyboard.
  */
-export function TouchControls({ send, layout, canvas, frame }) {
+export function TouchControls({ send, layout, canvas, frame, keyboard }) {
   const [shown, setShown] = useState(true);
   const unit = 56 * layout.size;
   const leftHanded = layout.hand === "left";
@@ -99,7 +106,7 @@ export function TouchControls({ send, layout, canvas, frame }) {
         gap: `${unit * 0.15}px`, pointerEvents: "none" }}>
         {shown && <TapButton label="Esc" unit={unit} onTap={() => keyTap("Escape").forEach(emit)} />}
         {shown && <TapButton label="Enter" unit={unit} onTap={() => keyTap("Enter").forEach(emit)} />}
-        {shown && <KeyboardButton unit={unit} emit={emit} canvas={canvas} />}
+        {shown && <KeyboardButton unit={unit} keyboard={keyboard} />}
         <TapButton label={shown ? "Hide" : "Pad"} unit={unit} onTap={() => setShown((on) => !on)} />
       </Box>
     </Box>
@@ -245,77 +252,18 @@ function TapButton({ label, unit, onTap }) {
 }
 
 /**
- * The phone's own keyboard: a tap focuses a field kept off the picture -- in
- * the tap's own gesture, the only moment a phone shows its keyboard -- and what
- * is typed there goes to the program as text, Enter, Backspace and Escape as
- * keys. The field always holds one character, so a Backspace on what looks
- * empty still has something to delete and is heard.
+ * The phone's own keyboard, the engine's (`input.showKeyboard`): shown inside
+ * the tap's own gesture, the only moment a phone shows it, and what is typed
+ * reaches the program as the keys that type it. A second tap puts it away.
  *
- * @param {{ unit: number, emit: (event: any) => void, canvas: React.RefObject<HTMLCanvasElement> }} props
+ * @param {{ unit: number, keyboard: TouchKeyboard }} props
  */
-function KeyboardButton({ unit, emit, canvas }) {
-  const field = useRef(/** @type {HTMLInputElement | null} */ (null));
-  const reset = () => {
-    const input = field.current;
-    if (!input) return;
-    input.value = " ";
-    input.setSelectionRange?.(1, 1);
-  };
-  // The field's own beforeinput, not React's: React's is put together from
-  // older events and says nothing of what kind of edit it was.
-  const emitRef = useRef(emit);
-  useEffect(() => {
-    emitRef.current = emit;
-  }, [emit]);
-  useEffect(() => {
-    const input = field.current;
-    if (!input) return undefined;
-    /** @param {InputEvent} event */
-    const typed = (event) => {
-      event.preventDefault();
-      typedEvents({ inputType: event.inputType, data: event.data }).forEach((one) => emitRef.current(one));
-      input.value = " ";
-      input.setSelectionRange?.(1, 1);
-    };
-    /** @param {KeyboardEvent} event */
-    const pressed = (event) => {
-      // A field fires no beforeinput for these, typed on a keyboard with keys.
-      if (event.key === "Enter" || event.key === "Escape" || event.key === "Tab") {
-        event.preventDefault();
-        keyTap(event.key).forEach((one) => emitRef.current(one));
-      }
-    };
-    input.addEventListener("beforeinput", typed);
-    input.addEventListener("keydown", pressed);
-    return () => {
-      input.removeEventListener("beforeinput", typed);
-      input.removeEventListener("keydown", pressed);
-    };
-  }, []);
+function KeyboardButton({ unit, keyboard }) {
   return (
-    <>
-      <TapButton label="Keys" unit={unit} onTap={() => {
-        const input = field.current;
-        if (!input) return;
-        if (document.activeElement === input) {
-          input.blur();
-          return;
-        }
-        reset();
-        input.focus();
-        // The canvas lost the focus to the field, and the engine told the
-        // program its window did; the window is still the one being typed at.
-        emit({ kind: "focus", gained: true });
-      }} />
-      <Box component="input" ref={field} type="text" aria-label="Type to the program"
-        autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false}
-        enterKeyHint="send"
-        onInput={reset}
-        onBlur={() => canvas.current?.focus()}
-        sx={{ position: "fixed", left: 0, bottom: 0, width: 1, height: 1, opacity: 0,
-          // Under 16 px, a phone zooms the page in on the field when it takes the focus.
-          fontSize: 16, border: 0, padding: 0, pointerEvents: "none" }} />
-    </>
+    <TapButton label="Keys" unit={unit} onTap={() => {
+      if (keyboard.shown()) keyboard.hide();
+      else keyboard.show();
+    }} />
   );
 }
 

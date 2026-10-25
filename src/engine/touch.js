@@ -183,35 +183,6 @@ export function keyTap(code) {
   ];
 }
 
-/**
- * What the on-screen keyboard typed, from the hidden field's `beforeinput`:
- * characters as text, a deletion as Backspace, a line break as Enter. A phone's
- * keyboard sends no key events of its own that can be trusted, so the edit the
- * field was about to make is the account of what was pressed.
- *
- * @param {{ inputType: string, data?: string | null }} event
- * @returns {InputEvent[]}
- */
-export function typedEvents(event) {
-  switch (event.inputType) {
-    case "insertText":
-    case "insertReplacementText":
-    case "insertFromPaste":
-    case "insertCompositionText":
-      return [...(event.data ?? "")].flatMap((character) => (character === "\n"
-        ? keyTap("Enter") : [{ kind: "text", text: character }]));
-    case "insertLineBreak":
-    case "insertParagraph":
-      return keyTap("Enter");
-    case "deleteContentBackward":
-    case "deleteWordBackward":
-    case "deleteSoftLineBackward":
-      return keyTap("Backspace");
-    default:
-      return [];
-  }
-}
-
 /** What a bottle's touch controls are, when its settings say nothing. */
 export const TOUCH_DEFAULTS = Object.freeze({ controls: "keys", move: "wasd", hand: "right", size: 1 });
 
