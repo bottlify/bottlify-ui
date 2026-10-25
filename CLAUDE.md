@@ -21,7 +21,8 @@ Work is listed in `TODO.md`, a local file outside git (TODO and Done, a status o
   `/debug/*` the legacy vanilla page, `/relay` the network relay (WebSocket). Every file is served
   with byte ranges: a bundle is read a block at a time.
 - `debug/` — the legacy vanilla page (needs `BOTTLIFY_SOURCE`).
-- `public/` — fonts, favicon, `config.example.json`.
+- `public/` — fonts, favicon, the home-screen icons (`icons/`, the favicon on black) and
+  `manifest.webmanifest`, `config.example.json`.
 - Local only, outside git: `design/` (the hero image's sources and briefs), `public/covers/`
   (game art), `TASK-*.md` (briefs and reports of earlier launcher work).
 

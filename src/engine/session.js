@@ -220,6 +220,16 @@ export function loadEngine() {
 }
 
 /**
+ * The engine's module if it is loaded already, for what has to be called
+ * inside a gesture (fullscreen) and cannot wait for an import; null before.
+ *
+ * @returns {any}
+ */
+export function engineNow() {
+  return engineLoaded;
+}
+
+/**
  * Whether a run started now would have sound: the settings, under the page's
  * own `?sound=0`.
  */
@@ -603,7 +613,7 @@ async function run({ bundle, media, canvas, report: show, silentInstall = false,
     }
   }, SAMPLE_MS);
 
-  const { createApp, openSpeaker } = await loadEngine().catch((e) => {
+  const engine = await loadEngine().catch((e) => {
     clearInterval(progressTimer);
     throw failure(
       "the engine did not load",
@@ -611,6 +621,7 @@ async function run({ bundle, media, canvas, report: show, silentInstall = false,
         + "served by ui/server.mjs, which serves the repository root beside it.",
     );
   });
+  const { createApp, openSpeaker, keepScreenAwake, exitFullscreen, watchFullscreen } = engine;
 
   // A disc is read here only as far as finding the program it starts: its
   // descriptors, its directories, autorun.inf and that program. The image
@@ -1053,12 +1064,11 @@ async function run({ bundle, media, canvas, report: show, silentInstall = false,
 
   // Entering fullscreen is a gesture, and the screen handed to the program
   // takes the pointer with it at once rather than on the next click.
-  const onFullscreenChange = () => {
-    if (document.fullscreenElement !== null && attached) {
-      canvas.requestPointerLock()?.catch?.(() => {});
+  const stopWatchingFullscreen = watchFullscreen((element) => {
+    if (element !== null && attached) {
+      canvas.requestPointerLock?.()?.catch?.(() => {});
     }
-  };
-  document.addEventListener("fullscreenchange", onFullscreenChange);
+  });
 
   /** @type {(() => void) | null} */
   let stopMuting = null;
@@ -1235,8 +1245,14 @@ async function run({ bundle, media, canvas, report: show, silentInstall = false,
   // a person stuck looking at black.
   const handBackTheScreen = () => {
     releasePointerLock();
-    if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
+    exitFullscreen();
+    awake.release();
   };
+
+  // A game watched rather than played -- an intro, a cutscene, a demo -- is a
+  // screen nobody touches, and a phone dims and locks one of those: the run
+  // holds it lit, as a video does, and lets it go when paused or over.
+  const awake = keepScreenAwake();
 
   app
     .run({ maxTurns: Number.MAX_SAFE_INTEGER })
@@ -1304,6 +1320,7 @@ async function run({ bundle, media, canvas, report: show, silentInstall = false,
       // left running would drain what is in the ring and then play the gap.
       // Asked for, so the speaker leaves this suspension be.
       audio?.suspend();
+      awake.pause();
       // Detached, not ignored: a paused game must not eat the keyboard, and
       // letting go also releases whatever was held down when it stopped. The
       // pointer goes the same way -- the controls on the page are the only way
@@ -1316,6 +1333,7 @@ async function run({ bundle, media, canvas, report: show, silentInstall = false,
     resume() {
       app.resume();
       audio?.resume();
+      awake.resume();
       app.input.attach(canvas, { pointerLock: true });
       attached = true;
       // Pressing resume is a request to go on playing, and nothing is captured
@@ -1343,7 +1361,8 @@ async function run({ bundle, media, canvas, report: show, silentInstall = false,
       if (painting !== null) cancelAnimationFrame(painting);
       stopMuting?.();
       await audio?.close();
-      document.removeEventListener("fullscreenchange", onFullscreenChange);
+      stopWatchingFullscreen();
+      awake.release();
       document.removeEventListener("pointerlockchange", showDrawnCursor);
       drawnCursor.remove();
       releasePointerLock();

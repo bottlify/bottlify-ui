@@ -9,7 +9,7 @@ import {
   IconButton, LinearProgress, Snackbar, Stack, Tooltip, Typography,
 } from "@mui/material";
 import { useCallback, useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { launch, loadEngine, openRunSpeaker, soundWanted } from "../engine/session.js";
+import { engineNow, launch, loadEngine, openRunSpeaker, soundWanted } from "../engine/session.js";
 import { describeCutOff, takeCutOffRun } from "../engine/blackbox.js";
 import { loadSettings, touchLayoutFor } from "../settings.js";
 import { isTouchScreen } from "../engine/touch.js";
@@ -146,6 +146,9 @@ export function PlayScreen({ bundle, media, title, onClose, onExited }) {
   // How to leave fullscreen, said each time the stage takes the screen: with
   // Escape locked for the program, one press no longer does it.
   const [fullscreenHint, setFullscreenHint] = useState(false);
+  // A browser with no fullscreen for the stage -- Safari on an iPhone, which
+  // has it only for a video -- is told the way it has: the home screen.
+  const [homeScreenHint, setHomeScreenHint] = useState(false);
 
   // Notes are a running log and the latest one replaces the last. A subsystem
   // switching itself off is not that: it holds for the whole run, and kept in
@@ -306,17 +309,24 @@ export function PlayScreen({ bundle, media, title, onClose, onExited }) {
   // Chromium-only, the lock is allowed only into fullscreen and can be
   // refused -- so neither the methods nor their answers are insisted on here.
   useEffect(() => {
-    const onFullscreenChange = () => {
-      if (document.fullscreenElement) {
-        navigator.keyboard?.lock?.(["Escape"])?.catch(() => {});
-        setFullscreenHint(true);
-      } else {
-        navigator.keyboard?.unlock?.();
-        setFullscreenHint(false);
-      }
+    let stop = null;
+    let live = true;
+    loadEngine().then((engine) => {
+      if (!live) return;
+      stop = engine.watchFullscreen((element) => {
+        if (element) {
+          navigator.keyboard?.lock?.(["Escape"])?.catch(() => {});
+          setFullscreenHint(true);
+        } else {
+          navigator.keyboard?.unlock?.();
+          setFullscreenHint(false);
+        }
+      });
+    }, () => {});
+    return () => {
+      live = false;
+      stop?.();
     };
-    document.addEventListener("fullscreenchange", onFullscreenChange);
-    return () => document.removeEventListener("fullscreenchange", onFullscreenChange);
   }, []);
 
   // The capture is worth saying out loud the first time it happens windowed:
@@ -327,7 +337,7 @@ export function PlayScreen({ bundle, media, title, onClose, onExited }) {
     const onPointerLockChange = () => {
       if (
         document.pointerLockElement === canvasRef.current
-        && !document.fullscreenElement
+        && !engineNow()?.fullscreenElement()
         && !captureHintGiven.current
       ) {
         captureHintGiven.current = true;
@@ -404,8 +414,14 @@ export function PlayScreen({ bundle, media, title, onClose, onExited }) {
   };
   // The stage fills the screen and the picture is scaled to it; the game
   // keeps its resolution.
+  // Asked inside the click: a browser grants fullscreen to a gesture only.
   const handleFullscreen = () => {
-    stageRef.current?.requestFullscreen?.().catch(() => {});
+    const box = stageRef.current;
+    const engine = engineNow();
+    if (!box || !engine) return;
+    engine.requestFullscreen(box).then((answer) => {
+      if (answer.reason === "unsupported") setHomeScreenHint(true);
+    });
   };
 
   return (
@@ -503,6 +519,8 @@ export function PlayScreen({ bundle, media, title, onClose, onExited }) {
             // Fullscreen, the stage is the screen: no gutter, and black around
             // the picture where the aspect leaves room.
             "&:fullscreen": { p: 0, bgcolor: "#000" },
+            // Safari before its standard name, an iPad's among them.
+            "&:-webkit-full-screen": { p: 0, bgcolor: "#000" },
           }}
         >
           {touch && started && controls.current?.app
@@ -543,6 +561,17 @@ export function PlayScreen({ bundle, media, title, onClose, onExited }) {
           >
             <Alert severity="info" onClose={() => setFullscreenHint(false)}>
               Press and hold Esc to leave fullscreen.
+            </Alert>
+          </Snackbar>
+          <Snackbar
+            open={homeScreenHint}
+            autoHideDuration={12000}
+            onClose={(_event, reason) => reason !== "clickaway" && setHomeScreenHint(false)}
+            anchorOrigin={{ vertical: "top", horizontal: "center" }}
+          >
+            <Alert severity="info" onClose={() => setHomeScreenHint(false)}>
+              This browser has no fullscreen for a game. To play on the whole screen, add
+              Bottlify to the home screen (Share, then Add to Home Screen) and open it from there.
             </Alert>
           </Snackbar>
           {/* The box the game will draw in. Before the first frame it holds the
