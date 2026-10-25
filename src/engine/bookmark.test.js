@@ -6,24 +6,27 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { gameManifest, iconPlacement, showGame } from "./bookmark.js";
+import { LAUNCHER_HEAD, keptHead, servedHead, showGame } from "./bookmark.js";
 
-test("an old icon is scaled by whole pixels with a margin; a large one fits", () => {
-  assert.deepEqual(iconPlacement(48, 180, 0.72), { size: 96, at: 42 }, "48 twice is 96: 144 would not fit");
-  assert.deepEqual(iconPlacement(32, 180, 0.72), { size: 128, at: 26 });
-  assert.deepEqual(iconPlacement(48, 64, 0.9), { size: 48, at: 8 }, "never below its own size");
-  assert.deepEqual(iconPlacement(256, 180, 0.72), { size: 130, at: 25 });
+test("a bottle the server holds is named and drawn by its own files from the start", () => {
+  assert.deepEqual(servedHead({ id: "q3", title: "A game" }), { title: "A game",
+    manifest: "/bundles/q3/home.webmanifest", tabIcon: "/bundles/q3/icon-64.png",
+    touchIcon: "/bundles/q3/icon-180.png" });
 });
 
-test("the manifest opens the game, named as it", () => {
-  const manifest = gameManifest({ title: "A game", id: "a b", origin: "https://host:5180",
-    icons: [{ src: "data:image/png;base64,AA", size: 192 }] });
-  assert.equal(manifest.name, "A game");
-  assert.equal(manifest.short_name, "A game");
-  assert.equal(manifest.start_url, "https://host:5180/play/a%20b");
-  assert.equal(manifest.scope, "https://host:5180/");
-  assert.equal(manifest.display, "fullscreen");
-  assert.deepEqual(manifest.icons, [{ src: "data:image/png;base64,AA", sizes: "192x192", type: "image/png" }]);
+test("a bottle kept in this browser carries a manifest that opens it, with the launcher's icons", () => {
+  const was = globalThis.location;
+  Object.defineProperty(globalThis, "location", { value: { origin: "https://host:5180" }, configurable: true });
+  try {
+    const head = keptHead({ id: "mine", title: "Mine" });
+    assert.equal(head.title, "Mine");
+    const manifest = JSON.parse(decodeURIComponent(head.manifest.slice("data:application/manifest+json,".length)));
+    assert.equal(manifest.start_url, "https://host:5180/play/mine");
+    assert.deepEqual(manifest.icons.map((/** @type {any} */ icon) => icon.src),
+      ["https://host:5180/icons/icon-192.png", "https://host:5180/icons/icon-512.png"]);
+  } finally {
+    Object.defineProperty(globalThis, "location", { value: was, configurable: true });
+  }
 });
 
 /** A head with the launcher's own tags. */
@@ -53,15 +56,14 @@ function page() {
 
 test("while a game plays the head says the game, and leaving puts the launcher's back", () => {
   const head = page();
-  const undo = showGame(/** @type {any} */ (head), { title: "A game", tabIcon: "data:tab",
-    touchIcon: "data:home", manifest: { name: "A game" } });
+  const undo = showGame(/** @type {any} */ (head), { title: "A game", tabIcon: "/bundles/q3/icon-64.png",
+    touchIcon: "/bundles/q3/icon-180.png", manifest: "/bundles/q3/home.webmanifest" });
   assert.equal(head.title, "A game");
   assert.equal(head.attribute('meta[name="apple-mobile-web-app-title"]', "content"), "A game");
-  assert.equal(head.attribute('link[rel="icon"]', "href"), "data:tab");
+  assert.equal(head.attribute('link[rel="icon"]', "href"), "/bundles/q3/icon-64.png");
   assert.equal(head.attribute('link[rel="icon"]', "type"), "image/png");
-  assert.equal(head.attribute('link[rel="apple-touch-icon"]', "href"), "data:home");
-  assert.equal(head.attribute('link[rel="manifest"]', "href"),
-    `data:application/manifest+json,${encodeURIComponent('{"name":"A game"}')}`);
+  assert.equal(head.attribute('link[rel="apple-touch-icon"]', "href"), "/bundles/q3/icon-180.png");
+  assert.equal(head.attribute('link[rel="manifest"]', "href"), "/bundles/q3/home.webmanifest");
   undo();
   assert.equal(head.title, "Bottlify");
   assert.equal(head.attribute('link[rel="icon"]', "href"), "/favicon.svg");
@@ -69,12 +71,34 @@ test("while a game plays the head says the game, and leaving puts the launcher's
   assert.equal(head.attribute('link[rel="manifest"]', "href"), "/manifest.webmanifest");
 });
 
-test("a game with no icon yet keeps the launcher's icons and still names itself", () => {
+test("leaving a page opened by a game's address puts the launcher's head, not the game's", () => {
+  // The server wrote the game into the head; the library is the launcher's.
   const head = page();
-  const undo = showGame(/** @type {any} */ (head), { title: "A game" });
+  showGame(/** @type {any} */ (head), servedHead({ id: "q3", title: "A game" }))();
+  const undo = showGame(/** @type {any} */ (head), servedHead({ id: "q3", title: "A game" }));
+  undo();
+  assert.equal(head.title, LAUNCHER_HEAD.title);
+  assert.equal(head.attribute('meta[name="apple-mobile-web-app-title"]', "content"), "Bottlify");
+  assert.equal(head.attribute('link[rel="icon"]', "href"), LAUNCHER_HEAD.tabIcon);
+  assert.equal(head.attribute('link[rel="icon"]', "type"), "image/svg+xml");
+  assert.equal(head.attribute('link[rel="apple-touch-icon"]', "href"), LAUNCHER_HEAD.touchIcon);
+  assert.equal(head.attribute('link[rel="manifest"]', "href"), LAUNCHER_HEAD.manifest);
+});
+
+test("a game with only a title leaves the icons as they are", () => {
+  const head = page();
+  showGame(/** @type {any} */ (head), { title: "A game" });
   assert.equal(head.title, "A game");
   assert.equal(head.attribute('link[rel="icon"]', "href"), "/favicon.svg");
   assert.equal(head.attribute('link[rel="manifest"]', "href"), "/manifest.webmanifest");
-  undo();
-  assert.equal(head.title, "Bottlify");
+});
+
+test("the launcher's head put back is the one index.html has", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const html = await readFile(new URL("../../index.html", import.meta.url), "utf8");
+  assert.match(html, new RegExp(`<title>${LAUNCHER_HEAD.title}</title>`));
+  assert.match(html, new RegExp(`<link rel="icon" type="${LAUNCHER_HEAD.tabIconType.replace("+", "\\+")}" href="${LAUNCHER_HEAD.tabIcon}"`));
+  assert.match(html, new RegExp(`<link rel="manifest" href="${LAUNCHER_HEAD.manifest}"`));
+  assert.match(html, new RegExp(`<link rel="apple-touch-icon" href="${LAUNCHER_HEAD.touchIcon}"`));
+  assert.match(html, new RegExp(`<meta name="apple-mobile-web-app-title" content="${LAUNCHER_HEAD.title}"`));
 });

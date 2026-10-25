@@ -11,7 +11,7 @@ import {
 import { useCallback, useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { engineNow, launch, loadEngine, openRunSpeaker, soundWanted } from "../engine/session.js";
 import { describeCutOff, takeCutOffRun } from "../engine/blackbox.js";
-import { MANIFEST_SIZES, TAB_SIZE, TOUCH_SIZE, drawIcon, gameManifest, showGame } from "../engine/bookmark.js";
+import { drawIcon, keptHead, servedHead, showGame } from "../engine/bookmark.js";
 import { loadSettings, touchLayoutFor } from "../settings.js";
 import { isTouchScreen } from "../engine/touch.js";
 import { TouchControls } from "./TouchControls.jsx";
@@ -70,21 +70,6 @@ const STAGE_STEP = { fetch: 1, init: 2, loading: 3, installing: 3 };
 const HEADER_HIDES_MS = 5000;
 /** How long the header stays after the pointer leaves it. */
 const HEADER_LEAVE_MS = 1200;
-
-/**
- * A game's icons: the tab's, and the home screen's with the bottle beside it.
- *
- * @param {NonNullable<import("../engine/session.js").SessionReport["icon"]>} icon
- */
-async function drawGameIcons(icon) {
-  const badge = new Image();
-  badge.src = "/favicon.svg";
-  const mark = await badge.decode().then(() => badge, () => null);
-  const [tab, home, ...sized] = await Promise.all([drawIcon(icon, TAB_SIZE, null),
-    drawIcon(icon, TOUCH_SIZE, mark), ...MANIFEST_SIZES.map((size) => drawIcon(icon, size, mark))]);
-  return { tab, touch: home,
-    sized: sized.map((src, index) => ({ src, size: MANIFEST_SIZES[index] })) };
-}
 
 /** How long a speaker opened with no press in hand is given to start on its own. */
 const STARTS_ALONE_MS = 300;
@@ -195,33 +180,30 @@ export function PlayScreen({ bundle, media, title, onClose, onExited }) {
     if (record) setCutOff(describeCutOff(record));
   }, [bundle?.id]);
 
-  // While a game plays, the tab, a bookmark and a home-screen icon are the
-  // game's: its title at once, its own icon once the run has read its
-  // executable (`bookmark.js`).
+  // While a game is open, the tab, a bookmark and a home-screen icon are the
+  // game's (`bookmark.js`): one the server holds from the first moment, one
+  // kept in this browser by its title, and by its icon once a run has read it.
   const icon = state.icon ?? null;
   const gameId = bundle?.id ?? null;
   const gameTitle = bundle?.title ?? null;
+  const kept = bundle?.local === true;
   useEffect(() => {
     if (!gameId || !gameTitle) return undefined;
-    const id = gameId;
-    const name = gameTitle;
-    const origin = window.location.origin;
-    let undo = showGame(document, { title: name, manifest: gameManifest({ title: name, id, origin,
-      icons: MANIFEST_SIZES.map((size) => ({ src: `${origin}/icons/icon-${size}.png`, size })) }) });
+    const game = { id: gameId, title: gameTitle };
+    let undo = showGame(document, kept ? keptHead(game) : servedHead(game));
     let live = true;
-    if (icon) {
-      drawGameIcons(icon).then(({ tab, touch: home, sized }) => {
+    if (kept && icon) {
+      Promise.all([drawIcon(icon, 64), drawIcon(icon, 180)]).then(([tab, home]) => {
         if (!live) return;
         undo();
-        undo = showGame(document, { title: name, tabIcon: tab, touchIcon: home,
-          manifest: gameManifest({ title: name, id, origin, icons: sized }) });
+        undo = showGame(document, { ...keptHead(game), tabIcon: tab, touchIcon: home });
       }, () => {});
     }
     return () => {
       live = false;
       undo();
     };
-  }, [gameId, gameTitle, icon]);
+  }, [gameId, gameTitle, kept, icon]);
 
   // A run is keyed by its bottle's id, not by the object: a page opened by its
   // link is handed the bottle twice, read by id and then found in the library's

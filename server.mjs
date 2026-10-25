@@ -10,7 +10,11 @@ import { createReadStream, readFileSync } from "node:fs";
 import { readFile, stat, readdir } from "node:fs/promises";
 import { dirname, extname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import { deflateSync } from "node:zlib";
 import { createRelayServer, permits } from "@bottlify/networking/server";
+import { programIcon } from "@bottlify/core/icon";
+import { openBundle } from "@bottlify/core/bundle/node";
+import { ICON_SIZES, headForBottle, homeManifest, iconFile, iconPath } from "./src/engine/home-screen.js";
 
 /**
  * Dev server for the UI.
@@ -158,6 +162,101 @@ function certificateIn(dir){
 
 const tls = TLS_DIR ? certificateIn(TLS_DIR) : null;
 
+/** A bottle's id as it may appear in an address: nothing that climbs out of its directory. */
+const BOTTLE_ID = /^[A-Za-z0-9._-]+$/;
+
+/** @param {string} id @returns {Promise<any>} the bottle's manifest under BUNDLES_DIR, or null */
+async function bottleManifest(id){
+  if (!BOTTLE_ID.test(id) || id.startsWith(".")) return null;
+  try {
+    return JSON.parse(await readFile(join(BUNDLES, id, "manifest.json"), "utf8"));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Each bottle's program icon, read once from its executable inside its bundle
+ * and kept for as long as that bundle is the same file.
+ *
+ * @type {Map<string, Promise<any>>}
+ */
+const programIcons = new Map();
+
+/** @param {string} id @returns {Promise<any>} the icon, or null for none */
+async function bottleIcon(id){
+  const manifest = await bottleManifest(id);
+  if (!manifest?.entry) return null;
+  const path = join(BUNDLES, id, manifest.bundle?.file ?? "bundle.btl");
+  const info = await stat(path).catch(()=>null);
+  if (!info) return null;
+  const key = `${id}:${info.mtimeMs}`;
+  if (!programIcons.has(key)){
+    programIcons.set(key, (async()=>{
+      const bundle = await openBundle(path);
+      try {
+        return programIcon(new Uint8Array(await bundle.read(manifest.entry)));
+      } finally {
+        await bundle.close();
+      }
+    })().catch(()=>null));
+  }
+  return programIcons.get(key);
+}
+
+/**
+ * A bottle's bookmark: the manifest a home screen opens it by and its
+ * program's icon at the sizes a tab and a home screen ask for, answered from
+ * the bundle before the bottle is ever started; and its address's page with a
+ * head that already names it. A bottle whose program has no icon is drawn as
+ * the launcher.
+ *
+ * @returns {Promise<boolean>} whether the request was one of these and was answered
+ */
+async function answerBookmark(req, res, pathname){
+  if (req.method !== "GET" && req.method !== "HEAD") return false;
+  const file = /^\/bundles\/([^/]+)\/(home\.webmanifest|icon-(\d+)\.png)$/.exec(pathname);
+  if (file){
+    const [, id, name, size] = file;
+    const manifest = await bottleManifest(id);
+    if (!manifest) return false;
+    if (name === "home.webmanifest"){
+      res.writeHead(200, { ...commonHeaders(MIME[".webmanifest"]), "Cache-Control": "no-cache" })
+        .end(JSON.stringify(homeManifest({ id, title: manifest.title ?? id,
+          icons: [192, 512].map(each=>({ src: iconPath(id, each), size: each })) })));
+      return true;
+    }
+    const box = Number(size);
+    if (!ICON_SIZES.includes(box)) return false;
+    const icon = await bottleIcon(id);
+    if (!icon){
+      res.writeHead(302, { Location: `/icons/icon-${box <= 180 ? 180 : box}.png` }).end();
+      return true;
+    }
+    const png = iconFile(icon, box, deflateSync);
+    res.writeHead(200, { ...commonHeaders(MIME[".png"]), "Content-Length": png.length,
+      "Cache-Control": "no-cache" }).end(png);
+    return true;
+  }
+  const play = /^\/play\/([^/]+)$/.exec(pathname);
+  if (play){
+    const id = (()=>{
+      try {
+        return decodeURIComponent(play[1]);
+      } catch {
+        return "";
+      }
+    })();
+    const manifest = await bottleManifest(id);
+    const html = manifest && await readFile(resolve(DIST, "index.html"), "utf8").catch(()=>null);
+    if (!html) return false;
+    res.writeHead(200, { ...commonHeaders("text/html; charset=utf-8"), "Cache-Control": "no-cache" })
+      .end(headForBottle(html, { id, title: manifest.title ?? id }));
+    return true;
+  }
+  return false;
+}
+
 const handler = async(req, res)=>{
   const url = new URL(req.url ?? "/", "http://localhost");
   const pathname = url.pathname;
@@ -208,6 +307,8 @@ const handler = async(req, res)=>{
       .end(JSON.stringify(ids));
     return;
   }
+
+  if (await answerBookmark(req, res, pathname)) return;
 
   // Built app assets first, so dist/ wins over duplicated repo-root files.
   const distAbs = joined(pathname, DIST);
