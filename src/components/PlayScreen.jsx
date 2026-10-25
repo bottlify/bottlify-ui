@@ -460,7 +460,16 @@ export function PlayScreen({ bundle, media, title, onClose, onExited }) {
     shown: () => controls.current?.app?.input.keyboardShown?.() ?? false,
   }), []);
 
+  /** The press a page opened by its link waits for: the speaker opened inside it. */
+  const pressStart = () => {
+    openSpeakerNow();
+    setPressed(true);
+  };
   const handlePlay = () => {
+    if (!pressed) {
+      pressStart();
+      return;
+    }
     if (stage === "paused") {
       controls.current?.resume();
       return;
@@ -568,7 +577,7 @@ export function PlayScreen({ bundle, media, title, onClose, onExited }) {
           <Transport
             label={running ? "pause" : stage === "paused" ? "resume" : "play"}
             icon={running ? "pause" : "play"}
-            disabled={!(started || over)}
+            disabled={pressed && !(started || over)}
             onClick={running ? () => controls.current?.pause() : handlePlay}
           />
           {/* Its arrows reach the corners of the glyph's box where the others
@@ -618,7 +627,9 @@ export function PlayScreen({ bundle, media, title, onClose, onExited }) {
               keyboard={keyboard}
             />
           )}
-          {touch && portrait && (
+          {/* Asked only before the game's first frame: once it plays, the
+            person holds the phone as they like. */}
+          {touch && portrait && !drawn && !over && (
             <Box sx={{ position: "absolute", inset: 0, zIndex: 4, display: "flex", flexDirection: "column",
               alignItems: "center", justifyContent: "center", gap: 2, p: 3, textAlign: "center",
               bgcolor: "rgba(0,0,0,0.85)" }}>
@@ -709,12 +720,9 @@ export function PlayScreen({ bundle, media, title, onClose, onExited }) {
             {!pressed && (
               <Box sx={{ position: "absolute", inset: 0, zIndex: 1, display: "flex",
                 alignItems: "center", justifyContent: "center" }}>
-                <Button variant="contained" size="large" onClick={() => {
-                  openSpeakerNow();
-                  setPressed(true);
-                }}
-                startIcon={<span className="glyphicon glyphicon-play" />}
-                sx={{ px: 4, py: 1.5, fontWeight: 700, bgcolor: "text.primary", color: "#1e2022" }}>
+                <Button variant="contained" size="large" onClick={pressStart}
+                  startIcon={<span className="glyphicon glyphicon-play" />}
+                  sx={{ px: 4, py: 1.5, fontWeight: 700, bgcolor: "text.primary", color: "#1e2022" }}>
                   Press to Start
                 </Button>
               </Box>
