@@ -17,8 +17,8 @@
  * engine's own test page does.
  *
  * The engine runs in a worker the engine's own `createApp` spawns, and this
- * page keeps what only a page has: the audio context that reads the ring, the
- * cursor, and the report. The worker opens its own GPU device and presents
+ * page keeps what only a page has: the speaker (the engine's `openSpeaker`,
+ * opened inside the gesture that starts the run), the cursor, and the report. The worker opens its own GPU device and presents
  * straight into the canvas it was handed; this thread does nothing per frame,
  * and a click here is answered whatever the guest is doing. `?host=thread`
  * runs the same engine on this thread instead, for a comparison.
@@ -196,56 +196,49 @@ function failure(reason, message, trace) {
   return error;
 }
 
+/** The engine's module, imported once and kept: the speaker is opened from it inside a gesture. */
+/** @type {Promise<any> | null} */
+let engineModule = null;
+/** @type {any} */
+let engineLoaded = null;
+
 /**
- * The audio thread, or the reason there will be no sound.
+ * Imports the engine, once. A page that will start a run calls it early, so
+ * the engine is at hand by the time a person's gesture opens the speaker.
  *
- * Started before the engine is built, because whether it started is what the
- * engine is told: a program's play cursor follows what the device really
- * consumed only when something is really consuming it, and claiming that with
- * no worklet running would leave the program waiting on a cursor that never
- * moves.
- *
- * On a cross-origin isolated page the worklet reads the engine's track table
- * in shared memory; elsewhere the engine posts its mix to the worklet down a
- * channel of their own, and the worklet says back what it played.
- *
- * @param {(report: SessionReport) => void} report
- * @returns {Promise<AudioContext | null>}
+ * @returns {Promise<any>}
  */
-async function openAudio(report) {
-  try {
-    const context = new AudioContext({ latencyHint: "interactive" });
-    await context.audioWorklet.addModule(WORKLET_URL);
-
-    // A context begins suspended and is only allowed to start off the back of a
-    // gesture; pressing Play is that gesture. The state is what says whether it
-    // took, not the promise -- a context the autoplay policy has blocked leaves
-    // `resume` pending indefinitely, and awaiting it would hang the launch on a
-    // question about sound.
-    context.resume().catch(() => {});
-    const running = await new Promise((settle) => {
-      const decide = () => settle(context.state === "running");
-      const timer = setTimeout(decide, AUDIO_START_MS);
-      context.onstatechange = () => {
-        if (context.state !== "suspended") {
-          clearTimeout(timer);
-          decide();
-        }
-      };
-    });
-    context.onstatechange = null;
-
-    if (!running) {
-      report({ off: `No sound: the audio context stayed ${context.state}.` });
-      await context.close();
-      return null;
-    }
-    return context;
-  } catch (e) {
-    report({ off: `No sound: ${e.message}` });
-    return null;
-  }
+export function loadEngine() {
+  engineModule ??= import(/* @vite-ignore */ ENGINE_URL).then((loaded) => {
+    engineLoaded = loaded;
+    return loaded;
+  }, (e) => {
+    engineModule = null;
+    throw e;
+  });
+  return engineModule;
 }
+
+/**
+ * Whether a run started now would have sound: the settings, under the page's
+ * own `?sound=0`.
+ */
+export function soundWanted() {
+  return loadSettings().sound && new URLSearchParams(window.location.search).get("sound") !== "0";
+}
+
+/**
+ * The run's speaker, opened now: call it inside the gesture that starts the
+ * run, before any await -- a phone starts sound there and nowhere else. Null
+ * when no sound is wanted or the engine is not loaded yet.
+ *
+ * @returns {any}
+ */
+export function openRunSpeaker() {
+  if (!soundWanted() || !engineLoaded?.openSpeaker) return null;
+  return engineLoaded.openSpeaker({ worklet: WORKLET_URL });
+}
+
 
 /**
  * Fetches a whole resource, reporting how much of it has arrived.
@@ -463,6 +456,8 @@ function requestedLog(settings) {
  * @param {(report: SessionReport) => void} options.report
  * @param {boolean} [options.silentInstall]  Run an installer in its silent mode, with no
  *     dialogs: for installs with no screen. The launcher has one, and leaves it off.
+ * @param {any} [options.speaker]  The speaker `openRunSpeaker` opened inside the gesture
+ *     that started the run; the run owns it from here and closes it.
  * @returns {Promise<SessionControls>}
  */
 export async function launch(options) {
@@ -471,6 +466,8 @@ export async function launch(options) {
     return await run(options, box);
   } catch (e) {
     box.end();
+    // Opened for a run that never got as far as playing; closing twice is nothing.
+    options.speaker?.close();
     throw e;
   }
 }
@@ -516,7 +513,7 @@ function openBox(bundle) {
  * @param {Parameters<typeof launch>[0]} options
  * @param {ReturnType<typeof openBox>} box
  */
-async function run({ bundle, media, canvas, report: show, silentInstall = false }, box) {
+async function run({ bundle, media, canvas, report: show, silentInstall = false, speaker = null }, box) {
   /** @param {SessionReport} patch */
   const report = (patch) => {
     if (patch.stage || patch.detail) {
@@ -606,7 +603,7 @@ async function run({ bundle, media, canvas, report: show, silentInstall = false 
     }
   }, SAMPLE_MS);
 
-  const { createApp } = await import(/* @vite-ignore */ ENGINE_URL).catch((e) => {
+  const { createApp, openSpeaker } = await loadEngine().catch((e) => {
     clearInterval(progressTimer);
     throw failure(
       "the engine did not load",
@@ -685,29 +682,22 @@ async function run({ bundle, media, canvas, report: show, silentInstall = false 
     report({ off: "No video decoder: switched off in settings." });
   }
 
-  const audio = settings.sound ? await openAudio(report) : null;
-  // Without shared memory the engine posts its mix to the worklet: one end of
-  // this channel goes to the engine with the options, the other to the
-  // worklet once it exists.
-  const soundChannel = audio && !globalThis.crossOriginIsolated ? new MessageChannel() : null;
+  // The speaker the gesture opened; one opened here, past every await, runs
+  // only where the browser lets a page that was clicked once start sound
+  // whenever it likes -- which is what `ready` says.
+  let audio = settings.sound
+    ? speaker ?? openSpeaker?.({ worklet: WORKLET_URL }) ?? null
+    : (await speaker?.close(), null);
+  if (audio) {
+    const { running, reason } = await audio.ready(AUDIO_START_MS);
+    if (!running) {
+      report({ off: `No sound: ${reason}.` });
+      await audio.close();
+      audio = null;
+    }
+  }
   if (!settings.sound) {
     report({ off: "No sound: switched off in settings." });
-  }
-
-  // A context the browser suspended on its own -- the output device was
-  // switched, the machine slept -- stops draining the ring, and the engine,
-  // told something drains it, then waits on a play cursor nobody moves: the
-  // whole run hangs with no visible cause. So an unasked-for suspension is
-  // resumed. A suspension this launcher asked for (pausing the run) is left
-  // alone, which `wantAudio` marks. Not a browser signal reaching the guest --
-  // the guest never learns of it -- only the speaker being kept alive.
-  let wantAudio = true;
-  if (audio) {
-    audio.onstatechange = () => {
-      if (wantAudio && audio.state !== "running" && audio.state !== "closed") {
-        audio.resume().catch(() => {});
-      }
-    };
   }
 
   report({
@@ -922,11 +912,10 @@ async function run({ bundle, media, canvas, report: show, silentInstall = false 
     hooks,
     sidecarHooks,
     audio: {
-      drained: audio !== null,
-      port: soundChannel?.port2,
-      // The device's own rate, so nothing between the mixer and the speakers
-      // has to resample.
-      sampleRate: audio?.sampleRate,
+      // Something drains the ring, at the device's own rate so nothing between
+      // the mixer and the speakers resamples, and the port for the mix where
+      // memory is not shared.
+      ...(audio ? audio.audioOptions() : { drained: false }),
       // A run without the hosted MPEG provider, for comparison: the program
       // then decodes with the library it ships.
       mp3: query.get("mp3") !== "off",
@@ -1071,41 +1060,18 @@ async function run({ bundle, media, canvas, report: show, silentInstall = false 
   };
   document.addEventListener("fullscreenchange", onFullscreenChange);
 
-  /** @type {AudioWorkletNode | null} */
-  let speaker = null;
   /** @type {(() => void) | null} */
   let stopMuting = null;
   if (audio) {
     try {
-      const { table } = app.audio.memory();
-      const { channels } = app.audio.format();
-      speaker = new AudioWorkletNode(audio, "bottlify-output", {
-        outputChannelCount: [channels],
-        processorOptions: soundChannel ? { channels } : { table, channels },
-      });
-      if (soundChannel) {
-        speaker.port.postMessage({ type: "feed", port: soundChannel.port1 }, [soundChannel.port1]);
-      } else {
-        // Each process started beside another plays into a table of its own
-        // (`sound-table`); the speaker mixes every one with the run's, as two
-        // films playing at once, and drops it when the process is gone.
-        const node = speaker;
-        app.on("sound-table", (/** @type {{ id: number, table: SharedArrayBuffer }} */ event) =>
-          node.port.postMessage({ type: "table", id: event.id, table: event.table }));
-        app.on("sound-table-closed", (/** @type {{ id: number }} */ event) =>
-          node.port.postMessage({ type: "untable", id: event.id }));
-      }
-      // A gain on the way out so the page can silence or turn down what is
-      // heard without touching the engine: the guest keeps running, its
-      // cursors keep advancing, nothing about the program changes -- this is
-      // only whether and how loud the speaker is fed. When the page goes to
-      // the background and the person asked for it, the output is muted; the
-      // guest never learns that the tab is hidden, which is a page's business
-      // and not the program's, and the same is true of the header's own mute
-      // and volume.
-      const outputGain = audio.createGain();
-      speaker.connect(outputGain);
-      outputGain.connect(audio.destination);
+      audio.connect(app);
+      // The page silences or turns down what is heard without touching the
+      // engine: the guest keeps running and its cursors keep advancing. When
+      // the page goes to the background and the person asked for it, the
+      // output is muted; the guest never learns that the tab is hidden, which
+      // is a page's business and not the program's, and the same is true of
+      // the header's own mute and volume.
+      const speaking = audio;
       const applyGain = () => {
         // Read live off the store rather than kept in a variable, so a change
         // from the header takes effect without a restart and a muted state
@@ -1113,7 +1079,7 @@ async function run({ bundle, media, canvas, report: show, silentInstall = false 
         // was assembled around.
         const current = loadSettings();
         const silent = current.muted || (current.muteWhenHidden && document.hidden);
-        outputGain.gain.value = silent ? 0 : current.volume;
+        speaking.volume(silent ? 0 : current.volume);
       };
       applyGain();
       document.addEventListener("visibilitychange", applyGain);
@@ -1320,7 +1286,7 @@ async function run({ bundle, media, canvas, report: show, silentInstall = false 
     frames: () => app.presented().then((shown) => shown.count),
     report,
     canvas,
-    audio: () => (audio ? { state: audio.state, sampleRate: audio.sampleRate } : null),
+    audio: () => (audio ? { state: audio.state(), sampleRate: audio.context.sampleRate } : null),
     // What actually reached the canvas, so a blink can be matched against it.
     presented: () => app.presented().then((shown) => shown.history),
   };
@@ -1336,8 +1302,7 @@ async function run({ bundle, media, canvas, report: show, silentInstall = false 
       app.pause();
       // Suspended, not muted: a paused guest writes no frames, and a worklet
       // left running would drain what is in the ring and then play the gap.
-      // Marked wanted-off so the state handler leaves this suspension be.
-      wantAudio = false;
+      // Asked for, so the speaker leaves this suspension be.
       audio?.suspend();
       // Detached, not ignored: a paused game must not eat the keyboard, and
       // letting go also releases whatever was held down when it stopped. The
@@ -1350,7 +1315,6 @@ async function run({ bundle, media, canvas, report: show, silentInstall = false 
     },
     resume() {
       app.resume();
-      wantAudio = true;
       audio?.resume();
       app.input.attach(canvas, { pointerLock: true });
       attached = true;
@@ -1378,8 +1342,6 @@ async function run({ bundle, media, canvas, report: show, silentInstall = false 
       clearInterval(progressTimer);
       if (painting !== null) cancelAnimationFrame(painting);
       stopMuting?.();
-      speaker?.port.postMessage("stop");
-      speaker?.disconnect();
       await audio?.close();
       document.removeEventListener("fullscreenchange", onFullscreenChange);
       document.removeEventListener("pointerlockchange", showDrawnCursor);

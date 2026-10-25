@@ -9,7 +9,7 @@ import {
   IconButton, LinearProgress, Snackbar, Stack, Tooltip, Typography,
 } from "@mui/material";
 import { useCallback, useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { launch } from "../engine/session.js";
+import { launch, loadEngine, openRunSpeaker, soundWanted } from "../engine/session.js";
 import { describeCutOff, takeCutOffRun } from "../engine/blackbox.js";
 import { loadSettings, touchLayoutFor } from "../settings.js";
 import { isTouchScreen } from "../engine/touch.js";
@@ -65,6 +65,22 @@ const STAGE_STEP = { fetch: 1, init: 2, loading: 3, installing: 3 };
  * @param {() => void} props.onClose
  * @param {(app: any, code: number) => void} [props.onExited]  The run is over; read what it left.
  */
+/** How long a speaker opened with no press in hand is given to start on its own. */
+const STARTS_ALONE_MS = 300;
+
+/**
+ * Whether a speaker opened outside a gesture starts anyway.
+ *
+ * @param {any} speaker
+ * @returns {Promise<boolean>}
+ */
+async function startsAlone(speaker) {
+  for (let waited = 0; speaker.state() !== "running" && waited < STARTS_ALONE_MS; waited += 50) {
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  return speaker.state() === "running";
+}
+
 export function PlayScreen({ bundle, media, title, onClose, onExited }) {
   const canvasRef = useRef(null);
   const stageRef = useRef(null);
@@ -89,10 +105,28 @@ export function PlayScreen({ bundle, media, title, onClose, onExited }) {
   const [showTrace, setShowTrace] = useState(false);
   // A page opened by a link has had no click yet, and the browser will not
   // start its sound without one: the run waits for a press on the canvas. One
-  // reached through the library was clicked into, and starts at once. A
-  // browser that cannot say is taken at its word that sound may start.
+  // reached through the library was clicked into, and starts at once -- unless
+  // its browser wants the press itself for sound, as a phone's does, which the
+  // run finds out and then waits for the press too. A browser that cannot say
+  // is taken at its word that sound may start.
   const [pressed, setPressed] = useState(
     () => /** @type {any} */ (navigator).userActivation?.hasBeenActive ?? true);
+  // The speaker, opened inside the press that starts a run (`openRunSpeaker`)
+  // and handed to that run, which owns it from then on.
+  const speakerRef = useRef(/** @type {any} */ (null));
+  const openSpeakerNow = () => {
+    speakerRef.current?.close();
+    speakerRef.current = openRunSpeaker();
+  };
+  // Imported before anyone presses anything, so the press finds the engine at
+  // hand; and a speaker no run took is closed with the page.
+  useEffect(() => {
+    loadEngine().catch(() => {});
+    return () => {
+      speakerRef.current?.close();
+      speakerRef.current = null;
+    };
+  }, []);
   // The pixel box the game's picture occupies -- the canvas's own box. Before
   // the first frame there is no frame to take a size from, so it is the
   // display the launcher configured, fitted to the stage the same way; the
@@ -142,7 +176,11 @@ export function PlayScreen({ bundle, media, title, onClose, onExited }) {
   // list, and restarting for the second object started a second engine beside
   // the first while the first was still going down.
   const bundleId = bundle?.id ?? null;
-  const startRun = useEffectEvent(() => launch({ bundle, media, canvas: canvasRef.current, report }));
+  const startRun = useEffectEvent(() => {
+    const speaker = speakerRef.current;
+    speakerRef.current = null;
+    return launch({ bundle, media, canvas: canvasRef.current, report, speaker });
+  });
 
   useEffect(() => {
     if ((bundleId === null && !media) || !pressed) return undefined;
@@ -153,8 +191,27 @@ export function PlayScreen({ bundle, media, title, onClose, onExited }) {
     });
     setShowTrace(false);
 
-    startRun()
+    // Started with no press to open the speaker in: one opened now runs only
+    // where the browser lets a page that was clicked once start sound when it
+    // likes. Where it does not, the run waits for Press to Start, as on a page
+    // opened by its link.
+    const begin = async () => {
+      if (!speakerRef.current && soundWanted()) {
+        await loadEngine().catch(() => null);
+        const trial = openRunSpeaker();
+        if (trial && !(await startsAlone(trial))) {
+          await trial.close();
+          if (live) setPressed(false);
+          return null;
+        }
+        speakerRef.current = trial;
+      }
+      return live ? startRun() : null;
+    };
+
+    begin()
       .then((session) => {
+        if (!session) return;
         controls.current = session;
         // Unmounted, or stopped, while the launch was still assembling: the
         // graph exists now and nothing else will ever take it down.
@@ -342,6 +399,7 @@ export function PlayScreen({ bundle, media, title, onClose, onExited }) {
     // exited on its own has not been taken down, only stopped running.
     controls.current?.stop();
     controls.current = null;
+    openSpeakerNow();
     setAttempt((count) => count + 1);
   };
   // The stage fills the screen and the picture is scaled to it; the game
@@ -537,9 +595,12 @@ export function PlayScreen({ bundle, media, title, onClose, onExited }) {
             {!pressed && (
               <Box sx={{ position: "absolute", inset: 0, zIndex: 1, display: "flex",
                 alignItems: "center", justifyContent: "center" }}>
-                <Button variant="contained" size="large" onClick={() => setPressed(true)}
-                  startIcon={<span className="glyphicon glyphicon-play" />}
-                  sx={{ px: 4, py: 1.5, fontWeight: 700, bgcolor: "text.primary", color: "#1e2022" }}>
+                <Button variant="contained" size="large" onClick={() => {
+                  openSpeakerNow();
+                  setPressed(true);
+                }}
+                startIcon={<span className="glyphicon glyphicon-play" />}
+                sx={{ px: 4, py: 1.5, fontWeight: 700, bgcolor: "text.primary", color: "#1e2022" }}>
                   Press to Start
                 </Button>
               </Box>
