@@ -468,6 +468,18 @@ export function PlayScreen({ bundle, media, title, onClose, onExited }) {
       [gameId]: { ...stored.bottleConfig[gameId], touch: next } } });
   };
 
+  // A selection WebKit starts anyway on a long press is refused while the game
+  // runs, inside the stage only: the logs beside it stay selectable.
+  useEffect(() => {
+    if (!started) return undefined;
+    /** @param {Event} event */
+    const refuse = (event) => {
+      if (event.target instanceof Node && stageRef.current?.contains(event.target)) event.preventDefault();
+    };
+    document.addEventListener("selectstart", refuse);
+    return () => document.removeEventListener("selectstart", refuse);
+  }, [started]);
+
   // The virtual cursor, for the run now going and for each one after.
   const cursorAlways = touch && touchControls.cursor === "always";
   useEffect(() => {
@@ -620,6 +632,12 @@ export function PlayScreen({ bundle, media, title, onClose, onExited }) {
           sx={{
             flex: 1,
             minWidth: 0,
+            // A game being played is not a page being read: a finger held or
+            // tapped twice -- on the touchpad, on a button -- would otherwise
+            // select the canvas for copying and open the phone's menu over
+            // it. Only while it runs: a failure's report is there to be copied.
+            ...(started ? { userSelect: "none", WebkitUserSelect: "none", WebkitTouchCallout: "none",
+              WebkitTapHighlightColor: "transparent" } : {}),
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
@@ -723,7 +741,9 @@ export function PlayScreen({ bundle, media, title, onClose, onExited }) {
               ref={canvasRef}
               tabIndex={0}
               aria-label={`${bundle?.title ?? title ?? "game"} viewport`}
+              draggable={false}
               sx={{
+                WebkitUserDrag: "none",
                 position: "absolute",
                 inset: 0,
                 width: "100%",
