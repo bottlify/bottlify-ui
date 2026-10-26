@@ -771,6 +771,7 @@ export function PlayScreen({ bundle, media, title, onClose, onExited }) {
               </Box>
             )}
             {pressed && !drawn && !over && <Starting state={state} />}
+            {drawn && !over && <BundleWait fetching={state.fetchingBundle === true} />}
             <PerfOverlay
               app={controls.current?.app ?? null}
               active={drawn}
@@ -993,6 +994,43 @@ function Transport({ label, icon, glyphSize, disabled = false, onClick }) {
         </IconButton>
       </span>
     </Tooltip>
+  );
+}
+
+/** How long a wait on the bundle lasts before it is shown: shorter ones would only flicker. */
+const BUNDLE_WAIT_SHOWN_MS = 300;
+
+/**
+ * A spinner in a corner of the picture while the game waits on a part of its
+ * bundle still coming over the network, so a stall reads as the download and
+ * not as the game hanging. It takes no input.
+ *
+ * @param {Object} props
+ * @param {boolean} props.fetching
+ */
+function BundleWait({ fetching }) {
+  const [shown, setShown] = useState(false);
+  useEffect(() => {
+    if (!fetching) {
+      setShown(false);
+      return undefined;
+    }
+    const timer = setTimeout(() => setShown(true), BUNDLE_WAIT_SHOWN_MS);
+    return () => clearTimeout(timer);
+  }, [fetching]);
+  if (!shown) return null;
+  return (
+    <Box
+      role="status"
+      sx={{
+        position: "absolute", top: 12, right: 12, zIndex: 2, pointerEvents: "none",
+        display: "flex", alignItems: "center", gap: 1, px: 1.25, py: 0.75,
+        borderRadius: 1, bgcolor: "rgba(0,0,0,0.6)", color: "#fff",
+      }}
+    >
+      <CircularProgress size={16} thickness={5} color="inherit" />
+      <Typography variant="caption">Loading game data…</Typography>
+    </Box>
   );
 }
 

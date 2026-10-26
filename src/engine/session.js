@@ -1249,6 +1249,11 @@ async function run({ bundle, media, canvas, report: show, silentInstall = false,
   if (sidecarHooks) {
     await refreshHooksLine();
   }
+  // A stall while the bundle's next part comes over the network: the page says
+  // so, or the person takes it for the game hanging.
+  app.on("bundle-fetching", ({ fetching }) => {
+    report({ fetchingBundle: fetching === true });
+  });
   app.on("present-failed", ({ index, message }) => {
     report({ note: `frame ${index} could not be shown: ${message}` });
   });
