@@ -26,6 +26,7 @@ const KEY = "bottlify.run-in-progress";
  * @property {number} [frames]  Frames presented by then, when the run had drawn.
  * @property {number} [instructions] Guest instructions retired by then.
  * @property {string} [detail]  The last line the run showed about itself.
+ * @property {string} [memory]  What the run held by its own account when last written.
  * @property {string} [query]   The page's address switches, `?graphicsWorker=off` and the like.
  */
 
@@ -104,5 +105,6 @@ export function describeCutOff(record) {
   }
   return `The last start of this game ended without a word from the browser: ${parts.join(", ")}`
     + `${record.query ? `, run as ${record.query}` : ""}.`
-    + `${record.detail ? ` Its last line: ${record.detail}.` : ""}`;
+    + `${record.detail ? ` Its last line: ${record.detail}.` : ""}`
+    + `${record.memory ? ` It held: ${record.memory}.` : ""}`;
 }

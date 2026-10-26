@@ -57,4 +57,5 @@ test("the sentence says how far the run got", () => {
   assert.match(describeCutOff({ ...RECORD, stage: "running", frames: 1500 }), /1,500 frames drawn/);
   assert.match(describeCutOff({ ...RECORD, query: "?translate=0", detail: "binding imports" }),
     /run as \?translate=0\. Its last line: binding imports\./);
+  assert.match(describeCutOff({ ...RECORD, memory: "guest 300.0 MB" }), /It held: guest 300\.0 MB\.$/);
 });

@@ -581,12 +581,36 @@ async function run({ bundle, media, canvas, report: show, silentInstall = false,
   let frames = 0;
   let stopping = false;
 
+  // What the run held by its own account, written to the black box every few
+  // seconds for as long as it runs: a phone ends the tab for its memory
+  // without a word, and this is what the next visit can say of where it was.
+  let memoryAt = 0;
+  const noteMemory = async () => {
+    const [zones, cpu, counters] = await Promise.all([
+      app.diagnostics("zones").catch(() => []),
+      app.diagnostics("cpu").catch(() => []),
+      app.log.counters("cpu").catch(() => ({})),
+    ]);
+    const z = tableNamed(zones, "zones")?.metrics?.zones;
+    const c = tableNamed(cpu, "cpu")?.metrics ?? {};
+    const held = (zone) => (z?.[zone] ? megabytes(z[zone].bytes) : "?");
+    box.update({
+      instructions: counters.instructions ?? 0,
+      memory: `guest ${held("guest")}, translation ${held("translation")}, heaps ${held("heaps")}`
+        + `, collector nudges ${c.gcNudges ?? "none"} (${c.gcNudgesRefused ?? 0} refused)`,
+    });
+  };
+
   // One timer for the whole wait, running from before the engine exists. The
   // first stage reports nothing of its own but time, and a stage with no
   // number to show is still a stage the person is sitting in.
   const progressTimer = setInterval(async () => {
     if (stopping) return;
     const elapsed = (performance.now() - beganAt) / 1000;
+    if (app && elapsed - memoryAt >= 5) {
+      memoryAt = elapsed;
+      noteMemory().catch(() => {});
+    }
     if (!app || frames > 0) {
       report({ elapsed });
       return;
