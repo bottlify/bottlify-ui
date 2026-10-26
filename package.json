@@ -19,9 +19,9 @@
     "test": "node --test \"src/**/*.test.js\""
   },
   "dependencies": {
-    "@bottlify/core": "^1.0.3",
+    "@bottlify/core": "^1.1.0",
     "@bottlify/installer": "^1.0.1",
-    "@bottlify/networking": "^1.0.1",
+    "@bottlify/networking": "^1.1.0",
     "@emotion/react": "^11.13.0",
     "@emotion/styled": "^11.13.0",
     "@mui/material": "^7.3.11",
