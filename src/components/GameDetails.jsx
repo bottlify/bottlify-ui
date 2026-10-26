@@ -472,12 +472,16 @@ export function GameDetails({
   const [exportFailure, setExportFailure] = useState(/** @type {string | null} */ (null));
   // Whether the bottle is here whole, so a download is written from this
   // browser: one kept here always is, a library one once every block of it is.
-  // null while unknown -- the button then tries and says. `held` is the share
-  // of its bytes here, which the button names when it cannot write.
+  // null while that is being checked, and the button waits for the answer;
+  // `unchecked` when the check could not answer, which leaves it off too.
+  // `held` is the share of its bytes here, which the button names when it
+  // cannot write.
   const [whole, setWhole] = useState(/** @type {boolean | null} */ (null));
+  const [unchecked, setUnchecked] = useState(false);
   const [held, setHeld] = useState(0);
   useEffect(() => {
     if (!bundle) return undefined;
+    setUnchecked(false);
     if (bundle.local) {
       setWhole(true);
       return undefined;
@@ -488,7 +492,7 @@ export function GameDetails({
       if (!live) return;
       setWhole(here.resident === here.blocks);
       setHeld(here.bytes > 0 ? here.residentBytes / here.bytes : 0);
-    }, () => live && setWhole(null));
+    }, () => live && setUnchecked(true));
     return () => { live = false; };
   }, [bundle]);
   const exportIt = async () => {
@@ -666,10 +670,12 @@ export function GameDetails({
               <Tooltip title={exporting !== null ? `Downloading: ${Math.floor(exporting * 100)}%`
                 : whole === false ? `${Math.floor(held * 100)}% of the game is in this browser; `
                   + "it can be saved once all of it is"
-                  : "Download the bottle"}>
+                  : unchecked ? "Whether the whole game is in this browser could not be checked"
+                    : whole === null ? "Checking that the whole game is in this browser…"
+                      : "Download the bottle"}>
                 <span>
                   <IconButton aria-label="download the bottle" onClick={exportIt}
-                    disabled={exporting !== null || whole === false} sx={{ width: 44, height: 44 }}>
+                    disabled={exporting !== null || whole !== true} sx={{ width: 44, height: 44 }}>
                     {exporting === null
                       ? <span className="glyphicon glyphicon-download-alt" />
                       : <CircularProgress size={22} variant="determinate"
