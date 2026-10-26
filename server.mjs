@@ -410,13 +410,33 @@ const bottleAllow = async room=>{
   }
 };
 
+/** Room and host pairs already written to the log. @type {Set<string>} */
+const askedFor = new Set();
+
 const relay = createRelayServer({
   server, path: "/networking/relay",
+  // Only this launcher's own pages, at whatever address it was reached by: a
+  // browser opens a WebSocket to any origin, so without this every site the
+  // person visits could reach the relay on 127.0.0.1 -- and through it, with
+  // `RELAY_ALLOW=*`, the machine's own networks.
+  origins: asked=>asked.headers.origin === `${scheme}://${asked.headers.host}`,
   privateNetworks: allow.includes("*"),
   resumeWindowMs: Number(process.env.RELAY_RESUME_SECONDS ?? 10) * 1000,
   // A bottle that names its hosts reaches those and no others, whatever the
   // launcher allows; every other run goes by `RELAY_ALLOW`.
-  policy: async asked=>permits(await bottleAllow(String(asked.room ?? "")) ?? allow, asked.host),
+  policy: async asked=>{
+    const room = String(asked.room ?? "");
+    const ok = permits(await bottleAllow(room) ?? allow, asked.host);
+    // Each host a room asks for, once, and the answer: where a program goes.
+    // Once for each answer, so a host refused and then let in says both.
+    const seen = `${room} ${asked.protocol} ${asked.host}${asked.port ? `:${asked.port}` : ""}`
+      + ` ${ok ? "allowed" : "refused"}`;
+    if (!askedFor.has(seen)){
+      askedFor.add(seen);
+      console.log(`relay: ${seen}`);
+    }
+    return ok;
+  },
 });
 server.listen(port, host, async()=>{
   await relay.listen();
