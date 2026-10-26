@@ -60,8 +60,14 @@
  *
  * `editableTypes` are the extensions the file explorer opens in its editor:
  * text a person may change by hand. Left out, `EDITABLE_TYPES`.
+ *
+ * `takedownEmail` is where a rights holder writes about a program in the
+ * library, said on the Credits & licenses page ("takedownEmail":
+ * "legal@example.org"). Left out, or not an address, the page names none.
  * }
  */
+
+import { takedownEmailOf } from "../legal.js";
 
 /** The text files the explorer edits when the configuration names none. */
 export const EDITABLE_TYPES = ["txt", "cfg", "log", "conf", "json", "wtf", "ini", "lua", "toc", "xml"];
@@ -80,6 +86,7 @@ export const EDITABLE_TYPES = ["txt", "cfg", "log", "conf", "json", "wtf", "ini"
  * @property {boolean} networking  Whether the page has the network relay beside it
  *     (`/networking/` and `/relay`, which only the launcher's own server serves): a
  *     site of static files has none, and a run there must not ask for its client.
+ * @property {string} takedownEmail  Where a rights holder writes; "" for none.
  */
 
 /** @type {Promise<AppConfig> | null} */
@@ -109,6 +116,7 @@ export function getConfig() {
       graphics: raw.graphics && typeof raw.graphics === "object" && !Array.isArray(raw.graphics)
         ? raw.graphics : {},
       cpu: raw.cpu && typeof raw.cpu === "object" && !Array.isArray(raw.cpu) ? raw.cpu : {},
+      takedownEmail: takedownEmailOf(raw.takedownEmail),
     }));
   return asked;
 }

@@ -7,7 +7,7 @@
 import { Fragment } from "react";
 import { Box, Divider, Link, Typography } from "@mui/material";
 import notices from "virtual:notices";
-import { OWN_LICENSE_URL, TAKEDOWN_EMAIL } from "../legal.js";
+import { OWN_LICENSE_URL } from "../legal.js";
 import { inlineOf, labelOf, parseNotices } from "../notices.js";
 
 // Read once, when the page is built: the engine's own file, so that what is
@@ -88,8 +88,11 @@ function NoticeBlock({ block, first }) {
  * What it is built on is the engine's THIRD-PARTY-NOTICES.md as it is, which
  * is where the licence obligations are met and the one list of what is
  * distributed with the product.
+ *
+ * @param {{ takedownEmail?: string }} props  The deployment's address for a
+ *     rights holder (`config.json`'s `takedownEmail`); none says nothing.
  */
-export function License() {
+export function License({ takedownEmail = "" }) {
   return (
     <Box component="main" sx={{ px: { xs: 3, md: 6 }, py: 4, maxWidth: 820, width: "100%", mx: "auto" }}>
       <Link href="/" underline="hover" variant="body2"
@@ -126,10 +129,10 @@ export function License() {
         themselves distributed free of charge, and each entry names the year and the holder of the
         rights. Bottlify claims no rights over them and sells nothing.
       </Typography>
-      {TAKEDOWN_EMAIL && (
+      {takedownEmail && (
         <Typography variant="body2" color="text.secondary" sx={{ mt: 1.5 }}>
           If you hold the rights to something here and it should not be here, write to{" "}
-          <Link href={`mailto:${TAKEDOWN_EMAIL}`} underline="hover">{TAKEDOWN_EMAIL}</Link>
+          <Link href={`mailto:${takedownEmail}`} underline="hover">{takedownEmail}</Link>
           {" "}and it will be taken down.
         </Typography>
       )}

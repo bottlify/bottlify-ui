@@ -298,7 +298,7 @@ export default function App() {
         )}
 
         {inLicense ? (
-          <License />
+          <License takedownEmail={config?.takedownEmail} />
         ) : !inLibrary ? (
           <Landing />
         ) : error ? (

@@ -13,7 +13,13 @@
 export const OWN_LICENSE_URL = "https://www.mozilla.org/en-US/MPL/2.0/";
 
 /**
- * Where to write when something in the library should not be there. Left
- * empty, the page says nothing about a contact rather than naming no one.
+ * Where to write when something in the library should not be there: the
+ * deployment's `takedownEmail` (`config.json`), or "" for none -- left out or
+ * not an address, the page says nothing about a contact rather than naming no
+ * one.
+ *
+ * @param {unknown} asked
+ * @returns {string}
  */
-export const TAKEDOWN_EMAIL = "";
+export const takedownEmailOf = (asked) =>
+  (typeof asked === "string" && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(asked.trim()) ? asked.trim() : "");
