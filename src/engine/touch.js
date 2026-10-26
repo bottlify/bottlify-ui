@@ -302,7 +302,7 @@ export function createTouchpad(speed = PAD_SPEED) {
 
 /** What a bottle's touch controls are, when its settings say nothing. */
 export const TOUCH_DEFAULTS = Object.freeze({ controls: "keys", move: "wasd", hand: "right", size: 1,
-  opacity: 1 });
+  opacity: 1, cursor: "program" });
 
 /** The controls there are: a stick and buttons, a stick and a touchpad, a gamepad, or none. */
 export const CONTROLS = Object.freeze(["keys", "mouse", "pad", "off"]);
@@ -315,7 +315,9 @@ export const OPACITIES = Object.freeze([0.4, 0.7, 1]);
  *
  * @param {any} stored
  * @returns {{ controls: "keys" | "mouse" | "pad" | "off", move: keyof typeof MOVE_KEYS,
- *     hand: "right" | "left", size: number, opacity: number }}
+ *     hand: "right" | "left", size: number, opacity: number, cursor: "program" | "always" }}
+ *     `cursor`: the program's cursor drawn when it shows one, or a cursor drawn always
+ *     where the program's is -- the virtual cursor, for a program that hides its own.
  */
 export function touchLayout(stored) {
   const source = stored && typeof stored === "object" ? stored : {};
@@ -325,6 +327,7 @@ export function touchLayout(stored) {
     hand: source.hand === "left" ? "left" : "right",
     size: SIZES.includes(source.size) ? source.size : TOUCH_DEFAULTS.size,
     opacity: OPACITIES.includes(source.opacity) ? source.opacity : TOUCH_DEFAULTS.opacity,
+    cursor: source.cursor === "always" ? "always" : "program",
   };
 }
 

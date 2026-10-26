@@ -327,7 +327,9 @@ const CONTROL_CHOICES = [
  * The controls' settings, over the game: what they are -- a stick and buttons
  * (keys), a stick and a touchpad (mouse), a gamepad, or none, taps then being
  * clicks -- and how they look: which keys the stick presses, which side it is
- * on, how large and how see-through they are. Each change is the bottle's
+ * on, how large and how see-through they are, and whether a cursor is drawn
+ * even while the program hides its own (the virtual cursor a touchpad is
+ * steered by, for a program that draws none). Each change is the bottle's
  * from then on.
  *
  * @param {{ layout: ReturnType<typeof import("../engine/touch.js").touchLayout>,
@@ -364,6 +366,10 @@ function TouchSettings({ layout, onLayout, unit, onClose }) {
       {row("Size", SIZES.map((size, index) => (
         <TapButton key={size} label={["Small", "Medium", "Large"][index]} control={`size-${size}`}
           unit={unit} disabled={!stick} on={layout.size === size} onTap={() => onLayout({ size })} />
+      )))}
+      {row("Cursor", [["program", "Game's"], ["always", "Always"]].map(([value, label]) => (
+        <TapButton key={value} label={label} control={`cursor-${value}`} unit={unit}
+          on={layout.cursor === value} onTap={() => onLayout({ cursor: value })} />
       )))}
       {row("Opacity", OPACITIES.map((opacity) => (
         <TapButton key={opacity} label={`${Math.round(opacity * 100)}%`} control={`opacity-${opacity}`}

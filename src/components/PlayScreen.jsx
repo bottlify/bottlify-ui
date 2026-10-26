@@ -468,6 +468,12 @@ export function PlayScreen({ bundle, media, title, onClose, onExited }) {
       [gameId]: { ...stored.bottleConfig[gameId], touch: next } } });
   };
 
+  // The virtual cursor, for the run now going and for each one after.
+  const cursorAlways = touch && touchControls.cursor === "always";
+  useEffect(() => {
+    if (started) controls.current?.showCursorAlways?.(cursorAlways);
+  }, [cursorAlways, started]);
+
   /** What the touch controls send, to the engine running now. @param {any} event */
   const sendInput = useCallback((event) => controls.current?.app?.input.send(event), []);
   /** The engine's on-screen keyboard, for the touch controls' Keys. */

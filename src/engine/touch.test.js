@@ -99,11 +99,12 @@ test("a control key types its character between its press and release", () => {
 
 test("a bottle's touch layout keeps only what the controls know", () => {
   assert.deepEqual(touchLayout(undefined),
-    { controls: "keys", move: "wasd", hand: "right", size: 1, opacity: 1 });
-  assert.deepEqual(touchLayout({ controls: "mouse", move: "arrows", hand: "left", size: 1.25, opacity: 0.4 }),
-    { controls: "mouse", move: "arrows", hand: "left", size: 1.25, opacity: 0.4 });
-  assert.deepEqual(touchLayout({ controls: "joystick", move: "hjkl", size: 7, hand: 1, opacity: 0 }),
-    { controls: "keys", move: "wasd", hand: "right", size: 1, opacity: 1 });
+    { controls: "keys", move: "wasd", hand: "right", size: 1, opacity: 1, cursor: "program" });
+  assert.deepEqual(touchLayout({ controls: "mouse", move: "arrows", hand: "left", size: 1.25, opacity: 0.4,
+    cursor: "always" }),
+  { controls: "mouse", move: "arrows", hand: "left", size: 1.25, opacity: 0.4, cursor: "always" });
+  assert.deepEqual(touchLayout({ controls: "joystick", move: "hjkl", size: 7, hand: 1, opacity: 0, cursor: 1 }),
+    { controls: "keys", move: "wasd", hand: "right", size: 1, opacity: 1, cursor: "program" });
 });
 
 test("a touch screen is a coarse pointer, or touch points with no fine pointer", () => {
