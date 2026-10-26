@@ -61,16 +61,25 @@ export function homeManifest({ id, title, icons, origin = "" }) {
 }
 
 /**
- * A bitmap icon on black at `box` pixels, as RGBA: placed by whole pixels,
- * each pixel laid over the black by its alpha.
+ * The size an iPhone takes for its home screen (`apple-touch-icon`), which it
+ * shows on black whatever the icon's alpha: drawn on black here, so what it
+ * shows is what was drawn. Every other size keeps the program's transparency
+ * -- a tab, an Android home screen, a manifest's `any` icon show it as it is.
+ */
+export const TOUCH_ICON_SIZE = 180;
+
+/**
+ * A bitmap icon at `box` pixels, as RGBA: placed by whole pixels, each pixel
+ * as the program drew it -- or, on black, laid over the black by its alpha.
  *
  * @param {{ width: number, height: number, rgba: Uint8ClampedArray | Uint8Array }} icon
  * @param {number} box
+ * @param {boolean} [black]  on black; by default only the touch icon is
  * @returns {Uint8Array}
  */
-export function iconOnBlack(icon, box) {
+export function iconPixels(icon, box, black = box === TOUCH_ICON_SIZE) {
   const out = new Uint8Array(box * box * 4);
-  for (let at = 3; at < out.length; at += 4) out[at] = 255;
+  if (black) for (let at = 3; at < out.length; at += 4) out[at] = 255;
   const { size, at } = iconPlacement(Math.max(icon.width, icon.height), box);
   const scale = size / Math.max(icon.width, icon.height);
   const left = at + Math.floor((size - icon.width * scale) / 2);
@@ -83,9 +92,13 @@ export function iconOnBlack(icon, box) {
       const source = (from * icon.width + Math.min(icon.width - 1, Math.floor(x / scale))) * 4;
       const alpha = icon.rgba[source + 3];
       const target = ((top + y) * box + left + x) * 4;
-      out[target] = Math.round((icon.rgba[source] * alpha) / 255);
-      out[target + 1] = Math.round((icon.rgba[source + 1] * alpha) / 255);
-      out[target + 2] = Math.round((icon.rgba[source + 2] * alpha) / 255);
+      if (black) {
+        out[target] = Math.round((icon.rgba[source] * alpha) / 255);
+        out[target + 1] = Math.round((icon.rgba[source + 1] * alpha) / 255);
+        out[target + 2] = Math.round((icon.rgba[source + 2] * alpha) / 255);
+      } else {
+        out.set(icon.rgba.subarray(source, source + 4), target);
+      }
     }
   }
   return out;
@@ -150,9 +163,9 @@ export function encodePng(rgba, width, height, deflate) {
 }
 
 /**
- * The icon file for a program's icon at `box` pixels: a bitmap drawn on black,
- * a PNG image handed over as it is (a browser scales it, a home screen puts
- * black behind it).
+ * The icon file for a program's icon at `box` pixels: a bitmap drawn with its
+ * transparency (on black for the touch icon, `iconPixels`), a PNG image handed
+ * over as it is (a browser scales it, an iPhone puts black behind it).
  *
  * @param {{ width: number, height: number, rgba?: Uint8ClampedArray | Uint8Array, png?: Uint8Array }} icon
  * @param {number} box
@@ -160,7 +173,7 @@ export function encodePng(rgba, width, height, deflate) {
  */
 export function iconFile(icon, box, deflate) {
   if (icon.png) return icon.png;
-  return encodePng(iconOnBlack(/** @type {any} */ (icon), box), box, box, deflate);
+  return encodePng(iconPixels(/** @type {any} */ (icon), box), box, box, deflate);
 }
 
 /**

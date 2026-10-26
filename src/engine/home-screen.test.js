@@ -9,7 +9,7 @@ import assert from "node:assert/strict";
 import * as zlib from "node:zlib";
 
 const { deflateSync, inflateSync } = zlib;
-import { encodePng, headForBottle, homeManifest, iconFile, iconOnBlack, iconPlacement } from "./home-screen.js";
+import { TOUCH_ICON_SIZE, encodePng, headForBottle, homeManifest, iconFile, iconPixels, iconPlacement } from "./home-screen.js";
 
 test("an old icon is scaled by whole pixels with a margin; a large one fits", () => {
   assert.deepEqual(iconPlacement(48, 180), { size: 144, at: 18 });
@@ -31,11 +31,26 @@ test("the manifest opens the bottle by its address, named as it", () => {
   assert.equal(carried.scope, "https://host:5180/");
 });
 
-test("an icon is laid on black by its alpha, each pixel a whole square", () => {
+test("an icon keeps its transparency, and the touch icon alone is laid on black", () => {
+  const icon = { width: 2, height: 1, rgba: new Uint8Array([255, 0, 0, 255, 255, 255, 255, 128]) };
+  const box = 10;
+  const pixels = iconPixels(icon, box, false);
+  const at = (/** @type {number} */ x, /** @type {number} */ y) => [...pixels.subarray((y * box + x) * 4, (y * box + x) * 4 + 4)];
+  assert.deepEqual(at(0, 0), [0, 0, 0, 0], "nothing around it");
+  assert.deepEqual(at(1, 3), [255, 0, 0, 255]);
+  assert.deepEqual(at(5, 3), [255, 255, 255, 128], "half-transparent white stays so");
+  // Which is the default: the touch icon on black, the others not.
+  const corner = (/** @type {Uint8Array} */ drawn) => [...drawn.subarray(0, 4)];
+  assert.deepEqual(corner(iconPixels(icon, TOUCH_ICON_SIZE)), [0, 0, 0, 255]);
+  assert.deepEqual(corner(iconPixels(icon, 192)), [0, 0, 0, 0]);
+  assert.deepEqual(corner(iconPixels(icon, 64)), [0, 0, 0, 0]);
+});
+
+test("on black an icon is laid by its alpha, each pixel a whole square", () => {
   // Two by one: opaque red, then half-transparent white.
   const icon = { width: 2, height: 1, rgba: new Uint8Array([255, 0, 0, 255, 255, 255, 255, 128]) };
   const box = 10;
-  const pixels = iconOnBlack(icon, box);
+  const pixels = iconPixels(icon, box, true);
   const at = (/** @type {number} */ x, /** @type {number} */ y) => [...pixels.subarray((y * box + x) * 4, (y * box + x) * 4 + 4)];
   // Scaled by 4 into the 8 pixels the margin leaves, centred: x 1-4 red, 5-8 grey, y 3-6.
   assert.deepEqual(at(0, 0), [0, 0, 0, 255], "black around it");

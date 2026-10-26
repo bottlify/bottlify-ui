@@ -18,7 +18,7 @@
  * own back.
  */
 
-import { homeManifest, homeManifestPath, iconOnBlack, iconPath } from "./home-screen.js";
+import { TOUCH_ICON_SIZE, homeManifest, homeManifestPath, iconPath, iconPixels } from "./home-screen.js";
 
 /**
  * The launcher's own head, as index.html has it: what leaving a game puts
@@ -110,8 +110,8 @@ export const keptHead = ({ id, title }) => ({
 });
 
 /**
- * A program's icon drawn on black at `box` pixels, as a PNG data URL: a
- * bitmap the way the server draws it, a PNG image as it is.
+ * A program's icon at `box` pixels as a PNG data URL, drawn the way the server
+ * draws it: with its transparency, on black for the touch icon.
  *
  * @param {{ width: number, height: number, rgba?: Uint8ClampedArray, png?: Uint8Array }} icon
  * @param {number} box
@@ -123,12 +123,14 @@ export async function drawIcon(icon, box) {
   canvas.height = box;
   const context = /** @type {CanvasRenderingContext2D} */ (canvas.getContext("2d"));
   if (icon.png) {
-    context.fillStyle = "#000";
-    context.fillRect(0, 0, box, box);
+    if (box === TOUCH_ICON_SIZE) {
+      context.fillStyle = "#000";
+      context.fillRect(0, 0, box, box);
+    }
     const picture = await createImageBitmap(new Blob([icon.png], { type: "image/png" }));
     context.drawImage(picture, 0, 0, box, box);
   } else {
-    context.putImageData(new ImageData(new Uint8ClampedArray(iconOnBlack(/** @type {any} */ (icon), box)),
+    context.putImageData(new ImageData(new Uint8ClampedArray(iconPixels(/** @type {any} */ (icon), box)),
       box, box), 0, 0);
   }
   return canvas.toDataURL("image/png");
