@@ -64,7 +64,7 @@ const holdEvent = (hold, down) => ({ ...hold, down });
  * never by where a finger lands -- is driven by motion alone, and a tap on
  * the picture moves nothing.
  *
- * The controls are set over the game itself: the gear along the top opens
+ * The controls are set over the game itself: the gear in the top left corner opens
  * what they are and how they look, and a change is kept for the bottle.
  *
  * @param {Object} props
@@ -132,10 +132,14 @@ export function TouchControls({ send, layout, onLayout, canvas, frame, keyboard 
         {active && <TapButton label="Esc" unit={unit} onTap={() => keyTap("Escape").forEach(emit)} />}
         {active && <TapButton label="Enter" unit={unit} onTap={() => keyTap("Enter").forEach(emit)} />}
         {active && <KeyboardButton unit={unit} keyboard={keyboard} />}
-        <TapButton label="⚙" control="Setup" unit={unit} onTap={() => setSetting((on) => !on)} />
         {layout.controls !== "off" && (
           <TapButton label={shown ? "Hide" : "Show"} unit={unit} onTap={() => setShown((on) => !on)} />
         )}
+      </Box>
+      {/* The gear alone in the other corner, away from the keys a game is played with. */}
+      <Box sx={{ position: "absolute", top: `calc(env(safe-area-inset-top) + ${unit * 0.2}px)`,
+        left: `calc(env(safe-area-inset-left) + ${unit * 0.2}px)`, pointerEvents: "none" }}>
+        <TapButton label="⚙" control="Setup" unit={unit} onTap={() => setSetting((on) => !on)} />
       </Box>
       {setting && <TouchSettings layout={layout} onLayout={onLayout} unit={unit}
         onClose={() => setSetting(false)} />}
