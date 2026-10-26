@@ -7,8 +7,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  DEAD_ZONE, createLook, frameScale, isTouchScreen, keyChanges, keyTap, stickAxes, stickKeys,
-  stickVector, tapEvents, touchLayout,
+  DEAD_ZONE, DRAG_AFTER_TAP_MS, SCROLL_STEP, TAP_MS, createLook, createTouchpad, frameScale, isTouchScreen,
+  keyChanges, keyTap, stickAxes, stickKeys, stickVector, tapEvents, touchLayout,
 } from "./touch.js";
 
 /** A vector at an angle, degrees clockwise from straight up, at a length. */
@@ -98,11 +98,13 @@ test("a control key types its character between its press and release", () => {
 });
 
 test("a bottle's touch layout keeps only what the controls know", () => {
-  assert.deepEqual(touchLayout(undefined), { controls: "keys", move: "wasd", hand: "right", size: 1 });
-  assert.deepEqual(touchLayout({ controls: "pad", move: "arrows", hand: "left", size: 1.25 }),
-    { controls: "pad", move: "arrows", hand: "left", size: 1.25 });
-  assert.deepEqual(touchLayout({ controls: "joystick", move: "hjkl", size: 7, hand: 1 }),
-    { controls: "keys", move: "wasd", hand: "right", size: 1 });
+  assert.deepEqual(touchLayout(undefined),
+    { controls: "keys", move: "wasd", hand: "right", size: 1, opacity: 1, cursor: "program" });
+  assert.deepEqual(touchLayout({ controls: "mouse", move: "arrows", hand: "left", size: 1.25, opacity: 0.4,
+    cursor: "always" }),
+  { controls: "mouse", move: "arrows", hand: "left", size: 1.25, opacity: 0.4, cursor: "always" });
+  assert.deepEqual(touchLayout({ controls: "joystick", move: "hjkl", size: 7, hand: 1, opacity: 0, cursor: 1 }),
+    { controls: "keys", move: "wasd", hand: "right", size: 1, opacity: 1, cursor: "program" });
 });
 
 test("a touch screen is a coarse pointer, or touch points with no fine pointer", () => {
@@ -115,4 +117,77 @@ test("a touch screen is a coarse pointer, or touch points with no fine pointer",
     "a laptop with a touch screen and a mouse keeps the mouse");
   assert.equal(isTouchScreen({ matchMedia: media(false, false), navigator: { maxTouchPoints: 5 } }), true);
   assert.equal(isTouchScreen({}), false);
+});
+
+const ONE = { x: 1, y: 1 };
+
+test("the touchpad moves the cursor from where it is, never to where a finger lands", () => {
+  const pad = createTouchpad(2);
+  assert.deepEqual(pad.down(1, 100, 100, 0), [], "coming down is nothing");
+  assert.deepEqual(pad.move(1, 103, 98, ONE), [{ kind: "pointerMove", dx: 6, dy: -4 }]);
+  assert.deepEqual(pad.move(1, 133, 98, { x: 0.5, y: 0.5 }), [{ kind: "pointerMove", dx: 30, dy: 0 }],
+    "by the picture's own scale");
+  assert.deepEqual(pad.up(1, 500), [], "a finger that moved clicks nothing");
+});
+
+test("a tap on the touchpad clicks where the cursor is; a slow or moved one does not", () => {
+  const pad = createTouchpad();
+  pad.down(1, 50, 50, 0);
+  pad.move(1, 53, 52, ONE);
+  assert.deepEqual(pad.up(1, 120), [
+    { kind: "pointerButton", button: "left", down: true },
+    { kind: "pointerButton", button: "left", down: false },
+  ], "a few pixels of wobble is still a tap, and carries no position");
+  pad.down(1, 50, 50, 1000);
+  assert.deepEqual(pad.up(1, 1000 + TAP_MS + 1), [], "a press held long is not a tap");
+});
+
+test("a finger down again soon after a tap, and moving, drags with the left button held", () => {
+  const pad = createTouchpad(1);
+  pad.down(1, 0, 0, 0);
+  pad.up(1, 100);
+  pad.down(2, 0, 0, 100 + DRAG_AFTER_TAP_MS - 50);
+  assert.deepEqual(pad.move(2, 20, 0, ONE), [
+    { kind: "pointerButton", button: "left", down: true },
+    { kind: "pointerMove", dx: 20, dy: 0 },
+  ]);
+  assert.deepEqual(pad.move(2, 30, 0, ONE), [{ kind: "pointerMove", dx: 10, dy: 0 }]);
+  assert.deepEqual(pad.up(2, 900), [{ kind: "pointerButton", button: "left", down: false }]);
+
+  // Down again too late: a plain move.
+  pad.down(3, 0, 0, 2000);
+  pad.up(3, 2050);
+  pad.down(4, 0, 0, 2050 + DRAG_AFTER_TAP_MS + 10);
+  assert.deepEqual(pad.move(4, 20, 0, ONE), [{ kind: "pointerMove", dx: 20, dy: 0 }]);
+  assert.deepEqual(pad.up(4, 3000), []);
+});
+
+test("two fingers tapped are a right click; two moved up or down turn the wheel", () => {
+  const pad = createTouchpad();
+  pad.down(1, 0, 0, 0);
+  pad.down(2, 40, 0, 20);
+  assert.deepEqual(pad.up(1, 100), []);
+  assert.deepEqual(pad.up(2, 120), [
+    { kind: "pointerButton", button: "right", down: true },
+    { kind: "pointerButton", button: "right", down: false },
+  ]);
+
+  pad.down(1, 0, 100, 1000);
+  pad.down(2, 40, 100, 1000);
+  // Both up by a step: the content follows the fingers up, which is a notch down.
+  assert.deepEqual(pad.move(1, 0, 100 - SCROLL_STEP, ONE), []);
+  assert.deepEqual(pad.move(2, 40, 100 - SCROLL_STEP, ONE), [{ kind: "wheel", delta: -120 }]);
+  assert.deepEqual(pad.move(1, 0, 100 + SCROLL_STEP * 2, ONE), [{ kind: "wheel", delta: 120 }]);
+  assert.deepEqual(pad.up(1, 1500), []);
+  assert.deepEqual(pad.up(2, 1500), [], "a scroll lifted is no click");
+});
+
+test("a touch cancelled in a drag lets the button go", () => {
+  const pad = createTouchpad();
+  pad.down(1, 0, 0, 0);
+  pad.up(1, 50);
+  pad.down(2, 0, 0, 100);
+  pad.move(2, 40, 0, ONE);
+  assert.deepEqual(pad.cancel(), [{ kind: "pointerButton", button: "left", down: false }]);
+  assert.deepEqual(pad.cancel(), []);
 });

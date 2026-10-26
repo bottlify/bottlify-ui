@@ -341,12 +341,13 @@ export function BottleSettingsDialog({
               helperText="On a phone or a tablet, over the picture; kept in this browser"
               onChange={(event) => changeTouch({ controls: event.target.value })}>
               <MenuItem value="keys">Keyboard and mouse (a stick for the keys, a drag to look)</MenuItem>
+              <MenuItem value="mouse">Mouse (a stick for the keys, a touchpad for the cursor)</MenuItem>
               <MenuItem value="pad">Gamepad (for a game that reads one)</MenuItem>
               <MenuItem value="off">Off (taps are clicks)</MenuItem>
             </TextField>
             <Stack direction="row" spacing={2}>
               <TextField select size="small" label="Stick keys" value={touch.move} sx={{ flex: 1 }}
-                disabled={saving || touch.controls !== "keys"}
+                disabled={saving || (touch.controls !== "keys" && touch.controls !== "mouse")}
                 onChange={(event) => changeTouch({ move: event.target.value })}>
                 <MenuItem value="wasd">W A S D</MenuItem>
                 <MenuItem value="arrows">Arrows</MenuItem>

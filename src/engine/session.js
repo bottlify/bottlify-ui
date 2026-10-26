@@ -415,6 +415,9 @@ async function journalTail(app) {
  * @property {any} app
  * @property {() => void} pause
  * @property {() => void} resume
+ * @property {(on: boolean) => void} showCursorAlways  On a touch screen, draws a cursor
+ *     where the program's is even while the program hides it: the virtual cursor a
+ *     touchpad is steered by.
  * @property {() => Promise<void>} stop
  */
 
@@ -1056,11 +1059,26 @@ async function run({ bundle, media, canvas, report: show, silentInstall = false,
     + "display:none;image-rendering:pixelated";
   canvas.parentElement?.appendChild(drawnCursor);
   let cursorShown = true;
+  // A touch screen has no cursor of its own either, so there the program's is
+  // drawn whenever the program shows one: moved by the touchpad, it is the
+  // only way to see where a tap will click.
+  const touchScreen = isTouchScreen(window);
+  // The program's picture of its cursor, and whether a cursor is drawn where
+  // the program's is even while it hides it (`showCursorAlways`).
+  let picture = ARROW;
+  let cursorAlways = false;
   const showDrawnCursor = () => {
-    drawnCursor.style.display = cursorShown && document.pointerLockElement === canvas
-      ? "block" : "none";
+    const virtual = touchScreen && cursorAlways && !cursorShown;
+    // A hidden cursor's picture may be the blank one a program hides it with:
+    // the virtual cursor is the arrow.
+    const shown = virtual ? ARROW : picture;
+    if (drawnCursor.src !== shown.url) drawnCursor.src = shown.url;
+    drawnCursor.style.translate = `${-shown.x}px ${-shown.y}px`;
+    drawnCursor.style.display = virtual
+      || (cursorShown && (touchScreen || document.pointerLockElement === canvas)) ? "block" : "none";
   };
   document.addEventListener("pointerlockchange", showDrawnCursor);
+  showDrawnCursor();
   app.on("cursor-moved", ({ x, y }) => {
     drawnCursor.style.left = `${x * 100}%`;
     drawnCursor.style.top = `${y * 100}%`;
@@ -1142,9 +1160,7 @@ async function run({ bundle, media, canvas, report: show, silentInstall = false,
       } }));
   });
   app.on("cursor", (cursor) => {
-    const picture = cursorPicture(cursor);
-    if (drawnCursor.src !== picture.url) drawnCursor.src = picture.url;
-    drawnCursor.style.translate = `${-picture.x}px ${-picture.y}px`;
+    picture = cursorPicture(cursor);
     cursorShown = cursor.shown;
     showDrawnCursor();
     setCursor(cursorStyle(cursor, picture));
@@ -1318,6 +1334,10 @@ async function run({ bundle, media, canvas, report: show, silentInstall = false,
     // For the perf overlay's "guest code" block, undefined when this bundle
     // carries none -- addresses print as `image+0xrva` instead.
     symbols: sidecarSymbols,
+    showCursorAlways(on) {
+      cursorAlways = on;
+      showDrawnCursor();
+    },
     pause() {
       app.pause();
       // Suspended, not muted: a paused guest writes no frames, and a worklet
