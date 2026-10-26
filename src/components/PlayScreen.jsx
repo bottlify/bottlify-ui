@@ -12,7 +12,8 @@ import { useCallback, useEffect, useEffectEvent, useLayoutEffect, useMemo, useRe
 import { engineNow, launch, loadEngine, openRunSpeaker, soundWanted } from "../engine/session.js";
 import { describeCutOff, takeCutOffRun } from "../engine/blackbox.js";
 import { drawIcon, keptHead, servedHead, showGame } from "../engine/bookmark.js";
-import { loadSettings, touchLayoutFor } from "../settings.js";
+import { loadSettings, saveSettings, touchLayoutFor } from "../settings.js";
+import { touchLayout } from "../engine/touch.js";
 import { isTouchScreen } from "../engine/touch.js";
 import { TouchControls } from "./TouchControls.jsx";
 import { PerfOverlay } from "./PerfOverlay.jsx";
@@ -451,6 +452,22 @@ export function PlayScreen({ bundle, media, title, onClose, onExited }) {
     };
   }, []);
 
+  // The bottle's touch controls, changed from over the game and kept for it,
+  // as the Bottle settings dialog keeps them.
+  const [touchControls, setTouchControls] = useState(() => touchLayoutFor(loadSettings(), bundle ?? { id: "" }));
+  useEffect(() => {
+    setTouchControls(touchLayoutFor(loadSettings(), { id: gameId ?? "" }));
+  }, [gameId]);
+  /** @param {object} patch */
+  const changeTouchControls = (patch) => {
+    const next = touchLayout({ ...touchControls, ...patch });
+    setTouchControls(next);
+    if (!gameId) return;
+    const stored = loadSettings();
+    saveSettings({ bottleConfig: { ...stored.bottleConfig,
+      [gameId]: { ...stored.bottleConfig[gameId], touch: next } } });
+  };
+
   /** What the touch controls send, to the engine running now. @param {any} event */
   const sendInput = useCallback((event) => controls.current?.app?.input.send(event), []);
   /** The engine's on-screen keyboard, for the touch controls' Keys. */
@@ -608,11 +625,11 @@ export function PlayScreen({ bundle, media, title, onClose, onExited }) {
             "&:-webkit-full-screen": { p: 0, bgcolor: "#000" },
           }}
         >
-          {touch && started && controls.current?.app
-            && touchLayoutFor(loadSettings(), bundle ?? { id: "" }).controls !== "off" && (
+          {touch && started && controls.current?.app && (
             <TouchControls
               send={sendInput}
-              layout={touchLayoutFor(loadSettings(), bundle ?? { id: "" })}
+              layout={touchControls}
+              onLayout={changeTouchControls}
               canvas={canvasRef}
               frame={state.frame}
               keyboard={keyboard}

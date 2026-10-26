@@ -183,24 +183,148 @@ export function keyTap(code) {
   ];
 }
 
+/** How far a finger may move, in CSS pixels, and still be a tap rather than a drag. */
+export const TAP_SLOP = 10;
+/** How long a press may last and still be a tap. */
+export const TAP_MS = 350;
+/** How soon after a tap a finger coming down again takes the button with it, for a drag. */
+export const DRAG_AFTER_TAP_MS = 300;
+/** How far two fingers move together, in CSS pixels, for one notch of the wheel. */
+export const SCROLL_STEP = 24;
+/** Program pixels per touchpad pixel, over the picture's own scale: a pad is a fraction of the picture. */
+export const PAD_SPEED = 2.5;
+
+/**
+ * The touchpad: fingers on it, as a laptop's pad reads them, turned into the
+ * mouse a program reads -- relative motion only, so the cursor moves from
+ * where it is and never jumps to where a finger came down.
+ *
+ * One finger moves the cursor; lifted soon and still, it is a left click
+ * where the cursor is. A finger that comes down again soon after a tap and
+ * moves holds the left button for a drag. Two fingers lifted soon and still
+ * are a right click; two moved up or down turn the wheel, the content
+ * following the fingers as a phone's does.
+ *
+ * Each method answers the events to send, in order.
+ *
+ * @param {number} [speed]  Program pixels per pad pixel, at a picture's scale of one.
+ */
+export function createTouchpad(speed = PAD_SPEED) {
+  const look = createLook(speed);
+  /** @type {Map<number, { x: number, y: number, startX: number, startY: number, at: number }>} */
+  const fingers = new Map();
+  let lastTap = -Infinity;
+  let dragArmed = false;
+  let dragging = false;
+  /** The fingers this touch has had at once, and whether any moved past a tap. */
+  let most = 0;
+  let moved = false;
+  let began = 0;
+  let scrollRest = 0;
+
+  /** @param {boolean} down @param {string} [button] */
+  const press = (down, button = "left") => ({ kind: "pointerButton", button, down });
+
+  return {
+    /** @param {number} id @param {number} x @param {number} y @param {number} at */
+    down(id, x, y, at) {
+      if (fingers.size === 0) {
+        most = 0;
+        moved = false;
+        began = at;
+        dragArmed = at - lastTap <= DRAG_AFTER_TAP_MS;
+      }
+      fingers.set(id, { x, y, startX: x, startY: y, at });
+      most = Math.max(most, fingers.size);
+      return [];
+    },
+
+    /**
+     * @param {number} id @param {number} x @param {number} y
+     * @param {{ x: number, y: number }} scale  The picture's program pixels per CSS pixel.
+     */
+    move(id, x, y, scale) {
+      const finger = fingers.get(id);
+      if (!finger) return [];
+      const dx = x - finger.x;
+      const dy = y - finger.y;
+      finger.x = x;
+      finger.y = y;
+      if (Math.hypot(x - finger.startX, y - finger.startY) > TAP_SLOP) moved = true;
+      /** @type {any[]} */
+      const events = [];
+      if (fingers.size >= 2) {
+        // The fingers' mean motion: each moves its share.
+        scrollRest += dy / fingers.size;
+        const notches = Math.trunc(scrollRest / SCROLL_STEP);
+        if (notches !== 0) {
+          scrollRest -= notches * SCROLL_STEP;
+          // Fingers going up push the content up, which is scrolling down: a negative wheel.
+          events.push({ kind: "wheel", delta: notches * 120 });
+        }
+        return events;
+      }
+      if (dragArmed && moved && !dragging) {
+        dragging = true;
+        events.push(press(true));
+      }
+      const motion = look.move(dx, dy, scale);
+      if (motion) events.push(motion);
+      return events;
+    },
+
+    /** @param {number} id @param {number} at */
+    up(id, at) {
+      if (!fingers.delete(id) || fingers.size > 0) return [];
+      scrollRest = 0;
+      if (dragging) {
+        dragging = false;
+        dragArmed = false;
+        return [press(false)];
+      }
+      if (moved || at - began > TAP_MS) return [];
+      if (most >= 2) return [press(true, "right"), press(false, "right")];
+      lastTap = at;
+      return [press(true), press(false)];
+    },
+
+    /** The fingers went away without lifting (the touch was cancelled). */
+    cancel() {
+      fingers.clear();
+      scrollRest = 0;
+      if (!dragging) return [];
+      dragging = false;
+      dragArmed = false;
+      return [press(false)];
+    },
+  };
+}
+
 /** What a bottle's touch controls are, when its settings say nothing. */
-export const TOUCH_DEFAULTS = Object.freeze({ controls: "keys", move: "wasd", hand: "right", size: 1 });
+export const TOUCH_DEFAULTS = Object.freeze({ controls: "keys", move: "wasd", hand: "right", size: 1,
+  opacity: 1 });
+
+/** The controls there are: a stick and buttons, a stick and a touchpad, a gamepad, or none. */
+export const CONTROLS = Object.freeze(["keys", "mouse", "pad", "off"]);
+export const SIZES = Object.freeze([0.8, 1, 1.25]);
+export const OPACITIES = Object.freeze([0.4, 0.7, 1]);
 
 /**
  * The touch controls a bottle runs with: what this browser keeps for it, over
  * the defaults, every field checked.
  *
  * @param {any} stored
- * @returns {{ controls: "keys" | "pad" | "off", move: keyof typeof MOVE_KEYS,
- *     hand: "right" | "left", size: number }}
+ * @returns {{ controls: "keys" | "mouse" | "pad" | "off", move: keyof typeof MOVE_KEYS,
+ *     hand: "right" | "left", size: number, opacity: number }}
  */
 export function touchLayout(stored) {
   const source = stored && typeof stored === "object" ? stored : {};
   return {
-    controls: ["keys", "pad", "off"].includes(source.controls) ? source.controls : TOUCH_DEFAULTS.controls,
+    controls: CONTROLS.includes(source.controls) ? source.controls : TOUCH_DEFAULTS.controls,
     move: Object.hasOwn(MOVE_KEYS, source.move) ? source.move : TOUCH_DEFAULTS.move,
     hand: source.hand === "left" ? "left" : "right",
-    size: [0.8, 1, 1.25].includes(source.size) ? source.size : TOUCH_DEFAULTS.size,
+    size: SIZES.includes(source.size) ? source.size : TOUCH_DEFAULTS.size,
+    opacity: OPACITIES.includes(source.opacity) ? source.opacity : TOUCH_DEFAULTS.opacity,
   };
 }
 

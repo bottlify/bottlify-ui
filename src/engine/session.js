@@ -1056,11 +1056,16 @@ async function run({ bundle, media, canvas, report: show, silentInstall = false,
     + "display:none;image-rendering:pixelated";
   canvas.parentElement?.appendChild(drawnCursor);
   let cursorShown = true;
+  // A touch screen has no cursor of its own either, so there the program's is
+  // drawn whenever the program shows one: moved by the touchpad, it is the
+  // only way to see where a tap will click.
+  const touchScreen = isTouchScreen(window);
   const showDrawnCursor = () => {
-    drawnCursor.style.display = cursorShown && document.pointerLockElement === canvas
+    drawnCursor.style.display = cursorShown && (touchScreen || document.pointerLockElement === canvas)
       ? "block" : "none";
   };
   document.addEventListener("pointerlockchange", showDrawnCursor);
+  showDrawnCursor();
   app.on("cursor-moved", ({ x, y }) => {
     drawnCursor.style.left = `${x * 100}%`;
     drawnCursor.style.top = `${y * 100}%`;
