@@ -239,12 +239,9 @@ test("what reached the canvas is named by source, and the last frame reads as on
   assert.equal(bare.lastFrame, null);
 });
 
-test("the game code's row names the engine that ran it", () => {
+test("the game code's row names the translator that ran it", () => {
   const was = snapshot({ shown: 0, guestMs: 100 });
   const now = snapshot({ shown: 10, guestMs: 900 });
-  now[0].metrics.engine = "emulator";
-  assert.equal(overlayRows(was, now, 1000).budget[0].name, "emulator (game code)");
-  now[0].metrics.engine = "cork";
   assert.equal(overlayRows(was, now, 1000).budget[0].name, "cork (game code)");
 });
 

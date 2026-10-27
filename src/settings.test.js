@@ -94,7 +94,6 @@ test("what a person actually chose is kept as chosen", async () => {
     // frame the guest presents.
     maxFps: 0,
     quantum: 20000,
-    engine: "emulator",
     video: false,
     sound: false,
     traceStrings: false,
@@ -108,9 +107,8 @@ test("what a person actually chose is kept as chosen", async () => {
     "the screen is not among what a person chooses");
   assert.equal(chosen.maxFps, 0);
   assert.equal(chosen.quantum, 20000);
-  assert.equal(chosen.engine, "emulator");
-  assert.equal(normalise({ engine: "cork" }).engine, "cork", "the translator alone is a choice");
-  assert.equal(normalise({ engine: "hybrid" }).engine, "cork", "an engine that is gone falls back to cork");
+  assert.equal(/** @type {any} */ (normalise({ engine: "emulator" })).engine, undefined,
+    "the engine is not a choice any more: an old stored one is dropped");
   assert.equal(chosen.video, false);
   assert.equal(chosen.cacheBundle, true);
   assert.equal(chosen.logLevel, "trace");

@@ -391,9 +391,7 @@ export function overlayRows(previous, current, elapsedMs, symbols) {
   const gpuNames = new Set(["uploads", "passes", "submit", "present"]);
   const waitNames = new Set(["yield", "idle-deadline", "poll", "pump"]);
   const budget = [
-    // The engine that ran the game code: cork translates it, and only a caller's own
-    // v86 build emulates it.
-    { name: `${cpuNow.engine === "emulator" ? "emulator" : "cork"} (game code)`, ms: perFrame(guestMs) },
+    { name: "cork (game code)", ms: perFrame(guestMs) },
     { name: "host calls (GL, audio, win32)", ms: perFrame(of("trap")) },
     // Inside host calls, but not the call itself: shown apart, as the split below shows it.
     { name: "Direct3D entry (state to the device)", ms: perFrame(ENTRY_PHASES.reduce((sum, name) => sum + of(name), 0)) },

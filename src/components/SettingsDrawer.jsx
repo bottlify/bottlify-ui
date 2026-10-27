@@ -17,7 +17,6 @@ import {
   buildReport, journalLine, lastEndingReport, reportFilename, reportParts,
 } from "../engine/journal.js";
 import { jsonParts } from "../engine/jsonparts.js";
-import { V86_WASM_URL } from "../engine/session.js";
 import {
   AREAS, GPU_JOURNAL, LEVELS, MEMORY_CHOICES, loadSettings, saveSettings, storagePersists,
 } from "../settings.js";
@@ -253,15 +252,6 @@ export function SettingsDrawer({
  * @param {(patch: Partial<import("../settings.js").RunSettings>) => void} props.change
  */
 function BottleSettings({ app, running, facts, settings, change }) {
-  // The emulator is offered only where this server holds a v86 build to run.
-  const [emulator, setEmulator] = useState(false);
-  useEffect(() => {
-    let live = true;
-    fetch(V86_WASM_URL, { method: "HEAD" })
-      .then((response) => live && setEmulator(response.ok))
-      .catch(() => {});
-    return () => { live = false; };
-  }, []);
   // The journal's own figures, read where they are written rather than asked
   // for: a panel polling the engine would be the running program paying for
   // this panel. The media layer has no such table, so it is asked once -- a
@@ -305,24 +295,6 @@ function BottleSettings({ app, running, facts, settings, change }) {
       </Group>
 
       <Group title="Machine" note={NEXT_RUN}>
-        <Tooltip title={running ? APPLIES_NEXT_START : ""} disableHoverListener={!running}>
-          <TextField
-            select
-            fullWidth
-            size="small"
-            label="Execution engine"
-            value={settings.engine}
-            disabled={running}
-            onChange={(event) => change({ engine: event.target.value })}
-            helperText={"Cork translates the program’s code to WebAssembly. The emulator runs "
-              + "only where a v86 build has been put on this server."}
-          >
-            <MenuItem value="cork">Cork</MenuItem>
-            <MenuItem value="emulator" disabled={!emulator}>
-              {emulator ? "Emulator (v86)" : "Emulator (v86) — not installed"}
-            </MenuItem>
-          </TextField>
-        </Tooltip>
         <Tooltip title={running ? APPLIES_NEXT_START : ""} disableHoverListener={!running}>
           <TextField
             select

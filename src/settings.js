@@ -44,9 +44,6 @@ const SCREEN = Object.freeze({ width: 1024, height: 768, bitsPerPixel: 32 });
  *     Always `SCREEN`, and never stored.
  * @property {number} maxFps        Zero means every frame the guest presents.
  * @property {number} quantum       Guest instructions per scheduler turn.
- * @property {"cork" | "emulator"} engine Which execution engine runs the program:
- *                                  cork, which the engine carries, or a v86
- *                                  build the server holds (next run).
  * @property {boolean} video        Whether the intro video decoder is loaded.
  * @property {boolean} sound        Whether an audio thread is started at all.
  * @property {boolean} muteWhenHidden Silence the output while the page is in the
@@ -172,7 +169,6 @@ export const DEFAULTS = Object.freeze({
   screen: SCREEN,
   maxFps: 60,
   quantum: 100000,
-  engine: "cork",
   video: true,
   sound: true,
   muteWhenHidden: true,
@@ -289,7 +285,6 @@ export function normalise(raw) {
     screen: SCREEN,
     maxFps: whole(source.maxFps, DEFAULTS.maxFps, LIMITS.maxFps),
     quantum: whole(source.quantum, DEFAULTS.quantum, LIMITS.quantum),
-    engine: ["cork", "emulator"].includes(source.engine) ? source.engine : DEFAULTS.engine,
     video: flag(source.video, DEFAULTS.video),
     sound: flag(source.sound, DEFAULTS.sound),
     muteWhenHidden: flag(source.muteWhenHidden, DEFAULTS.muteWhenHidden),

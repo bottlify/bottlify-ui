@@ -90,14 +90,6 @@ window.bottlifyRun = (wanted) => {
   return wanted;
 };
 const ENGINE_URL = FROM_SOURCE ? "/source/modules/core/src/index.js" : "/engine/core.js";
-// The emulator is not part of the engine: a v86 build is served here only if
-// someone put one there, and the engine runs it only when it is handed one.
-export const V86_MODULE_URL = "/engine/vendor/libv86.mjs";
-// `?v86=profiler` loads the build that counts what it does -- instructions
-// by opcode, exits by cause -- for a measurement; a player wants the other.
-export const V86_WASM_URL = new URLSearchParams(window.location.search).get("v86") === "profiler"
-  ? "/source/modules/core/vendor/prebuilt/v86-profiler.wasm"
-  : "/engine/vendor/v86.wasm";
 const MEDIA_WASM_URL = "/engine/vendor/video-decoder.wasm";
 /** Guest RAM for an installation: two gigabytes, the whole of a 32-bit user space. */
 const INSTALLER_MEMORY = 2 * 1024 * 1024 * 1024;
@@ -691,19 +683,7 @@ async function run({ bundle, media, canvas, report: show, silentInstall = false,
   // Same convention: the perf overlay's "guest code" block folds the cpu
   // layer's raw address buckets through this when there is one.
   const sidecarSymbols = bundle && !kept ? await getSidecarSymbols(bundle.id) : undefined;
-  // Only for a run that asked for the emulator, and refused plainly where this
-  // server has no v86 build to hand over.
-  const wasm = settings.engine === "emulator"
-    ? await fetchBytes(V86_WASM_URL, "emulator", (read, total) => report({
-      detail: `emulator — ${megabytes(read)}${total ? ` of ${megabytes(total)}` : ""}`,
-      progress: { label: "emulator", read, total },
-    })).catch(() => {
-      throw failure("the emulator is not installed",
-        "This server has no v86 build; choose Cork in the settings.");
-    })
-    : null;
-
-  // Optional, unlike the emulator's: a build without it runs everything that
+  // Optional: a build without it runs everything that
   // never plays a video, and the media layer says so in its own diagnostics.
   // Refusing to launch over a missing decoder would be a worse answer than the
   // one the panel already gives.
@@ -871,11 +851,10 @@ async function run({ bundle, media, canvas, report: show, silentInstall = false,
         ? Object.keys(cpuConfig).length > 0 ? { cpu: cpuConfig } : {}
         : { cpu: { ...cpuConfig, cores: 1 } }),
     canvas,
-    // Handed over rather than copied: the two binaries are megabytes nothing
-    // on this side reads again.
-    transfer: [...(wasm ? [wasm.buffer] : []), ...(decoder ? [decoder.buffer] : [])],
+    // Handed over rather than copied: the binary is megabytes nothing on this
+    // side reads again.
+    transfer: decoder ? [decoder.buffer] : [],
     executable,
-    ...(wasm ? { v86: { moduleUrl: V86_MODULE_URL, wasmBytes: wasm.buffer } } : {}),
     media: decoder ? { wasmBytes: decoder.buffer } : undefined,
     imagePath,
     // The relay on this page's own origin, where the configuration says there
@@ -925,20 +904,11 @@ async function run({ bundle, media, canvas, report: show, silentInstall = false,
     screen,
     maxFps: settings.maxFps,
     quantum: settings.quantum,
-    // Which engine runs the program: the emulator alone, or with the
-    // translator taking the hot code.
-    engine: settings.engine,
     // The Windows and the graphics API the bottle runs as (`bottleConfigFor`).
     ...(prefix || !bundle ? {} : bottleConfigFor(settings, bundle)),
     // `?gpu=sm1` .. `sm4` or `host`: the video adapter's profile, over the bottle's.
     ...(SHADER_CHOICES.some((one) => one.value === query.get("gpu"))
       ? { gpuProfile: query.get("gpu") } : {}),
-    // `?jit=1:8,3:2000`: the emulator's compiler knobs by index (1 pages per
-    // module, 3 extra basic blocks), for measuring how far a guest runs
-    // before it leaves generated code.
-    jit: query.get("jit")
-      ? Object.fromEntries(query.get("jit").split(",").map((pair) => pair.split(":").map(Number)))
-      : undefined,
     // The saved areas, plus whatever `?log=call.audio,call.com&logSize=40000`
     // on the launcher's own address asks for. Everything a program decides
     // about a device it decides while starting up, and a category switched on
