@@ -21,7 +21,6 @@ import { ArchiveDialog } from "./components/ArchiveDialog.jsx";
 import { AppHeader } from "./components/AppHeader.jsx";
 import { Footer } from "./components/Footer.jsx";
 import { InstallScreen } from "./components/InstallScreen.jsx";
-import { AddDialog } from "./components/AddDialog.jsx";
 import { useSteam } from "./components/SteamStore.jsx";
 import { Landing } from "./components/Landing.jsx";
 import { License } from "./components/License.jsx";
@@ -57,7 +56,6 @@ export default function App() {
     /** @type {{ bundle: any, mode: "machine" | "describe" } | null} */ (null));
   const chooser = useRef(null);
   // Add's choice: a file, or Steam, which is signed in to under Game Accounts.
-  const [adding, setAdding] = useState(false);
   // The file being looked at and read, and the way to stop that.
   const [reading, setReading] = useState(null);
   const readingAbort = useRef(null);
@@ -266,7 +264,7 @@ export default function App() {
           can be started; on the front page they would be controls over
           nothing. */}
         <AppHeader
-          onAdd={inLibrary && config?.allowInstall ? () => setAdding(true) : null}
+          onAdd={inLibrary && config?.allowInstall ? () => chooser.current?.click() : null}
           onSettings={inLibrary ? () => setSettings(true) : null}
           onStorage={inLibrary ? () => setSettings("storage") : null}
         />
@@ -288,21 +286,6 @@ export default function App() {
             onClose={() => setNotice(null)}>
             {notice}
           </Alert>
-        )}
-
-        {adding && (
-          <AddDialog
-            steamAccount={steam.account}
-            onFile={() => {
-              setAdding(false);
-              chooser.current?.click();
-            }}
-            onSteam={() => {
-              setAdding(false);
-              setSettings("accounts");
-            }}
-            onClose={() => setAdding(false)}
-          />
         )}
 
         {asking && (
