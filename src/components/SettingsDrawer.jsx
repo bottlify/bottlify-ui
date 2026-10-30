@@ -11,6 +11,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FilesDialog } from "./FilesDialog.jsx";
 import { StorageSettings } from "./StorageSettings.jsx";
+import { SteamAccount } from "./SteamStore.jsx";
 import { EDITABLE_TYPES } from "../api/config.js";
 import { mountOf } from "../engine/patches.js";
 import { bottleFiles, liveFiles } from "../engine/volumes.js";
@@ -79,6 +80,7 @@ const SECTIONS = [
   { key: "logs", title: "Logs", says: "Everything the engine has said, as it says it" },
   { key: "files", title: "Files", says: "The bottle's volume, as the program sees it" },
   { key: "storage", title: "Storage", says: "What each bottle keeps in this browser, and clearing it" },
+  { key: "accounts", title: "Game Accounts", says: "The stores you own games in, signed in here" },
 ];
 
 /** Said once per group rather than per control, where a group is all one answer. */
@@ -120,10 +122,13 @@ const APPLIES_NEXT_START = "Applies to the next start.";
  * @param {import("../api/bundles.js").BundleManifest | null} [props.bundle]  Its
  *        manifest, for the files: where the game's directory is, and before a run
  *        what the game will see.
+ * @param {ReturnType<typeof import("./SteamStore.jsx").useSteam> | null} [props.steam]
+ *        The Steam account the library shows the games of; without it there is
+ *        no Game Accounts section -- a running stage has no library to fill.
  */
 export function SettingsDrawer({
   open, onClose, app = null, running = false, facts = [], inline = false, start = null,
-  bundleId = "untitled", bundle = null,
+  bundleId = "untitled", bundle = null, steam = null,
 }) {
   const [section, setSection] = useState(start);
   // The one file editor: the running machine's volume while a title runs, what
@@ -135,7 +140,8 @@ export function SettingsDrawer({
   // without the panel being reopened.
   const [settings, setSettings] = useState(loadSettings);
   const change = useCallback((patch) => setSettings(saveSettings(patch)), []);
-  const here = SECTIONS.find((entry) => entry.key === section) ?? null;
+  const sections = SECTIONS.filter((entry) => entry.key !== "accounts" || steam);
+  const here = sections.find((entry) => entry.key === section) ?? null;
 
   // Opening and closing put the panel back where it opens from, so reopening
   // it is not a continuation of whatever was last read, and a panel opened
@@ -167,7 +173,7 @@ export function SettingsDrawer({
 
       {here === null && (
         <List sx={{ py: 0 }}>
-          {SECTIONS.map((entry) => (
+          {sections.map((entry) => (
             <ListItemButton
               key={entry.key}
               onClick={() => setSection(entry.key)}
@@ -190,6 +196,11 @@ export function SettingsDrawer({
           onClose={() => setSection(null)} />
       )}
       {section === "storage" && <StorageSettings />}
+      {section === "accounts" && steam && (
+        <Stack gap={1.5} sx={{ p: 2, overflowY: "auto" }}>
+          <SteamAccount steam={steam} />
+        </Stack>
+      )}
       {section === "files" && !files && (
         <Typography variant="body2" color="text.secondary" sx={{ p: 2 }}>
           No bottle is open.

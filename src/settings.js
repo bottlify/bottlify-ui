@@ -17,7 +17,7 @@
  * -- except the display, which follows the screen this page is on.
  */
 
-import { SORTS, TAGS } from "./api/libraryView.js";
+import { FILTERS, SORTS } from "./api/libraryView.js";
 import { touchLayout } from "./engine/touch.js";
 
 const KEY = "bottlify.settings";
@@ -68,12 +68,9 @@ const SCREEN = Object.freeze({ width: 1024, height: 768, bitsPerPixel: 32 });
  *                                  person who never asked for it should pay
  *                                  nothing for it.
  * @property {boolean} profileCalls Whether every host call is timed as its own phase (next run)
- * @property {string[]} libraryTags The library's tags that are on (`TAGS` values): a
- *                                  bottle shows while all of its tags are, so
- *                                  none on shows nothing. Opens on `game`,
- *                                  `demo` and the playability marks.
- * @property {string[]} libraryTagsKnown The tags there were when the choice was
- *                                  stored, so one added later starts on.
+ * @property {string[]} libraryFilters The library's filter values checked
+ *                                  (`FILTERS`). They only add, so none checked is
+ *                                  the whole library, which is how it opens.
  * @property {string} librarySort   The order the library is in (`SORTS` value).
  * @property {Record<string, Record<string, string>>} bottleFiles
  *                                  The person's own edits to a title's files, by
@@ -184,8 +181,7 @@ export const DEFAULTS = Object.freeze({
   logOpen: false,
   overlayOn: false,
   profileCalls: false,
-  libraryTags: ["game", "demo", "playable", "start-only", "non-playable", "unchecked"],
-  libraryTagsKnown: TAGS.map((one) => one.value),
+  libraryFilters: [],
   librarySort: SORTS[0].value,
   bottleFiles: {},
   bottleConfig: {},
@@ -262,14 +258,6 @@ function fraction(value, fallback) {
   return Number.isFinite(number) && number >= 0 && number <= 1 ? number : fallback;
 }
 
-// A tag the library gained after the choice was stored starts as the defaults
-// have it: off, it would hide every bottle marked with it behind a chip never
-// let go of. A store from before the list was kept knew the first five.
-function tagsSince(known) {
-  const seen = Array.isArray(known) ? known : ["game", "application", "demo", "benchmark", "test"];
-  return DEFAULTS.libraryTags.filter((tag) => !seen.includes(tag));
-}
-
 /**
  * A stored blob turned into settings the engine can be handed.
  *
@@ -302,15 +290,14 @@ export function normalise(raw) {
     logOpen: flag(source.logOpen, DEFAULTS.logOpen),
     overlayOn: flag(source.overlayOn, DEFAULTS.overlayOn),
     profileCalls: flag(source.profileCalls, DEFAULTS.profileCalls),
-    // Only tags and an order the library knows: one it has since dropped would
-    // otherwise hold every bottle back behind a chip nobody can see to clear.
-    // Nothing stored opens on the defaults; every chip let go of is a choice
-    // and stays one.
-    libraryTags: Array.isArray(source.libraryTags)
-      ? [...new Set([...source.libraryTags, ...tagsSince(source.libraryTagsKnown)]
-        .filter((tag) => TAGS.some((one) => one.value === tag)))]
-      : [...DEFAULTS.libraryTags],
-    libraryTagsKnown: DEFAULTS.libraryTagsKnown,
+    // Only values the library knows: one it has since dropped would narrow it
+    // behind a chip nobody can see to clear. The tags stored before
+    // (`libraryTags`) said what to hide rather than what to show, so they are
+    // not carried over -- read as filters they would hide all but the default
+    // "Game" -- and the library opens whole.
+    libraryFilters: Array.isArray(source.libraryFilters)
+      ? [...new Set(source.libraryFilters.filter((value) => FILTERS.some((one) => one.value === value)))]
+      : [],
     librarySort: SORTS.some((one) => one.value === source.librarySort)
       ? source.librarySort : DEFAULTS.librarySort,
     bottleFiles: bottleFilesOf(source.bottleFiles),

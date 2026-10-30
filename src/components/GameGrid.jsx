@@ -4,34 +4,83 @@
  * See LICENSE for details
  */
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
-  Box, ButtonBase, Chip, InputAdornment, MenuItem, TextField, ToggleButton, ToggleButtonGroup,
-  Typography,
+  Badge, Box, Button, ButtonBase, Checkbox, Chip, Divider, FormControlLabel, InputAdornment,
+  MenuItem, Popover, TextField, Typography,
 } from "@mui/material";
-import { SORTS, SOURCES, TAGS, viewLibrary } from "../api/libraryView.js";
+import { FILTER_GROUPS, FILTERS, SORTS, viewLibrary, withSteamGames } from "../api/libraryView.js";
 import { loadSettings, saveSettings } from "../settings.js";
 import { GameCard } from "./GameCard.jsx";
 import { SteamInstall } from "./SteamStore.jsx";
 
-/** A tag in the filter: on, what carries it shows; off, all of it is gone. */
-function Tag({ label, on, onToggle }) {
-  return (
-    <Chip
-      label={label}
-      size="small"
-      clickable
-      color={on ? "primary" : "default"}
-      variant={on ? "filled" : "outlined"}
-      aria-pressed={on}
-      onClick={onToggle}
-    />
-  );
-}
-
 const toggled = (held, value) => (held.includes(value)
   ? held.filter((one) => one !== value)
   : [...held, value]);
+
+/**
+ * What Filters opens: the order, then a group of checkboxes each. A popover
+ * rather than a menu, so it stays open while several values are checked, and
+ * rows tall enough for a finger.
+ *
+ * @param {Object} props
+ * @param {HTMLElement | null} props.anchor  Open while set.
+ * @param {() => void} props.onClose
+ * @param {typeof FILTER_GROUPS} props.groups  The groups offered.
+ * @param {string[]} props.checked
+ * @param {(value: string) => void} props.onToggle
+ * @param {() => void} props.onClear
+ * @param {string} props.sort
+ * @param {(value: string) => void} props.onSort
+ */
+function FiltersPanel({ anchor, onClose, groups, checked, onToggle, onClear, sort, onSort }) {
+  return (
+    <Popover
+      open={Boolean(anchor)}
+      anchorEl={anchor}
+      onClose={onClose}
+      anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
+      transformOrigin={{ vertical: "top", horizontal: "right" }}
+      slotProps={{ paper: { sx: { mt: 1, width: 320, maxWidth: "calc(100vw - 32px)", p: 2 } } }}
+    >
+      <TextField
+        select
+        fullWidth
+        size="small"
+        label="Sort by"
+        value={sort}
+        onChange={(event) => onSort(event.target.value)}
+      >
+        {SORTS.map(({ value, label }) => (
+          <MenuItem key={value} value={value}>{label}</MenuItem>
+        ))}
+      </TextField>
+      {groups.map((group) => (
+        <Box key={group.key} role="group" aria-label={group.title} sx={{ mt: 2 }}>
+          <Typography variant="overline" color="text.secondary" sx={{ lineHeight: 1.5 }}>
+            {group.title}
+          </Typography>
+          <Box sx={{ display: "grid", gridTemplateColumns: "1fr 1fr" }}>
+            {group.options.map(({ value, label }) => (
+              <FormControlLabel key={value} label={label} sx={{ mr: 0 }}
+                control={<Checkbox size="small" checked={checked.includes(value)}
+                  onChange={() => onToggle(value)} />} />
+            ))}
+          </Box>
+        </Box>
+      ))}
+      {groups.length > 0 && (<>
+        <Divider sx={{ my: 1.5 }} />
+        <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+          <Typography variant="caption" color="text.secondary" sx={{ flex: 1 }}>
+            A group with nothing checked shows everything.
+          </Typography>
+          <Button size="small" onClick={onClear} disabled={checked.length === 0}>Clear</Button>
+        </Box>
+      </>)}
+    </Popover>
+  );
+}
 
 /**
  * The library: its title, the way back to the front page, and the grid of
@@ -51,8 +100,8 @@ const toggled = (held, value) => (held.includes(value)
  * @param {boolean} [props.editable]  The server's bottles are this launcher's to
  *     describe; a bottle kept in this browser always is.
  * @param {boolean} props.blurred
- * @param {boolean} [props.tagged]  The tags are offered as filters; without them the
- *     library is shown whole, whatever tags were last chosen.
+ * @param {boolean} [props.tagged]  Kind and status are offered as filters; without
+ *     them they narrow nothing, whatever was last checked.
  * @param {ReturnType<typeof import("./SteamStore.jsx").useSteam>} [props.steam]  The Steam
  *     account signed in in this browser: its games not installed are cards beside the
  *     bottles, each with its Install.
@@ -60,32 +109,26 @@ const toggled = (held, value) => (held.includes(value)
 export function GameGrid({
   bundles, onSelect, onSettings, onEdit, editable = false, blurred, tagged = false, steam,
 }) {
-  // The search is for now; the tags and the order are kept, so the library
+  // The search is for now; the filters and the order are kept, so the library
   // opens as it was left. A forgotten search would read as games gone missing.
   const [query, setQuery] = useState("");
-  const [chosen, setTags] = useState(() => loadSettings().libraryTags);
-  const tags = tagged ? chosen : TAGS.map(({ value }) => value);
+  const [filters, setFilters] = useState(() => loadSettings().libraryFilters);
   const [sort, setSort] = useState(() => loadSettings().librarySort);
-  const [source, setSource] = useState("all");
-  // A Steam game not installed is a card like a bottle's, standing for it
-  // until it is one; an installed one is its bottle.
+  const [open, setOpen] = useState(/** @type {HTMLElement | null} */ (null));
+  const button = useRef(null);
   const steamGames = steam?.games;
-  const everything = useMemo(() => [
-    ...bundles,
-    ...(steamGames ?? []).filter((game) => !game.bundle
-      && !bundles.some((one) => one.steam?.appId === game.appId)).map((game) => ({
-      id: `steam:${game.appId}`, title: game.name, version: "", labels: [], status: null,
-      kind: "game", coverSmall: game.capsule, steam: { appId: game.appId }, store: game,
-    })),
-  ], [bundles, steamGames]);
-  const shown = useMemo(
-    () => viewLibrary(everything, { query, tags, sort, source }),
-    [everything, query, tags, sort, source]);
+  const everything = useMemo(() => withSteamGames(bundles, steamGames ?? []), [bundles, steamGames]);
+  // Where it comes from is asked only while something does come from Steam;
+  // kind and status only where the configuration offers them. A value of a
+  // group not offered is kept for when it is, and meanwhile narrows nothing.
   const fromSteam = Boolean(steam?.account) || bundles.some((one) => one.steam?.appId);
-  const chooseTags = (value) => {
-    const next = toggled(tags, value);
-    setTags(next);
-    saveSettings({ libraryTags: next });
+  const offered = FILTER_GROUPS.filter((group) => (group.key === "source" ? fromSteam : tagged));
+  const checked = filters.filter((value) => offered.some((group) =>
+    group.options.some((one) => one.value === value)));
+  const shown = viewLibrary(everything, { query, filters: checked, sort });
+  const chooseFilters = (next) => {
+    setFilters(next);
+    saveSettings({ libraryFilters: next });
   };
   const chooseSort = (value) => {
     setSort(value);
@@ -128,33 +171,11 @@ export function GameGrid({
             Library
           </Typography>
         </ButtonBase>
-        {/* Over the catalog, at its right: the search by name, the tags that
-            narrow it and the order it is in. */}
-        <Box sx={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 1.5, ml: "auto" }}>
-          {steam?.account && (
-            <Chip size="small" variant="outlined" label={`Steam: ${steam.account}`}
-              title={steam.error || "Signed in to Steam in this browser"}
-              color={steam.error ? "warning" : "default"}
-              onDelete={steam.signOut} deleteIcon={<span className="glyphicon glyphicon-log-out"
-                aria-label="Sign out of Steam" title="Sign out of Steam" style={{ fontSize: 11 }} />} />
-          )}
-          {fromSteam && (
-            <ToggleButtonGroup size="small" exclusive value={source} aria-label="Where from"
-              onChange={(_event, value) => value && setSource(value)}>
-              {SOURCES.map(({ value, label }) => (
-                <ToggleButton key={value} value={value} sx={{ py: 0.25, px: 1.25 }}>{label}</ToggleButton>
-              ))}
-            </ToggleButtonGroup>
-          )}
-          {tagged && (
-            <Box role="group" aria-label="Filter by tag"
-              sx={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 0.75 }}>
-              {TAGS.map(({ value, label }) => (
-                <Tag key={value} label={label} on={tags.includes(value)}
-                  onToggle={() => chooseTags(value)} />
-              ))}
-            </Box>
-          )}
+        {/* Over the catalog, at its right: the search by name, and Filters with
+            what narrows it and the order it is in. On a phone the row takes the
+            whole width under the title. */}
+        <Box sx={{ display: "flex", alignItems: "center", gap: 1, ml: "auto",
+          flex: { xs: "1 1 100%", sm: "0 1 auto" } }}>
           <TextField
             size="small"
             placeholder="Search by name"
@@ -168,22 +189,32 @@ export function GameGrid({
                 </InputAdornment>
               ),
             }}
-            sx={{ width: 220 }}
+            sx={{ flex: 1, minWidth: 0, width: { sm: 320 } }}
           />
-          <TextField
-            select
-            size="small"
-            value={sort}
-            onChange={(event) => chooseSort(event.target.value)}
-            inputProps={{ "aria-label": "Sort" }}
-            sx={{ minWidth: 150 }}
-          >
-            {SORTS.map(({ value, label }) => (
-              <MenuItem key={value} value={value}>{label}</MenuItem>
-            ))}
-          </TextField>
+          <Badge badgeContent={checked.length} color="primary">
+            <Button ref={button} variant="outlined" color="inherit" aria-haspopup="dialog"
+              aria-expanded={Boolean(open)} onClick={() => setOpen(button.current)}
+              startIcon={<span className="glyphicon glyphicon-filter" style={{ fontSize: 12 }} />}
+              sx={{ height: 40, whiteSpace: "nowrap", borderColor: "divider" }}>
+              Filters
+            </Button>
+          </Badge>
+          <FiltersPanel anchor={open} onClose={() => setOpen(null)} groups={offered}
+            checked={checked} onToggle={(value) => chooseFilters(toggled(filters, value))}
+            onClear={() => chooseFilters(filters.filter((value) => !checked.includes(value)))}
+            sort={sort} onSort={chooseSort} />
         </Box>
       </Box>
+      {/* What is checked, each a chip that lets it go; nothing at all while
+          nothing is, so the plain library has no row of it. */}
+      {checked.length > 0 && (
+        <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.75, mt: -1.5, mb: 3 }}>
+          {FILTERS.filter((one) => checked.includes(one.value)).map(({ value, label }) => (
+            <Chip key={value} size="small" label={label}
+              onDelete={() => chooseFilters(toggled(filters, value))} />
+          ))}
+        </Box>
+      )}
       {shown.length === 0 && (
         <Typography color="text.secondary">Nothing in the library matches.</Typography>
       )}

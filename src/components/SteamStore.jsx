@@ -5,7 +5,7 @@
  */
 
 import {
-  Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle,
+  Alert, Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle,
   LinearProgress, Stack, Typography,
 } from "@mui/material";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -113,7 +113,7 @@ export function useSteam(onInstalled) {
     setJobs((now) => new Map(now).set(appId, job));
   }, []);
 
-  return { account, games, jobs, error, signedIn, signOut, install };
+  return { account, games, jobs, error, bridged, signedIn, signOut, install };
 }
 
 /**
@@ -175,6 +175,52 @@ export function SteamSignIn({ onSignedIn, onClose }) {
         <Button onClick={onClose}>Cancel</Button>
       </DialogActions>
     </Dialog>
+  );
+}
+
+/**
+ * Steam in Settings → Game Accounts: the account signed in in this browser
+ * and Sign out, or Sign in; and what Steam last answered wrong, since the
+ * library shows only the games and would otherwise just be missing them.
+ *
+ * @param {Object} props
+ * @param {ReturnType<typeof useSteam>} props.steam
+ */
+export function SteamAccount({ steam }) {
+  const [signingIn, setSigningIn] = useState(false);
+  const { signedIn } = steam;
+  const done = useCallback(async () => {
+    setSigningIn(false);
+    await signedIn();
+  }, [signedIn]);
+  return (
+    <Box sx={{ border: "1px solid", borderColor: "divider", borderRadius: 1, p: 1.5 }}>
+      <Stack direction="row" alignItems="center" gap={1} sx={{ flexWrap: "wrap" }}>
+        <Box sx={{ flex: 1, minWidth: 0 }}>
+          <Typography variant="subtitle2">Steam</Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ wordBreak: "break-word" }}>
+            {steam.account ? `Signed in as ${steam.account}` : "Not signed in"}
+          </Typography>
+        </Box>
+        {steam.account
+          ? <Button size="small" variant="outlined" color="inherit" onClick={steam.signOut}>Sign out</Button>
+          : <Button size="small" variant="contained" onClick={() => setSigningIn(true)}>Sign in</Button>}
+      </Stack>
+      <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 1 }}>
+        {steam.account
+          ? "Your Steam games are in the library, each with Install. "
+          : "Sign in with the Steam app on your phone: the games you own show in the library, each with Install. "}
+        {steam.bridged
+          ? "The session is kept by the Bottlify extension in this browser."
+          : "The session is kept in this browser only."}
+      </Typography>
+      {steam.error && (
+        <Alert severity="warning" variant="outlined" sx={{ mt: 1.5 }}>
+          Steam answered with an error: {steam.error}
+        </Alert>
+      )}
+      {signingIn && <SteamSignIn onSignedIn={done} onClose={() => setSigningIn(false)} />}
+    </Box>
   );
 }
 

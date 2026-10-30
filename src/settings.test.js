@@ -134,30 +134,43 @@ test("a saved setting is what the next visit reads back", async () => {
   delete globalThis.localStorage;
 });
 
-test("the library opens on games and demos, and what is chosen after is kept", async () => {
+test("the library opens whole, and what is checked after is kept", async () => {
   const { normalise, DEFAULTS, saveSettings } = await fresh(30);
-  const opens = ["game", "demo", "playable", "start-only", "non-playable", "unchecked"];
-  assert.deepEqual(DEFAULTS.libraryTags, opens);
+  assert.deepEqual(DEFAULTS.libraryFilters, []);
   assert.equal(DEFAULTS.librarySort, "name");
-  assert.deepEqual(normalise({}).libraryTags, opens);
-  // A choice stored before the playability marks existed gets them on.
-  assert.deepEqual(normalise({ libraryTags: ["game"] }).libraryTags,
-    ["game", "playable", "start-only", "non-playable", "unchecked"]);
-  // Tags the library does not have, repeats and a wrong shape are not passed on.
-  const known = DEFAULTS.libraryTagsKnown;
-  assert.deepEqual(normalise({ libraryTags: ["test", "nonsense", "test", 7], libraryTagsKnown: known }).libraryTags,
-    ["test"]);
-  assert.deepEqual(normalise({ libraryTags: "demo" }).libraryTags, opens);
+  assert.deepEqual(normalise({}).libraryFilters, []);
+  // Values the library does not have, repeats and a wrong shape are not passed on.
+  assert.deepEqual(normalise({ libraryFilters: ["test", "nonsense", "test", 7, "steam"] }).libraryFilters,
+    ["test", "steam"]);
+  assert.deepEqual(normalise({ libraryFilters: "demo" }).libraryFilters, []);
   assert.equal(normalise({ librarySort: "random" }).librarySort, "name");
-  // Every chip let go of is a choice, not an absence: it must not read as the default.
-  assert.deepEqual(normalise({ libraryTags: [], libraryTagsKnown: known }).libraryTags, []);
 
   const store = {};
   globalThis.localStorage = /** @type {any} */ (fakeStorage(store));
-  saveSettings({ libraryTags: [], librarySort: "year-desc" });
+  saveSettings({ libraryFilters: ["demo", "playable"], librarySort: "year-desc" });
   const next = await fresh(31);
-  assert.deepEqual(next.loadSettings().libraryTags, []);
+  assert.deepEqual(next.loadSettings().libraryFilters, ["demo", "playable"]);
   assert.equal(next.loadSettings().librarySort, "year-desc");
+  delete globalThis.localStorage;
+});
+
+test("the tags a browser kept before the filters are dropped, and the library opens whole", async () => {
+  // The old shape: what was on, with games-and-demos the default. Read as
+  // filters it would hide every application and benchmark.
+  const old = {
+    libraryTags: ["game", "demo", "playable", "start-only", "non-playable", "unchecked"],
+    libraryTagsKnown: ["game", "application", "demo", "benchmark", "test", "unchecked"],
+    librarySort: "year-asc",
+  };
+  const store = { "bottlify.settings": JSON.stringify(old) };
+  globalThis.localStorage = /** @type {any} */ (fakeStorage(store));
+  const { loadSettings, saveSettings } = await fresh(32);
+  assert.deepEqual(loadSettings().libraryFilters, []);
+  assert.equal(loadSettings().librarySort, "year-asc", "the order is the same setting and is kept");
+  saveSettings({ maxFps: 30 });
+  const written = JSON.parse(store["bottlify.settings"]);
+  assert.equal("libraryTags" in written, false);
+  assert.equal("libraryTagsKnown" in written, false);
   delete globalThis.localStorage;
 });
 

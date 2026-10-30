@@ -7,16 +7,60 @@
 import { LABELS, STATUSES } from "./bundles.js";
 
 /**
- * What a bottle can be tagged with in the library: its kind and its labels.
- * A bottle has its kind and each of its labels as tags.
+ * What the library can be narrowed by, in groups: where a bottle comes from,
+ * what kind of program it is (its kind and its labels), how far it was found
+ * to run. `of` is what a bottle answers in that group.
+ *
+ * @type {{ key: string, title: string,
+ *   options: { value: string, label: string }[],
+ *   of: (bundle: import("./bundles.js").BundleManifest) => string[] }[]}
  */
-export const TAGS = [
-  { value: "game", label: "Game" },
-  { value: "application", label: "App" },
-  ...LABELS,
-  ...STATUSES,
-  { value: "unchecked", label: "Not checked" },
+export const FILTER_GROUPS = [
+  {
+    key: "source",
+    title: "Source",
+    options: [{ value: "steam", label: "Steam" }, { value: "other", label: "Other" }],
+    // A Steam game counts as Steam's whether installed or still only a card.
+    of: (bundle) => [bundle.steam?.appId ? "steam" : "other"],
+  },
+  {
+    key: "kind",
+    title: "Kind",
+    options: [{ value: "game", label: "Game" }, { value: "application", label: "App" }, ...LABELS],
+    of: (bundle) => [bundle.kind, ...bundle.labels],
+  },
+  {
+    key: "status",
+    title: "Status",
+    options: [...STATUSES, { value: "unchecked", label: "Not checked" }],
+    of: (bundle) => [bundle.status ?? "unchecked"],
+  },
 ];
+
+/** Every value a filter can hold, across the groups. */
+export const FILTERS = FILTER_GROUPS.flatMap((group) => group.options);
+
+/**
+ * The library with the Steam account's games beside the bottles: a game not
+ * installed is a card standing for its bottle until it is one; an installed
+ * one is its bottle already. A game with no Windows launch option is left
+ * out -- nothing here could ever start it, so a card for it is a promise
+ * Install cannot keep.
+ *
+ * @param {import("./bundles.js").BundleManifest[]} bundles
+ * @param {import("../../steam-store.mjs").StoreGame[]} games
+ * @returns {any[]}
+ */
+export function withSteamGames(bundles, games) {
+  return [
+    ...bundles,
+    ...games.filter((game) => game.launch && !game.bundle
+      && !bundles.some((one) => one.steam?.appId === game.appId)).map((game) => ({
+      id: `steam:${game.appId}`, title: game.name, version: "", labels: [], status: null,
+      kind: "game", coverSmall: game.capsule, steam: { appId: game.appId }, store: game,
+    })),
+  ];
+}
 
 /** The orders the library can be put in. The first is how it opens. */
 export const SORTS = [
@@ -24,13 +68,6 @@ export const SORTS = [
   { value: "name-desc", label: "Name Z–A" },
   { value: "year-desc", label: "Year, newest" },
   { value: "year-asc", label: "Year, oldest" },
-];
-
-/** Where a game comes from: Steam (installed or not), or anywhere else. */
-export const SOURCES = [
-  { value: "all", label: "All" },
-  { value: "steam", label: "Steam" },
-  { value: "other", label: "Other" },
 ];
 
 const byName = (a, b) => a.title.localeCompare(b.title, undefined, { numeric: true, sensitivity: "base" });
@@ -52,24 +89,26 @@ const COMPARE = {
 };
 
 /**
- * What the library shows. A tag is a switch for what carries it: with `demo`
- * on the demos are there, with it off everything marked demo is gone, whatever
- * else it is marked. So a bottle shows only while every one of its tags is on;
- * with none on, nothing does. The search then keeps the bottles whose title
- * holds `query`, and `source` those from where it names (`SOURCES`; all when
- * absent). The result is in the order `sort` names.
+ * What the library shows. The filters only ever add: within a group a bottle
+ * shows when it answers any of the values checked there, across groups it has
+ * to pass every group, and a group with nothing checked lets everything
+ * through -- so with nothing checked at all the library is whole, and a
+ * value added later cannot hide what nobody chose to hide. The search then keeps the
+ * bottles whose title holds `query`. The result is in the order `sort` names.
  *
  * @param {import("./bundles.js").BundleManifest[]} bundles
- * @param {{ query: string, tags: string[], sort: string, source?: string }} view
- *     `tags` the ones on.
+ * @param {{ query: string, filters: string[], sort: string }} view
+ *     `filters` the values checked (`FILTERS`).
  * @returns {import("./bundles.js").BundleManifest[]}
  */
-export function viewLibrary(bundles, { query, tags, sort, source = "all" }) {
+export function viewLibrary(bundles, { query, filters, sort }) {
   const needle = query.trim().toLowerCase();
+  const groups = FILTER_GROUPS
+    .map((group) => ({ of: group.of, checked: group.options.map((one) => one.value)
+      .filter((value) => filters.includes(value)) }))
+    .filter((group) => group.checked.length > 0);
   return bundles
-    .filter((bundle) => (source === "all" || (source === "steam") === Boolean(bundle.steam?.appId))
-      && (needle === "" || bundle.title.toLowerCase().includes(needle))
-      && [bundle.kind, ...bundle.labels, bundle.status ?? "unchecked"]
-        .every((tag) => tags.includes(tag)))
+    .filter((bundle) => (needle === "" || bundle.title.toLowerCase().includes(needle))
+      && groups.every((group) => group.of(bundle).some((value) => group.checked.includes(value))))
     .sort(COMPARE[sort] ?? byName);
 }

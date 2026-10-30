@@ -8,13 +8,14 @@ import { Button, Dialog, DialogContent, DialogTitle, Stack, Typography } from "@
 
 /**
  * What Add offers: a file of the person's own -- a setup, a disc image, an
- * archive, a bottle -- or signing in to a store they own games in, whose
- * games the library then shows, each with its Install.
+ * archive, a bottle -- or the way to Steam: its account is signed in to under
+ * Settings → Game Accounts, and its games then show in the library, each with
+ * its Install.
  *
  * @param {Object} props
  * @param {string | null} props.steamAccount  The account signed in in this browser.
  * @param {() => void} props.onFile
- * @param {() => void} props.onSteam  Sign in to Steam.
+ * @param {() => void} props.onSteam  Opens Settings → Game Accounts.
  * @param {() => void} props.onClose
  */
 export function AddDialog({ steamAccount, onFile, onSteam, onClose }) {
@@ -30,14 +31,16 @@ export function AddDialog({ steamAccount, onFile, onSteam, onClose }) {
           <Typography variant="caption" color="text.secondary" sx={{ mt: -1 }}>
             A setup (.exe), a disc image (.iso), an archive (.zip) or a bottle (.btl).
           </Typography>
-          <Button variant="contained" size="large" onClick={onSteam} disabled={Boolean(steamAccount)}
+          <Button variant="outlined" size="large" onClick={onSteam}
             startIcon={<span className="glyphicon glyphicon-shopping-cart" />}>
             From Steam
           </Button>
           <Typography variant="caption" color="text.secondary" sx={{ mt: -1 }}>
             {steamAccount
-              ? `Signed in as ${steamAccount}: your Steam games are in the library, each with Install.`
-              : "Sign in with the Steam app: the games you own show in the library, each with Install."}
+              ? `Signed in as ${steamAccount}: your Steam games are in the library, each with Install. `
+                + "The account is in Settings → Game Accounts."
+              : "Sign in under Settings → Game Accounts: the games you own show in the library, "
+                + "each with Install."}
           </Typography>
         </Stack>
       </DialogContent>

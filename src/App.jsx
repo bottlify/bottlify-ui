@@ -22,7 +22,7 @@ import { AppHeader } from "./components/AppHeader.jsx";
 import { Footer } from "./components/Footer.jsx";
 import { InstallScreen } from "./components/InstallScreen.jsx";
 import { AddDialog } from "./components/AddDialog.jsx";
-import { SteamSignIn, useSteam } from "./components/SteamStore.jsx";
+import { useSteam } from "./components/SteamStore.jsx";
 import { Landing } from "./components/Landing.jsx";
 import { License } from "./components/License.jsx";
 import { BottleSettingsDialog, GameDetails } from "./components/GameDetails.jsx";
@@ -56,9 +56,8 @@ export default function App() {
   const [editingBundle, setEditingBundle] = useState(
     /** @type {{ bundle: any, mode: "machine" | "describe" } | null} */ (null));
   const chooser = useRef(null);
-  // Add's choice -- a file or Steam -- and Steam's sign-in once chosen.
+  // Add's choice: a file, or Steam, which is signed in to under Game Accounts.
   const [adding, setAdding] = useState(false);
-  const [signingIn, setSigningIn] = useState(false);
   // The file being looked at and read, and the way to stop that.
   const [reading, setReading] = useState(null);
   const readingAbort = useRef(null);
@@ -98,11 +97,6 @@ export default function App() {
   const libraryChanged = useCallback(() => setLibraryRevision((n) => n + 1), []);
   // The Steam account signed in in this browser: its games are in the library.
   const steam = useSteam(libraryChanged);
-  const steamSignedIn = steam.signedIn;
-  const signedIn = useCallback(async () => {
-    setSigningIn(false);
-    await steamSignedIn();
-  }, [steamSignedIn]);
   useEffect(() => {
     let cancelled = false;
     getAvailableBundles()
@@ -305,13 +299,11 @@ export default function App() {
             }}
             onSteam={() => {
               setAdding(false);
-              setSigningIn(true);
+              setSettings("accounts");
             }}
             onClose={() => setAdding(false)}
           />
         )}
-
-        {signingIn && <SteamSignIn onSignedIn={signedIn} onClose={() => setSigningIn(false)} />}
 
         {asking && (
           <DownloadDialog
@@ -387,6 +379,7 @@ export default function App() {
           start={typeof settings === "string" ? settings : null}
           onClose={() => setSettings(false)}
           facts={[{ label: "Library", value: `${bundles.length} title${bundles.length === 1 ? "" : "s"}` }]}
+          steam={steam}
         />
 
         <Footer />

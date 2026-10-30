@@ -10,7 +10,7 @@ const YEAR = new Date().getFullYear();
 
 /**
  * One line under every screen: the way to the credits, on the left; whose it
- * is, on the right.
+ * is, on the right, which leads to its source.
  *
  * The credit to the projects Bottlify is built on is on the page the link
  * opens, with their licences, rather than one of them named in a line of its
@@ -34,7 +34,11 @@ export function Footer() {
           </Link>
         </Typography>
         <Typography variant="body2" color="text.secondary">
-          © {YEAR} Bottlify Project
+          © {YEAR}{" "}
+          <Link href="https://github.com/bottlify/bottlify" target="_blank" rel="noopener"
+            underline="hover" sx={{ color: "text.primary" }}>
+            Bottlify Project
+          </Link>
         </Typography>
       </Stack>
     </Box>
