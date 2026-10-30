@@ -6,11 +6,13 @@
 
 import { useMemo, useState } from "react";
 import {
-  Box, ButtonBase, Chip, InputAdornment, MenuItem, TextField, Typography,
+  Box, ButtonBase, Chip, InputAdornment, MenuItem, TextField, ToggleButton, ToggleButtonGroup,
+  Typography,
 } from "@mui/material";
-import { SORTS, TAGS, viewLibrary } from "../api/libraryView.js";
+import { SORTS, SOURCES, TAGS, viewLibrary } from "../api/libraryView.js";
 import { loadSettings, saveSettings } from "../settings.js";
 import { GameCard } from "./GameCard.jsx";
+import { SteamInstall } from "./SteamStore.jsx";
 
 /** A tag in the filter: on, what carries it shows; off, all of it is gone. */
 function Tag({ label, on, onToggle }) {
@@ -51,17 +53,35 @@ const toggled = (held, value) => (held.includes(value)
  * @param {boolean} props.blurred
  * @param {boolean} [props.tagged]  The tags are offered as filters; without them the
  *     library is shown whole, whatever tags were last chosen.
+ * @param {ReturnType<typeof import("./SteamStore.jsx").useSteam>} [props.steam]  The Steam
+ *     account signed in in this browser: its games not installed are cards beside the
+ *     bottles, each with its Install.
  */
-export function GameGrid({ bundles, onSelect, onSettings, onEdit, editable = false, blurred, tagged = false }) {
+export function GameGrid({
+  bundles, onSelect, onSettings, onEdit, editable = false, blurred, tagged = false, steam,
+}) {
   // The search is for now; the tags and the order are kept, so the library
   // opens as it was left. A forgotten search would read as games gone missing.
   const [query, setQuery] = useState("");
   const [chosen, setTags] = useState(() => loadSettings().libraryTags);
   const tags = tagged ? chosen : TAGS.map(({ value }) => value);
   const [sort, setSort] = useState(() => loadSettings().librarySort);
+  const [source, setSource] = useState("all");
+  // A Steam game not installed is a card like a bottle's, standing for it
+  // until it is one; an installed one is its bottle.
+  const steamGames = steam?.games;
+  const everything = useMemo(() => [
+    ...bundles,
+    ...(steamGames ?? []).filter((game) => !game.bundle
+      && !bundles.some((one) => one.steam?.appId === game.appId)).map((game) => ({
+      id: `steam:${game.appId}`, title: game.name, version: "", labels: [], status: null,
+      kind: "game", coverSmall: game.capsule, steam: { appId: game.appId }, store: game,
+    })),
+  ], [bundles, steamGames]);
   const shown = useMemo(
-    () => viewLibrary(bundles, { query, tags, sort }),
-    [bundles, query, tags, sort]);
+    () => viewLibrary(everything, { query, tags, sort, source }),
+    [everything, query, tags, sort, source]);
+  const fromSteam = Boolean(steam?.account) || bundles.some((one) => one.steam?.appId);
   const chooseTags = (value) => {
     const next = toggled(tags, value);
     setTags(next);
@@ -111,6 +131,21 @@ export function GameGrid({ bundles, onSelect, onSettings, onEdit, editable = fal
         {/* Over the catalog, at its right: the search by name, the tags that
             narrow it and the order it is in. */}
         <Box sx={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 1.5, ml: "auto" }}>
+          {steam?.account && (
+            <Chip size="small" variant="outlined" label={`Steam: ${steam.account}`}
+              title={steam.error || "Signed in to Steam in this browser"}
+              color={steam.error ? "warning" : "default"}
+              onDelete={steam.signOut} deleteIcon={<span className="glyphicon glyphicon-log-out"
+                aria-label="Sign out of Steam" title="Sign out of Steam" style={{ fontSize: 11 }} />} />
+          )}
+          {fromSteam && (
+            <ToggleButtonGroup size="small" exclusive value={source} aria-label="Where from"
+              onChange={(_event, value) => value && setSource(value)}>
+              {SOURCES.map(({ value, label }) => (
+                <ToggleButton key={value} value={value} sx={{ py: 0.25, px: 1.25 }}>{label}</ToggleButton>
+              ))}
+            </ToggleButtonGroup>
+          )}
           {tagged && (
             <Box role="group" aria-label="Filter by tag"
               sx={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 0.75 }}>
@@ -156,10 +191,11 @@ export function GameGrid({ bundles, onSelect, onSettings, onEdit, editable = fal
           cards, under a heading each once there are any of the first. */}
       {[
         { key: "local", heading: "In this browser", items: shown.filter((one) => one.local) },
-        { key: "server", heading: "On the server", items: shown.filter((one) => !one.local) },
+        { key: "server", heading: "On the server", items: shown.filter((one) => !one.local && !one.store) },
+        { key: "steam", heading: "On Steam, not installed", items: shown.filter((one) => one.store) },
       ].filter((group) => group.items.length > 0).map((group, _index, groups) => (
         <Box key={group.key} sx={{ mb: 4 }}>
-          {groups.length > 1 || group.key === "local" ? (
+          {groups.length > 1 || group.key !== "server" ? (
             <Typography variant="h6" color="text.secondary" sx={{ mb: 1.5 }}>
               {group.heading}
             </Typography>
@@ -175,12 +211,16 @@ export function GameGrid({ bundles, onSelect, onSettings, onEdit, editable = fal
               gap: 2.5,
             }}
           >
-            {group.items.map((bundle) => (
+            {group.items.map((bundle) => (bundle.store ? (
+              <GameCard key={`${group.key}:${bundle.id}`} bundle={bundle}
+                footer={<SteamInstall game={bundle.store} job={steam?.jobs.get(bundle.store.appId)}
+                  onInstall={() => steam?.install(bundle.store.appId)} />} />
+            ) : (
               <GameCard key={`${group.key}:${bundle.id}`} bundle={bundle}
                 onSelect={() => onSelect(bundle)}
                 onSettings={onSettings ? () => onSettings(bundle) : undefined}
                 onEdit={onEdit && (editable || bundle.local) ? () => onEdit(bundle) : undefined} />
-            ))}
+            )))}
           </Box>
         </Box>
       ))}

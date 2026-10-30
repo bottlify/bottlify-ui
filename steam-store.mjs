@@ -5,11 +5,15 @@
  */
 
 /**
- * The launcher's Steam store, on the machine that runs it: the signed-in
- * account's library (each game's name, art, size and how Steam starts it) and
- * installs, each one downloaded with the account's own session and packed into
- * a bottle the library lists. The session's token stays on this machine; the
- * page is told games and progress.
+ * The launcher's Steam store, on the machine that runs it: a QR sign-in
+ * relayed for a page, a signed-in account's library (each game's name, art,
+ * size and how Steam starts it) and installs, each one downloaded with the
+ * account's own session and packed into a bottle the library lists.
+ *
+ * The session is the asking browser's, handed over with each request: used
+ * for that request or that install's run and written nowhere. What is cached
+ * from it -- the account, its library, its installs -- is kept per session,
+ * so one browser's account is never answered to another.
  *
  * An install runs the engine repository's own tools as processes of their
  * own -- tools/steam-install.mjs downloads the depots, tools/make-btl.mjs
@@ -18,15 +22,33 @@
  */
 
 import { spawn } from "node:child_process";
-import { readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import {
   FILE_FLAG_DIRECTORY, connectCm, contentServers, depotKey, library, logOn, manifest,
-  manifestRequestCode,
+  manifestRequestCode, signInWithQr,
 } from "@bottlify/core/steam";
 
-/** Steam's own art for an app, from its CDN, which answers any page. */
-const ART = "https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps";
+/**
+ * Steam's own art for an app, on its CDN. Kept in a bottle's manifest as it
+ * is; a page is given it through this server (`art`), because the CDN sends
+ * no Cross-Origin-Resource-Policy, which the launcher's cross-origin isolated
+ * page needs of an image from elsewhere.
+ */
+const ART = "https://shared.steamstatic.com/store_item_assets/steam/apps";
+/** The same picture, from this server. @param {number} appId @param {string} file */
+const artHere = (appId, file) => `/steam/art/${appId}/${file}`;
+
+/** @typedef {import("./src/steam/header.js").SteamSession} SteamSession */
+
+/**
+ * What a session's caches are kept under: its token, hashed, so a browser
+ * that names an account without its token is not answered for it.
+ *
+ * @param {SteamSession} session
+ */
+const ownerOf = (session) => createHash("sha256").update(session.refreshToken).digest("hex");
 
 /**
  * @typedef {Object} StoreGame
@@ -55,34 +77,51 @@ const ART = "https://shared.cloudflare.steamstatic.com/store_item_assets/steam/a
  */
 
 /**
- * @param {{ session: string, bundles: string, language?: string }} where
- *     The kept session's file, and the directory bottles are kept in (the
- *     engine repository's `bundles/`, whose tools run from its parent).
+ * @param {{ cache: string, bundles: string, language?: string }} where
+ *     The directory kept caches go in -- sizes and art, nothing of an
+ *     account -- and the directory bottles are kept in (the engine
+ *     repository's `bundles/`, whose tools run from its parent).
  */
-export function createSteamStore({ session, bundles, language = "english" }){
+export function createSteamStore({ cache, bundles, language = "english" }){
   const engine = dirname(bundles);
   /**
-   * The account's games as Steam describes them, read at most every ten minutes.
+   * Each session's games as Steam describes them, read at most every ten minutes.
    *
-   * @type {{ at: number, games: (StoreGame & { build: string,
-   *     depots: { id: number, gid: bigint }[] })[] } | null}
+   * @type {Map<string, { at: number, games: (StoreGame & { build: string,
+   *     depots: { id: number, gid: bigint }[] })[] }>}
    */
-  let cached = null;
-  /** @type {Map<number, InstallJob>} */
+  const libraries = new Map();
+  /**
+   * Each session's account and the apps its licences grant, read at most
+   * every ten minutes.
+   *
+   * @type {Map<string, { at: number, account: { steamId: string, accountName: string,
+   *     apps: number[] } }>}
+   */
+  const accounts = new Map();
+  /**
+   * Every install there has been since the server started, by app id, and the
+   * sessions that asked for it: each is shown its own.
+   *
+   * @type {Map<number, { job: InstallJob, owners: Set<string> }>}
+   */
   const jobs = new Map();
   /**
    * What each app takes installed, by app id, for the build it was measured
-   * at, kept beside the session so a library is measured once. Null for one
-   * whose manifests could not be had.
+   * at, so a library is measured once. Null for one whose manifests could not
+   * be had. Kept by app rather than by account: it says nothing of who owns
+   * it, and a size is only answered for a game in the asking account's library.
    *
    * @type {Map<number, { build: string, bytes: number | null }>}
    */
   const sizes = new Map();
-  const sizesFile = join(dirname(session), "sizes.json");
+  const sizesFile = join(cache, "sizes.json");
   const sizesRead = readFile(sizesFile, "utf8").then((text) => {
     for (const [app, size] of Object.entries(JSON.parse(text))) sizes.set(Number(app), size);
   }).catch(() => {});
   let measuring = false;
+  /** Art being fetched or kept, by file. @type {Map<string, Promise<string | null>>} */
+  const artFetches = new Map();
 
   /** A connection to the first connection manager that answers. */
   async function connect(){
@@ -98,12 +137,12 @@ export function createSteamStore({ session, bundles, language = "english" }){
     throw new Error("no Steam connection manager answered");
   }
 
-  /** A connection logged on with the kept session. */
-  async function signedIn(){
+  /** A connection logged on with a session. @param {SteamSession} session */
+  async function signedIn(session){
     const connection = await connect();
     try {
-      const result = await logOn(connection, JSON.parse(await readFile(session, "utf8")));
-      return { connection, licenses: result.licenses };
+      const result = await logOn(connection, session);
+      return { connection, steamId: result.steamId, licenses: result.licenses };
     } catch (e){
       connection.close();
       throw e;
@@ -170,8 +209,11 @@ export function createSteamStore({ session, bundles, language = "english" }){
    * Measures, one at a time, every game whose size for its build is not known:
    * its depots' manifests, each path counted once -- a later depot that ships
    * a path replaces the earlier's, as an install writes it. Kept as it goes.
+   *
+   * @param {SteamSession} session  The one whose library it is, held for the run.
    */
-  async function measure(){
+  async function measure(session){
+    const cached = libraries.get(ownerOf(session));
     if (measuring || !cached) return;
     measuring = true;
     await sizesRead;
@@ -184,7 +226,7 @@ export function createSteamStore({ session, bundles, language = "english" }){
         if (sizes.get(game.appId)?.build === game.build || game.depots.length === 0) continue;
         try {
           if (!connection || connection.closed){
-            connection = (await signedIn()).connection;
+            connection = (await signedIn(session)).connection;
             servers = await contentServers(connection);
           }
           /** @type {Map<string, number>} */
@@ -207,6 +249,7 @@ export function createSteamStore({ session, bundles, language = "english" }){
           connection?.close?.();
           connection = null;
         }
+        await mkdir(cache, { recursive: true }).catch(() => {});
         await writeFile(sizesFile, JSON.stringify(Object.fromEntries(sizes))).catch(() => {});
       }
     } finally {
@@ -217,15 +260,66 @@ export function createSteamStore({ session, bundles, language = "english" }){
 
   return {
     /**
-     * The account's games, as the store shows them. Signed in afresh at most
+     * Signs in with a QR code for a page: Steam's connection managers refuse a
+     * page from anywhere but localhost, and do not refuse this process. The
+     * session is resolved to the caller and kept nowhere here.
+     *
+     * @param {{ onChallenge: (url: string) => void, onScanned?: () => void,
+     *     signal?: AbortSignal }} options
+     * @returns {Promise<SteamSession>}
+     */
+    async signIn(options){
+      /** @type {any} */
+      let connection = null;
+      // A manager drops a connection not logged on after a minute or so; the
+      // sign-in goes on over the next.
+      const next = async () => {
+        if (!connection || connection.closed) connection = await connect();
+        return connection;
+      };
+      options.signal?.addEventListener("abort", () => connection?.close(), { once: true });
+      try {
+        return await signInWithQr(next, { deviceName: "Bottlify", ...options });
+      } finally {
+        connection?.close();
+      }
+    },
+
+    /**
+     * The session's account and the games its licences grant, which a bottle
+     * that needs Steam running is started with (createApp's `win32.steam`).
+     *
+     * @param {SteamSession} session
+     */
+    async account(session){
+      const owner = ownerOf(session);
+      const kept = accounts.get(owner);
+      if (kept && Date.now() - kept.at < 10 * 60_000) return kept.account;
+      const { connection, steamId, licenses } = await signedIn(session);
+      try {
+        const games = await library(connection, licenses);
+        const account = { steamId: String(steamId), accountName: session.accountName,
+          apps: games.map((game) => game.appid).sort((a, b) => a - b) };
+        accounts.set(owner, { at: Date.now(), account });
+        return account;
+      } finally {
+        connection.close();
+      }
+    },
+
+    /**
+     * The session's games, as the store shows them. Signed in afresh at most
      * every ten minutes; what is installed and what is measured is read each
      * time, and what is not measured yet is measured in the background.
      *
+     * @param {SteamSession} session
      * @returns {Promise<StoreGame[]>}
      */
-    async library(){
+    async library(session){
+      const owner = ownerOf(session);
+      let cached = libraries.get(owner);
       if (!cached || Date.now() - cached.at > 10 * 60_000){
-        const { connection, licenses } = await signedIn();
+        const { connection, licenses } = await signedIn(session);
         try {
           const games = await library(connection, licenses);
           cached = { at: Date.now(), games: games.map((game) => ({
@@ -233,17 +327,18 @@ export function createSteamStore({ session, bundles, language = "english" }){
             name: game.name,
             exact: false,
             ...describe(game.info),
-            header: `${ART}/${game.appid}/header.jpg`,
-            capsule: `${ART}/${game.appid}/library_600x900.jpg`,
-            hero: `${ART}/${game.appid}/library_hero.jpg`,
+            header: artHere(game.appid, "header.jpg"),
+            capsule: artHere(game.appid, "library_600x900.jpg"),
+            hero: artHere(game.appid, "library_hero.jpg"),
             bundle: null,
           })) };
+          libraries.set(owner, cached);
         } finally {
           connection.close();
         }
       }
       await sizesRead;
-      measure().catch(() => {});
+      measure(session).catch(() => {});
       const bottles = await installed();
       // The depots and the build are the server's to measure by, not the page's.
       // eslint-disable-next-line no-unused-vars
@@ -256,41 +351,101 @@ export function createSteamStore({ session, bundles, language = "english" }){
       });
     },
 
-    /** Every install there has been since the server started. */
-    jobs: () => [...jobs.values()],
+    /**
+     * The installs a session asked for since the server started.
+     *
+     * @param {SteamSession} session
+     * @returns {InstallJob[]}
+     */
+    jobs(session){
+      const owner = ownerOf(session);
+      return [...jobs.values()].filter((one) => one.owners.has(owner)).map((one) => one.job);
+    },
 
-    /** Signed out: what was read for the account goes with it. */
-    forget(){
-      cached = null;
+    /**
+     * Signed out: what was read for the session goes with it.
+     *
+     * @param {SteamSession} session
+     */
+    forget(session){
+      const owner = ownerOf(session);
+      libraries.delete(owner);
+      accounts.delete(owner);
+      for (const one of jobs.values()) one.owners.delete(owner);
+    },
+
+    /**
+     * Steam's picture for an app, fetched once and kept on disk -- art is not
+     * secret, and a library asks for every cover at once. A cover or a
+     * background the app does not have is its header instead.
+     *
+     * @param {number} appId
+     * @param {string} file  `header.jpg`, `library_600x900.jpg`, `library_hero.jpg`, …
+     * @returns {Promise<string | null>} the file it is kept in, or null for none
+     */
+    art(appId, file){
+      const path = join(cache, "art", String(appId), file);
+      if (!artFetches.has(path)){
+        artFetches.set(path, (async () => {
+          if (await stat(path).catch(() => null)) return path;
+          for (const name of file === "header.jpg" ? [file] : [file, "header.jpg"]){
+            const answer = await fetch(`${ART}/${appId}/${name}`);
+            if (!answer.ok) continue;
+            await mkdir(dirname(path), { recursive: true });
+            // Written whole under another name first: a request at the same
+            // moment never reads half a picture.
+            await writeFile(`${path}.part`, Buffer.from(await answer.arrayBuffer()));
+            await rename(`${path}.part`, path);
+            return path;
+          }
+          return null;
+        })().catch(() => {
+          // Steam unreachable: asked again next time rather than remembered as none.
+          artFetches.delete(path);
+          return null;
+        }));
+      }
+      return /** @type {Promise<string | null>} */ (artFetches.get(path));
     },
 
     /**
      * Downloads an app and packs it into a bottle, unless it is being done.
+     * The session is held for the run and handed to the download on its stdin.
      *
+     * @param {SteamSession} session
      * @param {number} appId
      * @returns {Promise<InstallJob>}
      */
-    async install(appId){
-      const running = jobs.get(appId);
-      if (running && (running.state === "downloading" || running.state === "packing")){
-        return running;
-      }
-      const game = (await this.library()).find((one) => one.appId === appId);
+    async install(session, appId){
+      const owner = ownerOf(session);
+      // Asked of the session's own library first: an app is installed for an
+      // account that owns it, and its progress shown to one.
+      const game = (await this.library(session)).find((one) => one.appId === appId);
       if (!game) throw new Error(`app ${appId} is not in the account's library`);
+      const running = jobs.get(appId);
+      if (running && (running.job.state === "downloading" || running.job.state === "packing")){
+        running.owners.add(owner);
+        return running.job;
+      }
       if (!game.launch) throw new Error(`${game.name} has no Windows launch option`);
       /** @type {InstallJob} */
       const job = { appId, state: "downloading", done: 0, total: Math.round(game.bytes / 2 ** 20),
         message: "Connecting to Steam…" };
-      jobs.set(appId, job);
+      jobs.set(appId, { job, owners: new Set([owner]) });
       const id = `steam-${appId}`;
       const staging = join(bundles, ".staging", id);
       /**
        * A tool's run, its output read line by line.
        *
        * @param {string[]} args @param {(line: string) => void} onLine
+       * @param {string} [input]  Written to its stdin.
        */
-      const run = (args, onLine) => new Promise((resolve, reject) => {
+      const run = (args, onLine, input = "") => new Promise((resolve, reject) => {
         const child = spawn(process.execPath, args, { cwd: engine });
+        // A tool that ends before reading its stdin breaks the pipe: its exit
+        // code says what happened, and the error would otherwise end this server.
+        child.stdin.on("error", () => {});
+        child.stdin.end(input);
         let rest = "";
         const read = (/** @type {Buffer} */ chunk) => {
           rest += chunk.toString("utf8");
@@ -305,7 +460,9 @@ export function createSteamStore({ session, bundles, language = "english" }){
           : reject(new Error(`${args[0]} ended with ${code}: ${rest.trim() || job.message}`))));
       });
       (async () => {
-        await run(["tools/steam-install.mjs", "--session", session, "--app", String(appId),
+        // The session on stdin, never in a file or the command line another
+        // process could read.
+        await run(["tools/steam-install.mjs", "--session", "-", "--app", String(appId),
           "--out", staging, "--language", language], (line) => {
           const progress = /([0-9]+) of ([0-9]+) MiB \(([0-9.]+) MiB\/s\)/.exec(line);
           if (progress){
@@ -315,7 +472,7 @@ export function createSteamStore({ session, bundles, language = "english" }){
           } else if (line.trim()){
             job.message = line.trim();
           }
-        });
+        }, JSON.stringify({ accountName: session.accountName, refreshToken: session.refreshToken }));
         job.state = "packing";
         job.message = "Packing the bottle…";
         const entry = /** @type {{ executable: string }} */ (game.launch).executable;
@@ -329,9 +486,11 @@ export function createSteamStore({ session, bundles, language = "english" }){
           kind: "game",
           steam: { appId },
           ...game.launch?.arguments ? { commandLine: game.launch.arguments } : {},
-          coverLarge: game.capsule,
-          coverSmall: game.capsule,
-          wallpaper: game.hero,
+          // Steam's own addresses: a bottle carries them wherever it goes, and
+          // the launcher shows them through its own (`art`).
+          coverLarge: `${ART}/${appId}/library_600x900.jpg`,
+          coverSmall: `${ART}/${appId}/library_600x900.jpg`,
+          wallpaper: `${ART}/${appId}/library_hero.jpg`,
         });
         await writeFile(path, `${JSON.stringify(kept, null, 4)}\n`);
         await rm(staging, { recursive: true, force: true });

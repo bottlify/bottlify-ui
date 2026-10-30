@@ -36,3 +36,14 @@ test("a picture set from the launcher is the bottle's own file, the others where
   assert.equal(shipped.coverLarge, "/covers/doom-3-cover.webp", "a name alone is the launcher's art");
   assert.equal(shipped.wallpaper, "/covers/doom-3-cover.webp", "and the stage falls back to the cover");
 });
+
+test("Steam's pictures are shown through the server, an installed bottle's included", () => {
+  const bottle = describeBundle("steam-400", {
+    coverLarge: "https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/400/library_600x900.jpg",
+    wallpaper: "https://cdn.akamai.steamstatic.com/steam/apps/400/library_hero.jpg?t=1",
+  });
+  assert.equal(bottle.coverSmall, "/steam/art/400/library_600x900.jpg");
+  assert.equal(bottle.wallpaper, "/steam/art/400/library_hero.jpg");
+  assert.equal(describeBundle("x", { coverLarge: "https://example.com/apps/1/a.jpg" }).coverLarge,
+    "https://example.com/apps/1/a.jpg", "another site's picture stays where it is");
+});

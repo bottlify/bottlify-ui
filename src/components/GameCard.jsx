@@ -17,13 +17,15 @@ import { LabelBadges, VersionBadge } from "./VersionBadge.jsx";
  *
  * @param {Object} props
  * @param {import("../api/bundles.js").BundleManifest} props.bundle
- * @param {() => void} props.onSelect
+ * @param {() => void} [props.onSelect]  Opening the card; a card without it is not opened.
  * @param {() => void} [props.onSettings]  The gear in the card's left corner: the
  *     bottle's settings, without opening the card.
  * @param {() => void} [props.onEdit]  The pencil in its right corner: the bottle's
  *     name, pictures and labels, as the card's details edit them.
+ * @param {import("react").ReactNode} [props.footer]  What the card's foot adds -- a
+ *     Steam game not installed yet: its Install.
  */
-export function GameCard({ bundle, onSelect, onSettings, onEdit }) {
+export function GameCard({ bundle, onSelect, onSettings, onEdit, footer }) {
   /**
    * A round button in one of the card's top corners, which does its own thing
    * and does not open the card.
@@ -56,12 +58,12 @@ export function GameCard({ bundle, onSelect, onSettings, onEdit }) {
         display: "flex",
         // On a phone a row of the list: the cover on the left, the name whole beside it.
         flexDirection: { xs: "row", sm: "column" },
-        cursor: "pointer",
+        cursor: onSelect ? "pointer" : "default",
         border: "1px solid",
         borderColor: "divider",
         transition: "transform .2s, border-color .2s",
         background: "background.paper",
-        "&:hover": { transform: "translateY(-4px)", borderColor: "primary.main" },
+        "&:hover": onSelect ? { transform: "translateY(-4px)", borderColor: "primary.main" } : {},
       }}
     >
       {onSettings && corner("left", "bottle settings", "glyphicon-cog", onSettings)}
@@ -133,6 +135,7 @@ export function GameCard({ bundle, onSelect, onSettings, onEdit }) {
             <LabelBadges labels={bundle.status ? [...bundle.labels, bundle.status] : bundle.labels} />
           </Box>
         </Box>
+        {footer}
       </CardContent>
     </Card>
   );

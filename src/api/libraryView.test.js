@@ -82,3 +82,11 @@ test("a status is one tag: a bottle nobody checked goes with the unchecked ones"
   assert.deepEqual(shown(["game", "playable"]), ["a"]);
   assert.deepEqual(shown(["game", "unchecked"]), ["b"]);
 });
+
+test("the source keeps Steam's games, installed or not, or everything else", () => {
+  const mixed = [...library.slice(0, 2), { ...bottle("Portal", "game", []), steam: { appId: 400 } }];
+  const from = (source) => viewLibrary(mixed, { ...all, source }).map((one) => one.title);
+  assert.deepEqual(from("steam"), ["Portal"]);
+  assert.deepEqual(from("other"), ["3DMark03", "Quake III Arena"]);
+  assert.deepEqual(from("all"), ["3DMark03", "Portal", "Quake III Arena"]);
+});

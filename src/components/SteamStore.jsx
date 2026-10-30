@@ -5,123 +5,209 @@
  */
 
 import {
-  Alert, Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle,
+  Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle,
   LinearProgress, Stack, Typography,
 } from "@mui/material";
-import { useEffect, useRef, useState } from "react";
-import { connectCm, encodeQr, qrToSvg, signInWithQr } from "@bottlify/core/steam";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { encodeQr, qrToSvg } from "@bottlify/core/steam";
+import { keepSession, keptSession, sessionHeaders, signIn } from "../steam/client.js";
 
-/** Where this browser keeps the session too, as the /steam page does. */
-const KEPT = "bottlify.steam.session";
+/** @typedef {import("../../steam-store.mjs").StoreGame} StoreGame */
+/** @typedef {import("../../steam-store.mjs").InstallJob} InstallJob */
 
 /** @param {number} bytes */
 const size = (bytes) => (bytes >= 1 << 30 ? `${(bytes / (1 << 30)).toFixed(1)} GB`
   : `${Math.max(1, Math.round(bytes / (1 << 20)))} MB`);
 
+/** @param {InstallJob | undefined} job */
+const busy = (job) => job?.state === "downloading" || job?.state === "packing";
+
+/**
+ * The Steam account signed in in this browser, its games and their installs,
+ * for the library to show beside the bottles. Its session is this browser's
+ * own (`steam/client.js`), handed to the server with each request.
+ *
+ * @param {() => void} onInstalled  A bottle was added: the library lists it.
+ */
+export function useSteam(onInstalled) {
+  const [account, setAccount] = useState(/** @type {string | null} */ (null));
+  const [games, setGames] = useState(/** @type {StoreGame[]} */ ([]));
+  const [jobs, setJobs] = useState(/** @type {Map<number, InstallJob>} */ (new Map()));
+  const [error, setError] = useState("");
+  const finished = useRef(new Set());
+
+  const load = useCallback(async () => {
+    const session = await keptSession();
+    setAccount(session?.accountName ?? null);
+    if (!session) return;
+    const headers = await sessionHeaders();
+    const answer = await fetch("/steam/library", { headers });
+    if (!answer.ok) {
+      setError(await answer.text());
+      return;
+    }
+    setError("");
+    setGames(await answer.json());
+    const list = await fetch("/steam/install", { headers }).then((r) => (r.ok ? r.json() : []));
+    setJobs(new Map(list.map((/** @type {InstallJob} */ job) => [job.appId, job])));
+  }, []);
+  useEffect(() => {
+    load().catch((e) => setError(String(e?.message ?? e)));
+  }, [load]);
+
+  // The server measures sizes in the background: read again while some are
+  // still the depots added up.
+  const measuring = games.some((game) => !game.bundle && !game.exact && game.bytes > 0);
+  useEffect(() => {
+    if (!measuring) return undefined;
+    const timer = setInterval(() => load().catch(() => {}), 15_000);
+    return () => clearInterval(timer);
+  }, [measuring, load]);
+
+  // Progress while an install runs; one that finishes adds its bottle to the library.
+  const installing = [...jobs.values()].some(busy);
+  useEffect(() => {
+    if (!installing) return undefined;
+    let stopped = false;
+    const timer = setInterval(async () => {
+      const list = await fetch("/steam/install", { headers: await sessionHeaders() })
+        .then((r) => (r.ok ? r.json() : [])).catch(() => []);
+      if (stopped) return;
+      setJobs(new Map(list.map((/** @type {InstallJob} */ job) => [job.appId, job])));
+      for (const job of list) {
+        if (job.state === "done" && !finished.current.has(job.appId)) {
+          finished.current.add(job.appId);
+          setGames((now) => now.map((game) => (game.appId === job.appId
+            ? { ...game, bundle: job.bundle ?? null } : game)));
+          onInstalled();
+        }
+      }
+    }, 2000);
+    return () => {
+      stopped = true;
+      clearInterval(timer);
+    };
+  }, [installing, onInstalled]);
+
+  // Kept the same from render to render: the sign-in restarts when its callback changes.
+  /** @param {import("../steam/header.js").SteamSession} session */
+  const signedIn = useCallback(async (session) => {
+    await keepSession(session);
+    await load();
+  }, [load]);
+  const signOut = useCallback(async () => {
+    // Told first, with the session, so the server drops what it read for it.
+    await fetch("/steam/session", { method: "DELETE", headers: await sessionHeaders() })
+      .catch(() => {});
+    await keepSession(null);
+    setAccount(null);
+    setGames([]);
+    setJobs(new Map());
+    setError("");
+  }, []);
+  /** @param {number} appId */
+  const install = useCallback(async (appId) => {
+    const answer = await fetch("/steam/install", { method: "POST",
+      headers: { ...await sessionHeaders(), "content-type": "application/json" },
+      body: JSON.stringify({ appId }) });
+    /** @type {InstallJob} */
+    const job = answer.ok ? await answer.json()
+      : { appId, state: "failed", done: 0, total: 0, message: await answer.text() };
+    setJobs((now) => new Map(now).set(appId, job));
+  }, []);
+
+  return { account, games, jobs, error, signedIn, signOut, install };
+}
+
 /**
  * The QR sign-in: a code from Steam's own authentication, approved in the
- * Steam app on the person's phone. The connection to Steam leaves this page,
- * which Steam lets in from localhost alone.
+ * Steam app on the person's phone. The launcher's server talks to Steam for
+ * this page and hands the session to it alone, so it works on whatever
+ * address the launcher was opened by.
  *
  * @param {Object} props
- * @param {(session: { accountName: string, refreshToken: string }) => void} props.onSignedIn
+ * @param {(session: import("../steam/header.js").SteamSession) => void} props.onSignedIn
+ * @param {() => void} props.onClose
  */
-function SignIn({ onSignedIn }) {
+export function SteamSignIn({ onSignedIn, onClose }) {
   const [qr, setQr] = useState("");
   const [status, setStatus] = useState("Connecting to Steam…");
   useEffect(() => {
-    if (window.location.hostname !== "localhost") {
-      setStatus(`Steam lets a sign-in start only from localhost: open https://localhost:${
-        window.location.port}/library on the machine that runs the launcher.`);
-      return undefined;
-    }
-    const run = { stopped: false };
-    /** @type {any} */
-    let connection = null;
+    const stop = new AbortController();
     (async () => {
-      const endpoints = await (await fetch("/steam/managers")).json();
-      const connect = async () => {
-        if (connection && !connection.closed) return connection;
-        for (const endpoint of endpoints) {
-          try {
-            connection = await connectCm({ endpoint });
-            return connection;
-          } catch {
-            // the next one
-          }
-        }
-        throw new Error("no Steam connection manager answered");
-      };
-      while (!run.stopped) {
+      while (!stop.signal.aborted) {
         try {
-          const signedIn = await signInWithQr(connect, {
-            deviceName: "Bottlify",
+          const session = await signIn({
+            signal: stop.signal,
             onChallenge: (url) => {
               setQr(qrToSvg(encodeQr(url), 5));
               setStatus("Scan with the Steam app: Steam Guard → the QR scanner.");
             },
             onScanned: () => setStatus("Scanned. Approve the sign-in in the Steam app."),
           });
-          if (!run.stopped) onSignedIn(signedIn);
+          onSignedIn(session);
           return;
         } catch (e) {
-          if (!run.stopped) setStatus(`${/** @type {Error} */ (e).message} — a new code`);
+          if (stop.signal.aborted) return;
+          setQr("");
+          setStatus(`${/** @type {Error} */ (e).message} — a new code…`);
+          // A moment before the next code, so a server that cannot reach
+          // Steam is not asked again in a tight loop.
+          await new Promise((resolve) => setTimeout(resolve, 3000));
         }
       }
-    })().catch((e) => setStatus(String(e?.message ?? e)));
-    return () => {
-      run.stopped = true;
-      connection?.close?.();
-    };
+    })();
+    return () => stop.abort();
   }, [onSignedIn]);
   return (
-    <Stack spacing={2} alignItems="center" sx={{ py: 2 }}>
-      {qr
-        ? <Box sx={{ bgcolor: "#fff", p: 1, borderRadius: 1, lineHeight: 0 }}
-          dangerouslySetInnerHTML={{ __html: qr }} />
-        : <CircularProgress />}
-      <Typography variant="body2" color="text.secondary" align="center">{status}</Typography>
-    </Stack>
+    <Dialog open onClose={onClose} maxWidth="xs" fullWidth>
+      <DialogTitle>Sign in to Steam</DialogTitle>
+      <DialogContent dividers>
+        <Stack spacing={2} alignItems="center" sx={{ py: 2 }}>
+          {qr
+            ? <Box sx={{ bgcolor: "#fff", p: 1, borderRadius: 1, lineHeight: 0 }}
+              dangerouslySetInnerHTML={{ __html: qr }} />
+            : <CircularProgress />}
+          <Typography variant="body2" color="text.secondary" align="center">{status}</Typography>
+          <Typography variant="caption" color="text.secondary" align="center">
+            The session is kept in this browser only; your games then show in the library.
+          </Typography>
+        </Stack>
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={onClose}>Cancel</Button>
+      </DialogActions>
+    </Dialog>
   );
 }
 
 /**
- * One game of the account: its cover, name and size, and what can be done
- * with it here -- installed into a bottle, followed while it downloads, or
- * played once it is.
+ * The foot of a Steam game's card in the library while it is not installed:
+ * its size, and Install, or its download's progress.
  *
  * @param {Object} props
- * @param {import("../../steam-store.mjs").StoreGame} props.game
- * @param {import("../../steam-store.mjs").InstallJob | undefined} props.job
+ * @param {StoreGame} props.game
+ * @param {InstallJob | undefined} props.job
  * @param {() => void} props.onInstall
- * @param {(bundle: string) => void} props.onPlay
  */
-function StoreCard({ game, job, onInstall, onPlay }) {
-  const busy = job && (job.state === "downloading" || job.state === "packing");
+export function SteamInstall({ game, job, onInstall }) {
   return (
-    <Box sx={{ width: 150, display: "flex", flexDirection: "column", gap: 0.5 }}>
-      <Box component="img" src={game.capsule} alt="" loading="lazy"
-        onError={(event) => { /** @type {HTMLImageElement} */ (event.target).src = game.header; }}
-        sx={{ width: 150, height: 225, objectFit: "cover", borderRadius: 1, bgcolor: "action.hover" }} />
-      <Typography variant="body2" noWrap title={game.name}>{game.name}</Typography>
+    <Box sx={{ pt: 1, display: "flex", flexDirection: "column", gap: 0.5 }}>
       <Typography variant="caption" color="text.secondary">
         {/* "~" while it is the depots added up, before its files are measured. */}
         {game.bytes > 0 ? `${game.exact ? "" : "~"}${size(game.bytes)}` : "size unknown"}
       </Typography>
-      {busy ? (
+      {job && busy(job) ? (
         <Box>
           <LinearProgress
             variant={job.total > 0 && job.state === "downloading" ? "determinate" : "indeterminate"}
             value={job.total > 0 ? Math.min(100, (100 * job.done) / job.total) : 0} />
-          <Typography variant="caption" color="text.secondary" noWrap title={job.message}>
+          <Typography variant="caption" color="text.secondary" noWrap title={job.message}
+            sx={{ display: "block" }}>
             {job.state === "downloading" && job.total > 0
               ? `${job.done} / ${job.total} MB · ${job.message}` : job.message}
           </Typography>
         </Box>
-      ) : game.bundle ? (
-        <Button size="small" variant="contained" onClick={() => onPlay(/** @type {string} */ (game.bundle))}>
-          Play
-        </Button>
       ) : (
         <>
           <Button size="small" variant="outlined" onClick={onInstall} disabled={!game.launch}>
@@ -135,138 +221,5 @@ function StoreCard({ game, job, onInstall, onPlay }) {
         </>
       )}
     </Box>
-  );
-}
-
-/**
- * Add from Steam: signed in once with a QR code, the account's games listed
- * with their art and size, each installed into a bottle with the account's
- * own session and played from the library, Steam running for that account.
- *
- * @param {Object} props
- * @param {() => void} props.onClose
- * @param {() => void} props.onInstalled  A bottle was added: the library lists it.
- * @param {(bundle: string) => void} props.onPlay
- */
-export function SteamStore({ onClose, onInstalled, onPlay }) {
-  const [phase, setPhase] = useState(/** @type {"checking" | "signin" | "library" | "error"} */ ("checking"));
-  const [games, setGames] = useState(/** @type {any[]} */ ([]));
-  const [jobs, setJobs] = useState(/** @type {Map<number, any>} */ (new Map()));
-  const [error, setError] = useState("");
-  const finished = useRef(new Set());
-
-  const load = async () => {
-    setPhase("checking");
-    const answer = await fetch("/steam/library");
-    if (answer.status === 404) {
-      setPhase("signin");
-      return;
-    }
-    if (!answer.ok) {
-      setError(await answer.text());
-      setPhase("error");
-      return;
-    }
-    setGames(await answer.json());
-    setPhase("library");
-  };
-  useEffect(() => {
-    load().catch((e) => {
-      setError(String(e?.message ?? e));
-      setPhase("error");
-    });
-  }, []);
-
-  // The server measures sizes in the background: read again while some are
-  // still the depots added up.
-  const measuring = phase === "library" && games.some((game) => !game.exact && game.bytes > 0);
-  useEffect(() => {
-    if (!measuring) return undefined;
-    const timer = setInterval(() => {
-      fetch("/steam/library").then((r) => (r.ok ? r.json() : null))
-        .then((list) => list && setGames(list)).catch(() => {});
-    }, 15_000);
-    return () => clearInterval(timer);
-  }, [measuring]);
-
-  // Every install's progress while the store is open; one that finishes adds
-  // its bottle to the library.
-  useEffect(() => {
-    let stopped = false;
-    const poll = async () => {
-      const list = await fetch("/steam/install").then((r) => r.json()).catch(() => []);
-      if (stopped) return;
-      setJobs(new Map(list.map((/** @type {any} */ job) => [job.appId, job])));
-      for (const job of list) {
-        if (job.state === "done" && !finished.current.has(job.appId)) {
-          finished.current.add(job.appId);
-          setGames((now) => now.map((game) => (game.appId === job.appId
-            ? { ...game, bundle: job.bundle } : game)));
-          onInstalled();
-        }
-      }
-    };
-    poll();
-    const timer = setInterval(poll, 2000);
-    return () => {
-      stopped = true;
-      clearInterval(timer);
-    };
-  }, [onInstalled]);
-
-  /** @param {{ accountName: string, refreshToken: string }} session */
-  const signedIn = async (session) => {
-    try {
-      localStorage.setItem(KEPT, JSON.stringify(session));
-    } catch {
-      // no storage here: the server's copy is the one used
-    }
-    await fetch("/steam/session", { method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify(session) });
-    await load();
-  };
-  const signOut = async () => {
-    try {
-      localStorage.removeItem(KEPT);
-    } catch {
-      // nothing kept
-    }
-    await fetch("/steam/session", { method: "DELETE" });
-    setGames([]);
-    setPhase("signin");
-  };
-  /** @param {number} appId */
-  const install = async (appId) => {
-    const answer = await fetch("/steam/install", { method: "POST",
-      headers: { "content-type": "application/json" }, body: JSON.stringify({ appId }) });
-    const job = answer.ok ? await answer.json()
-      : { appId, state: "failed", done: 0, total: 0, message: await answer.text() };
-    setJobs((now) => new Map(now).set(appId, job));
-  };
-
-  return (
-    <Dialog open onClose={onClose} maxWidth="lg" fullWidth>
-      <DialogTitle>Add from Steam</DialogTitle>
-      <DialogContent dividers sx={{ minHeight: 320 }}>
-        {phase === "checking" && (
-          <Box sx={{ display: "flex", justifyContent: "center", py: 6 }}><CircularProgress /></Box>
-        )}
-        {phase === "signin" && <SignIn onSignedIn={signedIn} />}
-        {phase === "error" && <Alert severity="error">{error}</Alert>}
-        {phase === "library" && (
-          <Box sx={{ display: "flex", flexWrap: "wrap", gap: 2 }}>
-            {games.map((game) => (
-              <StoreCard key={game.appId} game={game} job={jobs.get(game.appId)}
-                onInstall={() => install(game.appId)} onPlay={onPlay} />
-            ))}
-          </Box>
-        )}
-      </DialogContent>
-      <DialogActions>
-        {phase === "library" && <Button onClick={signOut} color="inherit">Sign out of Steam</Button>}
-        <Box sx={{ flex: 1 }} />
-        <Button onClick={onClose}>Close</Button>
-      </DialogActions>
-    </Dialog>
   );
 }

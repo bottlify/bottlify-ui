@@ -12,5 +12,5 @@ dist/
 /design/
 /public/covers/
 
-# The Steam session the /steam page hands the server: a credential.
+# What the server keeps of Steam: games' sizes and art, nothing of an account.
 /.steam/

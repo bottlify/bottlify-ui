@@ -7,15 +7,15 @@
 import { createServer, request } from "node:http";
 import { createServer as createSecureServer } from "node:https";
 import { createReadStream, readFileSync } from "node:fs";
-import { mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { readFile, readdir, stat } from "node:fs/promises";
 import { dirname, extname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { deflateSync } from "node:zlib";
 import { createRelayServer, permits } from "@bottlify/networking/server";
 import { programIcon } from "@bottlify/core/icon";
 import { openBundle } from "@bottlify/core/bundle/node";
-import { connectCm, library, logOn } from "@bottlify/core/steam";
 import { createSteamStore } from "./steam-store.mjs";
+import { SESSION_HEADER, decodeSession } from "./src/steam/header.js";
 import { ICON_SIZES, headForBottle, homeManifest, iconFile, iconPath } from "./src/engine/home-screen.js";
 
 /**
@@ -259,53 +259,20 @@ async function answerBookmark(req, res, pathname){
   return false;
 }
 
-/**
- * Where the Steam sign-in page (/steam) keeps the session it was given, for
- * the tools on this machine (`tools/steam-signin.mjs --token` reads the same
- * form). A credential: outside the repository, readable by its owner alone,
- * and never answered back to a page.
- */
-const STEAM_SESSION = resolve(UI_ROOT, ".steam", "session.json");
 /** @type {{ at: number, list: string[] } | null} */
 let steamManagers = null;
-/** @type {{ at: number, account: any } | null} */
-let steamAccount = null;
-/** The account's library and installs (steam-store.mjs). */
-const steamStore = createSteamStore({ session: STEAM_SESSION, bundles: BUNDLES });
-
 /**
- * The kept session's account and the games it owns, signed in afresh.
- *
- * @returns {Promise<{ steamId: string, accountName: string, apps: number[] }>}
+ * The Steam sign-in, the accounts' libraries and installs (steam-store.mjs).
+ * Its cache directory holds what is no account's -- sizes and art; a session
+ * is never written there or anywhere.
  */
-async function signedInAccount(){
-  const session = JSON.parse(await readFile(STEAM_SESSION, "utf8"));
-  const directory = await (await fetch("https://api.steampowered.com/ISteamDirectory/"
-    + "GetCMListForConnect/v1/?cellid=0&cmtype=websockets")).json();
-  let connection = null;
-  for (const server of directory.response.serverlist.slice(0, 8)){
-    try {
-      connection = await connectCm({ endpoint: server.endpoint });
-      break;
-    } catch {
-      // the next one
-    }
-  }
-  if (!connection) throw new Error("no Steam connection manager answered");
-  try {
-    const { steamId, licenses } = await logOn(connection, session);
-    const games = await library(connection, licenses);
-    return { steamId: String(steamId), accountName: session.accountName,
-      apps: games.map((game) => game.appid).sort((a, b) => a - b) };
-  } finally {
-    connection.close();
-  }
-}
+const steamStore = createSteamStore({ cache: resolve(UI_ROOT, ".steam"), bundles: BUNDLES });
 
 /**
  * The Steam page, the connection managers' WebSocket addresses -- Steam's
  * directory answers no page from another origin, so this process asks it --
- * and the session the page hands over or takes back.
+ * the QR sign-in relayed for a page, and what a signed-in browser asks with
+ * its own session: its account, its library, its installs.
  *
  * @param {import("node:http").IncomingMessage} req
  * @param {import("node:http").ServerResponse} res
@@ -338,38 +305,81 @@ async function answerSteam(req, res, pathname){
     }
     return true;
   }
+  // Steam's art, through this origin: see steam-store.mjs's `art`.
+  const art = /^\/steam\/art\/([0-9]{1,10})\/([a-z0-9_]{1,64}\.(?:jpg|png))$/.exec(pathname);
+  if (art && (req.method === "GET" || req.method === "HEAD")){
+    const path = await steamStore.art(Number(art[1]), art[2]);
+    const size = path && await sizeOf(path);
+    if (!path || size === null || size === undefined){ res.writeHead(404).end(); return true; }
+    sendFile(req, res, path, size);
+    return true;
+  }
+  // The QR sign-in, for a page on any address: Steam's managers let in a page
+  // from localhost alone, so this process talks to them. The challenges and
+  // then the session go to the page that opened the stream, as server-sent
+  // events, and nothing of it is kept; a page that leaves ends the sign-in.
+  if (pathname === "/steam/signin" && req.method === "GET"){
+    const left = new AbortController();
+    res.on("close", ()=>left.abort(new Error("the page left")));
+    res.writeHead(200, { ...commonHeaders("text/event-stream; charset=utf-8"),
+      "Cache-Control": "no-store" });
+    /** @param {string} event @param {string} [data] */
+    const send = (event, data = "")=>res.write(`event: ${event}\ndata: ${data.replace(/\s+/g, " ")}\n\n`);
+    try {
+      const session = await steamStore.signIn({ signal: left.signal,
+        onChallenge: url=>send("challenge", url), onScanned: ()=>send("scanned") });
+      send("session", JSON.stringify(session));
+    } catch (e){
+      if (!left.signal.aborted) send("failed", String(/** @type {Error} */ (e)?.message ?? e));
+    }
+    res.end();
+    return true;
+  }
+  if (!pathname.startsWith("/steam/")) return false;
+
+  // Everything below is asked with the browser's own session, which is used
+  // for the request (an install: its run) and written nowhere.
+  const session = decodeSession(req.headers[SESSION_HEADER]);
+  const text = commonHeaders("text/plain; charset=utf-8");
+  const json = commonHeaders("application/json; charset=utf-8");
+  /** @param {unknown} e  Steam's refusal or silence, said; never a crash. */
+  const steamFailed = e=>res.writeHead(502, text).end(String(/** @type {Error} */ (e)?.message ?? e));
+  const known = ["/steam/account", "/steam/library", "/steam/install", "/steam/session"];
+  if (!known.includes(pathname)) return false;
+  // Signing out needs no answer from Steam: what was read for the session goes.
+  if (pathname === "/steam/session" && req.method === "DELETE"){
+    if (session) steamStore.forget(session);
+    res.writeHead(204).end();
+    return true;
+  }
+  if (!session){
+    res.writeHead(401, text).end("nobody is signed in to Steam in this browser");
+    return true;
+  }
   // The signed-in account and the games its licences grant, which a bottle
-  // that needs Steam running is started with (createApp's win32.steam): signed
-  // in here with the kept session, whose token never leaves this machine.
+  // that needs Steam running is started with (createApp's win32.steam).
   if (pathname === "/steam/account" && req.method === "GET"){
     try {
-      steamAccount = steamAccount && Date.now() - steamAccount.at < 10 * 60_000
-        ? steamAccount : { at: Date.now(), account: await signedInAccount() };
-      res.writeHead(200, commonHeaders("application/json; charset=utf-8"))
-        .end(JSON.stringify(steamAccount.account));
+      const answer = await steamStore.account(session);
+      res.writeHead(200, json).end(JSON.stringify(answer));
     } catch (e){
-      steamAccount = null;
-      res.writeHead(e?.code === "ENOENT" ? 404 : 502, commonHeaders("text/plain; charset=utf-8"))
-        .end(e?.code === "ENOENT" ? "nobody is signed in to Steam (/steam)"
-          : `Steam did not answer: ${/** @type {Error} */ (e).message}`);
+      steamFailed(e);
     }
     return true;
   }
-  // The account's games for the store, and the installs: started by a POST of
-  // { appId }, followed by GETs of every install's progress.
+  // The account's games for the library, and the installs: started by a POST
+  // of { appId }, followed by GETs of the account's installs' progress.
   if (pathname === "/steam/library" && req.method === "GET"){
     try {
-      const games = await steamStore.library();
-      res.writeHead(200, commonHeaders("application/json; charset=utf-8")).end(JSON.stringify(games));
+      const answer = await steamStore.library(session);
+      res.writeHead(200, json).end(JSON.stringify(answer));
     } catch (e){
-      res.writeHead(e?.code === "ENOENT" ? 404 : 502, commonHeaders("text/plain; charset=utf-8"))
-        .end(e?.code === "ENOENT" ? "nobody is signed in to Steam" : `Steam did not answer: ${e?.message}`);
+      steamFailed(e);
     }
     return true;
   }
   if (pathname === "/steam/install" && req.method === "GET"){
-    res.writeHead(200, commonHeaders("application/json; charset=utf-8"))
-      .end(JSON.stringify(steamStore.jobs()));
+    res.writeHead(200, json).end(JSON.stringify(steamStore.jobs(session)));
     return true;
   }
   if (pathname === "/steam/install" && req.method === "POST"){
@@ -378,50 +388,26 @@ async function answerSteam(req, res, pathname){
       chunks.push(chunk);
       if (chunks.length > 16){ res.writeHead(413).end(); return true; }
     }
+    let appId;
     try {
-      const { appId } = JSON.parse(Buffer.concat(chunks).toString("utf8"));
-      const job = await steamStore.install(Number(appId));
-      res.writeHead(202, commonHeaders("application/json; charset=utf-8")).end(JSON.stringify(job));
-    } catch (e){
-      res.writeHead(400, commonHeaders("text/plain; charset=utf-8")).end(String(e?.message ?? e));
-    }
-    return true;
-  }
-  if (pathname === "/steam/session" && req.method === "DELETE"){
-    steamAccount = null;
-    steamStore.forget();
-    await rm(STEAM_SESSION, { force: true });
-    res.writeHead(204).end();
-    return true;
-  }
-  if (pathname === "/steam/session" && req.method === "POST"){
-    const chunks = [];
-    let length = 0;
-    for await (const chunk of req){
-      length += chunk.length;
-      if (length > 16_384){ res.writeHead(413).end(); return true; }
-      chunks.push(chunk);
-    }
-    let session;
-    try {
-      session = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+      appId = Number(JSON.parse(Buffer.concat(chunks).toString("utf8")).appId);
     } catch {
-      session = null;
+      appId = NaN;
     }
-    if (typeof session?.accountName !== "string" || typeof session?.refreshToken !== "string"){
-      res.writeHead(400, commonHeaders("text/plain; charset=utf-8"))
-        .end("a session is { accountName, refreshToken }");
+    if (!Number.isInteger(appId) || appId <= 0){
+      res.writeHead(400, text).end("an install is { appId }");
       return true;
     }
-    steamAccount = null;
-    steamStore.forget();
-    await mkdir(dirname(STEAM_SESSION), { recursive: true });
-    await writeFile(STEAM_SESSION, JSON.stringify({ accountName: session.accountName,
-      refreshToken: session.refreshToken }), { mode: 0o600 });
-    res.writeHead(204).end();
+    try {
+      const answer = await steamStore.install(session, appId);
+      res.writeHead(202, json).end(JSON.stringify(answer));
+    } catch (e){
+      steamFailed(e);
+    }
     return true;
   }
-  return false;
+  res.writeHead(405, text).end();
+  return true;
 }
 
 const handler = async(req, res)=>{

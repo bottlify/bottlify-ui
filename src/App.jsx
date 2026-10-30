@@ -22,7 +22,7 @@ import { AppHeader } from "./components/AppHeader.jsx";
 import { Footer } from "./components/Footer.jsx";
 import { InstallScreen } from "./components/InstallScreen.jsx";
 import { AddDialog } from "./components/AddDialog.jsx";
-import { SteamStore } from "./components/SteamStore.jsx";
+import { SteamSignIn, useSteam } from "./components/SteamStore.jsx";
 import { Landing } from "./components/Landing.jsx";
 import { License } from "./components/License.jsx";
 import { BottleSettingsDialog, GameDetails } from "./components/GameDetails.jsx";
@@ -55,9 +55,9 @@ export default function App() {
   const [editingBundle, setEditingBundle] = useState(
     /** @type {{ bundle: any, mode: "machine" | "describe" } | null} */ (null));
   const chooser = useRef(null);
-  // Add's choice -- a file or a store -- and the Steam store once chosen.
+  // Add's choice -- a file or Steam -- and Steam's sign-in once chosen.
   const [adding, setAdding] = useState(false);
-  const [store, setStore] = useState(false);
+  const [signingIn, setSigningIn] = useState(false);
   // The file being looked at and read, and the way to stop that.
   const [reading, setReading] = useState(null);
   const readingAbort = useRef(null);
@@ -95,6 +95,13 @@ export default function App() {
   // server's and this browser's alike -- without a reload.
   const [libraryRevision, setLibraryRevision] = useState(0);
   const libraryChanged = useCallback(() => setLibraryRevision((n) => n + 1), []);
+  // The Steam account signed in in this browser: its games are in the library.
+  const steam = useSteam(libraryChanged);
+  const steamSignedIn = steam.signedIn;
+  const signedIn = useCallback(async (session) => {
+    setSigningIn(false);
+    await steamSignedIn(session);
+  }, [steamSignedIn]);
   useEffect(() => {
     let cancelled = false;
     getAvailableBundles()
@@ -289,28 +296,20 @@ export default function App() {
 
         {adding && (
           <AddDialog
+            steamAccount={steam.account}
             onFile={() => {
               setAdding(false);
               chooser.current?.click();
             }}
             onSteam={() => {
               setAdding(false);
-              setStore(true);
+              setSigningIn(true);
             }}
             onClose={() => setAdding(false)}
           />
         )}
 
-        {store && (
-          <SteamStore
-            onClose={() => setStore(false)}
-            onInstalled={libraryChanged}
-            onPlay={(id) => {
-              setStore(false);
-              navigate(`/play/${encodeURIComponent(id)}`);
-            }}
-          />
-        )}
+        {signingIn && <SteamSignIn onSignedIn={signedIn} onClose={() => setSigningIn(false)} />}
 
         {asking && (
           <DownloadDialog
@@ -349,6 +348,7 @@ export default function App() {
             onEdit={(bundle) => setEditingBundle({ bundle, mode: "describe" })}
             editable={editable}
             tagged={config?.libraryTags === true}
+            steam={steam}
           />
         )}
 

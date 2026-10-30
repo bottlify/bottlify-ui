@@ -180,10 +180,13 @@ export async function saveBundleArt(upload, id, slot, file) {
   return describeBundle(id, (await response.json()).manifest);
 }
 
+/** A picture on Steam's CDN, under any of its hosts: the app and the file. */
+const STEAM_ART = /^https:\/\/[a-z0-9.-]*steamstatic\.com\/(?:store_item_assets\/)?steam\/apps\/([0-9]+)\/([a-z0-9_]+\.(?:jpg|png))(?:\?.*)?$/;
+
 /**
- * Resolves a cover href: absolute hrefs are used as-is, `./name` is a file in
- * the bottle's own directory -- where a picture set from the launcher is kept
- * -- and other relative ones are files under `/covers/`.
+ * Resolves a cover href: absolute hrefs are used as-is, but for Steam's, `./name`
+ * is a file in the bottle's own directory -- where a picture set from the
+ * launcher is kept -- and other relative ones are files under `/covers/`.
  *
  * @param {string} href
  * @param {string} id  The bottle whose directory `./` names.
@@ -192,6 +195,10 @@ export async function saveBundleArt(upload, id, slot, file) {
 function coverHref(href, id) {
   if (!href) return "";
   if (href.startsWith("./")) return `/bundles/${encodeURIComponent(id)}/${href.slice(2)}`;
+  // Steam's CDN sends no Cross-Origin-Resource-Policy, so this cross-origin
+  // isolated page may not show its pictures: they come through the server.
+  const steam = STEAM_ART.exec(href);
+  if (steam) return `/steam/art/${steam[1]}/${steam[2]}`;
   if (href.startsWith("/") || href.startsWith("http")) return href;
   return `/covers/${href}`;
 }

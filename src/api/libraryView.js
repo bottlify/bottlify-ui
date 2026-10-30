@@ -26,6 +26,13 @@ export const SORTS = [
   { value: "year-asc", label: "Year, oldest" },
 ];
 
+/** Where a game comes from: Steam (installed or not), or anywhere else. */
+export const SOURCES = [
+  { value: "all", label: "All" },
+  { value: "steam", label: "Steam" },
+  { value: "other", label: "Other" },
+];
+
 const byName = (a, b) => a.title.localeCompare(b.title, undefined, { numeric: true, sensitivity: "base" });
 
 // A bottle with no year goes last either way: it has no place on the line, and
@@ -49,16 +56,19 @@ const COMPARE = {
  * on the demos are there, with it off everything marked demo is gone, whatever
  * else it is marked. So a bottle shows only while every one of its tags is on;
  * with none on, nothing does. The search then keeps the bottles whose title
- * holds `query`. The result is in the order `sort` names.
+ * holds `query`, and `source` those from where it names (`SOURCES`; all when
+ * absent). The result is in the order `sort` names.
  *
  * @param {import("./bundles.js").BundleManifest[]} bundles
- * @param {{ query: string, tags: string[], sort: string }} view  `tags` the ones on.
+ * @param {{ query: string, tags: string[], sort: string, source?: string }} view
+ *     `tags` the ones on.
  * @returns {import("./bundles.js").BundleManifest[]}
  */
-export function viewLibrary(bundles, { query, tags, sort }) {
+export function viewLibrary(bundles, { query, tags, sort, source = "all" }) {
   const needle = query.trim().toLowerCase();
   return bundles
-    .filter((bundle) => (needle === "" || bundle.title.toLowerCase().includes(needle))
+    .filter((bundle) => (source === "all" || (source === "steam") === Boolean(bundle.steam?.appId))
+      && (needle === "" || bundle.title.toLowerCase().includes(needle))
       && [bundle.kind, ...bundle.labels, bundle.status ?? "unchecked"]
         .every((tag) => tags.includes(tag)))
     .sort(COMPARE[sort] ?? byName);
