@@ -214,8 +214,7 @@ export function GameGrid({
             {group.items.map((bundle) => (bundle.store ? (
               <GameCard key={`${group.key}:${bundle.id}`} bundle={bundle}
                 footer={<SteamInstall game={bundle.store} job={steam?.jobs.get(bundle.store.appId)}
-                  onInstall={() => steam?.install(bundle.store.appId)}
-                  unavailable={steam?.installUnavailable} />} />
+                  onInstall={() => steam?.install(bundle.store.appId)} />} />
             ) : (
               <GameCard key={`${group.key}:${bundle.id}`} bundle={bundle}
                 onSelect={() => onSelect(bundle)}

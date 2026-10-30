@@ -15,7 +15,7 @@ import { createRelayServer, permits } from "@bottlify/networking/server";
 import { programIcon } from "@bottlify/core/icon";
 import { openBundle } from "@bottlify/core/bundle/node";
 import { createSteamStore } from "./steam-store.mjs";
-import { SESSION_HEADER, decodeSession } from "./src/steam/header.js";
+import { INSTALLER_HEADER, SESSION_HEADER, decodeSession, readInstaller } from "./src/steam/header.js";
 import { ICON_SIZES, headForBottle, homeManifest, iconFile, iconPath } from "./src/engine/home-screen.js";
 
 /**
@@ -261,6 +261,28 @@ async function answerBookmark(req, res, pathname){
 
 /** @type {{ at: number, list: string[] } | null} */
 let steamManagers = null;
+
+const TOO_LARGE = Symbol("too large");
+/**
+ * A request's JSON body: null for one that is not JSON, TOO_LARGE past 256 KiB.
+ *
+ * @param {import("node:http").IncomingMessage} req
+ * @returns {Promise<unknown>}
+ */
+async function readJson(req){
+  const chunks = [];
+  let bytes = 0;
+  for await (const chunk of req){
+    chunks.push(chunk);
+    bytes += chunk.length;
+    if (bytes > 256 * 1024) return TOO_LARGE;
+  }
+  try {
+    return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+  } catch {
+    return null;
+  }
+}
 /**
  * The Steam sign-in, the accounts' libraries and installs (steam-store.mjs).
  * Its cache directory holds what is no account's -- sizes and art; a session
@@ -339,20 +361,9 @@ async function answerSteam(req, res, pathname){
   // the bridge keeps: asked with { apps: [appId, ...] } and no session.
   if (pathname === "/steam/apps" && req.method === "POST"){
     const text = commonHeaders("text/plain; charset=utf-8");
-    const chunks = [];
-    let bytes = 0;
-    for await (const chunk of req){
-      chunks.push(chunk);
-      bytes += chunk.length;
-      if (bytes > 256 * 1024){ res.writeHead(413).end(); return true; }
-    }
-    /** @type {unknown} */
-    let apps;
-    try {
-      apps = JSON.parse(Buffer.concat(chunks).toString("utf8")).apps;
-    } catch {
-      apps = null;
-    }
+    const body = await readJson(req);
+    if (body === TOO_LARGE){ res.writeHead(413).end(); return true; }
+    const apps = /** @type {any} */ (body)?.apps;
     if (!Array.isArray(apps) || apps.length > 20_000
       || !apps.every((id)=>Number.isInteger(id) && id > 0 && id <= 0xFFFFFFFF)){
       res.writeHead(400, text).end("apps are { apps: [appId, ...] }");
@@ -368,13 +379,39 @@ async function answerSteam(req, res, pathname){
   }
   if (!pathname.startsWith("/steam/")) return false;
 
-  // Everything below is asked with the browser's own session, which is used
-  // for the request (an install: its run) and written nowhere.
-  const session = decodeSession(req.headers[SESSION_HEADER]);
   const text = commonHeaders("text/plain; charset=utf-8");
   const json = commonHeaders("application/json; charset=utf-8");
-  /** @param {unknown} e  Steam's refusal or silence, said; never a crash. */
-  const steamFailed = e=>res.writeHead(502, text).end(String(/** @type {Error} */ (e)?.message ?? e));
+  /**
+   * The server's refusal of the request, or Steam's refusal or silence, said;
+   * never a crash.
+   *
+   * @param {unknown} e
+   */
+  const steamFailed = e=>res.writeHead(/** @type {any} */ (e)?.refused ? 400 : 502, text)
+    .end(String(/** @type {Error} */ (e)?.message ?? e));
+  // What an install of an app downloads, from what Steam tells anyone: a
+  // bridged browser asks its bridge for these depots' keys and manifest codes.
+  if (pathname === "/steam/plan" && req.method === "GET"){
+    const appId = Number(new URL(req.url ?? "/", "http://localhost").searchParams.get("app"));
+    if (!Number.isInteger(appId) || appId <= 0 || appId > 0xFFFFFFFF){
+      res.writeHead(400, text).end("a plan is asked as /steam/plan?app=<appId>");
+      return true;
+    }
+    try {
+      const plan = await steamStore.plan(appId);
+      res.writeHead(200, json).end(JSON.stringify(plan));
+    } catch (e){
+      steamFailed(e);
+    }
+    return true;
+  }
+
+  // Everything below is asked with the browser's own session, which is used
+  // for the request (an install: its run) and written nowhere -- or, for a
+  // browser whose session the bridge keeps, an install's keys and codes, held
+  // for its run alone the same way.
+  const session = decodeSession(req.headers[SESSION_HEADER]);
+  const installer = readInstaller(req.headers[INSTALLER_HEADER]);
   const known = ["/steam/account", "/steam/library", "/steam/install", "/steam/session"];
   if (!known.includes(pathname)) return false;
   // Signing out needs no answer from Steam: what was read for the session goes.
@@ -382,6 +419,23 @@ async function answerSteam(req, res, pathname){
     if (session) steamStore.forget(session);
     res.writeHead(204).end();
     return true;
+  }
+  if (!session && installer && pathname === "/steam/install"){
+    if (req.method === "GET"){
+      res.writeHead(200, json).end(JSON.stringify(steamStore.jobs(installer)));
+      return true;
+    }
+    if (req.method === "POST"){
+      const body = await readJson(req);
+      if (body === TOO_LARGE){ res.writeHead(413).end(); return true; }
+      try {
+        const job = await steamStore.installWithKeys(installer, body);
+        res.writeHead(202, json).end(JSON.stringify(job));
+      } catch (e){
+        steamFailed(e);
+      }
+      return true;
+    }
   }
   if (!session){
     res.writeHead(401, text).end("nobody is signed in to Steam in this browser");
@@ -414,17 +468,9 @@ async function answerSteam(req, res, pathname){
     return true;
   }
   if (pathname === "/steam/install" && req.method === "POST"){
-    const chunks = [];
-    for await (const chunk of req){
-      chunks.push(chunk);
-      if (chunks.length > 16){ res.writeHead(413).end(); return true; }
-    }
-    let appId;
-    try {
-      appId = Number(JSON.parse(Buffer.concat(chunks).toString("utf8")).appId);
-    } catch {
-      appId = NaN;
-    }
+    const body = await readJson(req);
+    if (body === TOO_LARGE){ res.writeHead(413).end(); return true; }
+    const appId = Number(/** @type {any} */ (body)?.appId);
     if (!Number.isInteger(appId) || appId <= 0){
       res.writeHead(400, text).end("an install is { appId }");
       return true;

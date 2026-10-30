@@ -11,7 +11,7 @@ import {
 import { useCallback, useEffect, useRef, useState } from "react";
 import { encodeQr, qrToSvg } from "@bottlify/core/steam";
 import {
-  sessionHeaders, signIn, signOut as signOutHere, steamAccountName, steamGames, steamJobs,
+  signIn, signOut as signOutHere, startInstall, steamAccountName, steamGames, steamJobs,
 } from "../steam/client.js";
 import { steamBridge } from "../steam/bridge.js";
 
@@ -22,9 +22,6 @@ import { steamBridge } from "../steam/bridge.js";
 const size = (bytes) => (bytes >= 1 << 30 ? `${(bytes / (1 << 30)).toFixed(1)} GB`
   : `${Math.max(1, Math.round(bytes / (1 << 20)))} MB`);
 
-/** Why a game cannot be installed while the session is the bridge's. */
-const NO_INSTALL_IN_BRIDGE = "Install needs the server sign-in until streamed bottles land";
-
 /** @param {InstallJob | undefined} job */
 const busy = (job) => job?.state === "downloading" || job?.state === "packing";
 
@@ -32,7 +29,8 @@ const busy = (job) => job?.state === "downloading" || job?.state === "packing";
  * The Steam account signed in in this browser, its games and their installs,
  * for the library to show beside the bottles. Its session is this browser's
  * own (`steam/client.js`): the bridge's, or handed to the server with each
- * request. Installs are the server's, which only the second has.
+ * request. Installs are the server's, run with the session, or with the depots'
+ * keys and codes the bridge answers.
  *
  * @param {() => void} onInstalled  A bottle was added: the library lists it.
  */
@@ -109,17 +107,13 @@ export function useSteam(onInstalled) {
   }, []);
   /** @param {number} appId */
   const install = useCallback(async (appId) => {
-    const answer = await fetch("/steam/install", { method: "POST",
-      headers: { ...await sessionHeaders(), "content-type": "application/json" },
-      body: JSON.stringify({ appId }) });
     /** @type {InstallJob} */
-    const job = answer.ok ? await answer.json()
-      : { appId, state: "failed", done: 0, total: 0, message: await answer.text() };
+    const job = await startInstall(appId).catch((/** @type {Error} */ e) => (
+      { appId, state: "failed", done: 0, total: 0, message: String(e?.message ?? e) }));
     setJobs((now) => new Map(now).set(appId, job));
   }, []);
 
-  return { account, games, jobs, error, signedIn, signOut, install,
-    installUnavailable: bridged ? NO_INSTALL_IN_BRIDGE : "" };
+  return { account, games, jobs, error, signedIn, signOut, install };
 }
 
 /**
@@ -192,9 +186,8 @@ export function SteamSignIn({ onSignedIn, onClose }) {
  * @param {StoreGame} props.game
  * @param {InstallJob | undefined} props.job
  * @param {() => void} props.onInstall
- * @param {string} [props.unavailable]  Why it cannot be installed here, if it cannot.
  */
-export function SteamInstall({ game, job, onInstall, unavailable }) {
+export function SteamInstall({ game, job, onInstall }) {
   return (
     <Box sx={{ pt: 1, display: "flex", flexDirection: "column", gap: 0.5 }}>
       <Typography variant="caption" color="text.secondary">
@@ -214,13 +207,9 @@ export function SteamInstall({ game, job, onInstall, unavailable }) {
         </Box>
       ) : (
         <>
-          <Button size="small" variant="outlined" onClick={onInstall}
-            disabled={!game.launch || Boolean(unavailable)} title={unavailable || undefined}>
-            {!game.launch ? "No Windows build" : unavailable ? "Install unavailable" : "Install"}
+          <Button size="small" variant="outlined" onClick={onInstall} disabled={!game.launch}>
+            {!game.launch ? "No Windows build" : "Install"}
           </Button>
-          {unavailable && game.launch && (
-            <Typography variant="caption" color="text.secondary">{unavailable}</Typography>
-          )}
           {job?.state === "failed" && (
             <Typography variant="caption" color="error" title={job.message} noWrap>
               {job.message}

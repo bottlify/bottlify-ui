@@ -12,7 +12,9 @@
  * With the Bottlify bridge in this browser (`bridge.js`) the session is the
  * extension's instead: the sign-in, the account and its games' ids come from
  * it, the token never reaches this page or the server, and the server is asked
- * only what Steam tells anyone -- the games' names, art and launch options.
+ * only what Steam tells anyone -- the games' names, art and launch options --
+ * and given, for an install, the depots' keys and manifest codes the bridge
+ * answers for the account.
  *
  * Kept in this origin's IndexedDB, the refresh token encrypted with an
  * AES-GCM key made non-extractable and stored beside it: the storage files on
@@ -20,8 +22,9 @@
  * browser decrypt it.
  */
 
-import { SESSION_HEADER, encodeSession } from "./header.js";
+import { INSTALLER_HEADER, SESSION_HEADER, encodeSession, readInstaller } from "./header.js";
 import { ask, steamBridge } from "./bridge.js";
+import { installRequest } from "./install.js";
 
 /** @typedef {import("./header.js").SteamSession} SteamSession */
 /** @typedef {import("../../steam-store.mjs").StoreGame} StoreGame */
@@ -234,14 +237,74 @@ export async function steamGames() {
   return answer.json();
 }
 
+/** Where this browser's installer id is kept. */
+const INSTALLER = "bottlify.steam.installer";
+/** @type {string | null} */
+let installer = null;
+
 /**
- * The installs this browser's session asked the server for; none with the
- * bridge, whose session the server never has.
+ * The id the installs this browser starts through the bridge are followed by:
+ * made here once, naming no account. Where nothing can be stored it lasts as
+ * long as the page.
+ */
+function installerHeaders() {
+  if (!installer) {
+    try {
+      installer = localStorage.getItem(INSTALLER);
+    } catch {
+      // no storage
+    }
+    if (!readInstaller(installer ?? undefined)) {
+      installer = Array.from(crypto.getRandomValues(new Uint8Array(16)),
+        (byte) => byte.toString(16).padStart(2, "0")).join("");
+      try {
+        localStorage.setItem(INSTALLER, installer);
+      } catch {
+        // kept for the page alone
+      }
+    }
+  }
+  return { [INSTALLER_HEADER]: /** @type {string} */ (installer) };
+}
+
+/**
+ * The installs this browser asked the server for: by its session, or with the
+ * bridge by its installer id.
  *
  * @returns {Promise<InstallJob[]>}
  */
 export async function steamJobs() {
-  if (await steamBridge()) return [];
-  return fetch("/steam/install", { headers: await sessionHeaders() })
+  const headers = await steamBridge() ? installerHeaders() : await sessionHeaders();
+  return fetch("/steam/install", { headers })
     .then((r) => (r.ok ? r.json() : [])).catch(() => []);
+}
+
+/**
+ * Asks the server to install a game of the account's. With the bridge the
+ * server has no session: it is told what its plan for the app downloads opens
+ * with -- each depot's key and its manifest's request code, from the bridge --
+ * and the token stays there.
+ *
+ * @param {number} appId
+ * @returns {Promise<InstallJob>}
+ */
+export async function startInstall(appId) {
+  /** @type {Record<string, string>} */
+  let headers;
+  /** @type {unknown} */
+  let body = { appId };
+  if (await steamBridge()) {
+    const account = await ask("account");
+    if (!account?.apps?.includes(appId)) throw new Error("the game is not the signed-in account's");
+    const plan = await fetch(`/steam/plan?app=${appId}`);
+    if (!plan.ok) throw new Error(await plan.text());
+    body = await installRequest(await plan.json(), ask);
+    headers = installerHeaders();
+  } else {
+    headers = await sessionHeaders();
+  }
+  const answer = await fetch("/steam/install", { method: "POST",
+    headers: { ...headers, "content-type": "application/json" }, body: JSON.stringify(body) });
+  if (!answer.ok) throw new Error(await answer.text());
+  return answer.json();
 }

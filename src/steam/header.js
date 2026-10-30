@@ -42,3 +42,20 @@ export function decodeSession(value) {
     return null;
   }
 }
+
+/**
+ * A browser whose session the Bottlify bridge keeps has none to hand over: the
+ * installs it starts are followed by an id it made for itself, which names no
+ * account -- 32 hex digits, on this header.
+ */
+export const INSTALLER_HEADER = "x-steam-installer";
+
+/**
+ * The installer id a header carries, or null for none or anything else.
+ *
+ * @param {string | string[] | undefined} value
+ * @returns {string | null}
+ */
+export function readInstaller(value) {
+  return typeof value === "string" && /^[0-9a-f]{32}$/.test(value) ? value : null;
+}

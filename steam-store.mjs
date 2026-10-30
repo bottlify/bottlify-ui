@@ -13,9 +13,12 @@
  * The session is the asking browser's, handed over with each request: used
  * for that request or that install's run and written nowhere. A browser whose
  * session the Bottlify bridge keeps hands over none: it is told what Steam
- * tells anyone of its games (`apps`), by their ids. What is cached
- * from it -- the account, its library, its installs -- is kept per session,
- * so one browser's account is never answered to another.
+ * tells anyone of its games (`apps`), by their ids, and installs one with the
+ * depots' keys and manifest request codes the bridge gives it (`plan`,
+ * `installWithKeys`), held for the run alone as a session is. What is cached
+ * from it -- the account, its library, its installs -- is kept per session
+ * (a bridged browser's installs: per its installer id), so one browser's
+ * account is never answered to another.
  *
  * An install runs the engine repository's own tools as processes of their
  * own -- tools/steam-install.mjs downloads the depots, tools/make-btl.mjs
@@ -31,6 +34,7 @@ import {
   FILE_FLAG_DIRECTORY, connectCm, contentServers, depotKey, library, logOn, logOnAnonymously,
   manifest, manifestRequestCode, productInfo, signInWithQr,
 } from "@bottlify/core/steam";
+import { checkInstallRequest, describeApp } from "./src/steam/install.js";
 
 /**
  * Steam's own art for an app, on its CDN. Kept in a bottle's manifest as it
@@ -46,11 +50,51 @@ const artHere = (appId, file) => `/steam/art/${appId}/${file}`;
 
 /**
  * What a session's caches are kept under: its token, hashed, so a browser
- * that names an account without its token is not answered for it.
+ * that names an account without its token is not answered for it. A bridged
+ * browser's installs are kept under its installer id, hashed apart from any token.
  *
- * @param {SteamSession} session
+ * @param {SteamSession | string} who  A session, or an installer id.
  */
-const ownerOf = (session) => createHash("sha256").update(session.refreshToken).digest("hex");
+const ownerOf = (who) => createHash("sha256")
+  .update(typeof who === "string" ? `installer\0${who}` : who.refreshToken).digest("hex");
+
+/**
+ * A request this server turns down, rather than Steam failing it: answered as
+ * the asker's mistake.
+ *
+ * @param {string} message
+ */
+const refused = (message) => Object.assign(new Error(message), { refused: true });
+
+/** A connection to the first connection manager that answers. */
+async function connect(){
+  const directory = await (await fetch("https://api.steampowered.com/ISteamDirectory/"
+    + "GetCMListForConnect/v1/?cellid=0&cmtype=websockets")).json();
+  for (const server of directory.response.serverlist.slice(0, 8)){
+    try {
+      return await connectCm({ endpoint: server.endpoint });
+    } catch {
+      // the next one
+    }
+  }
+  throw new Error("no Steam connection manager answered");
+}
+
+/**
+ * What Steam tells an anonymous logon of apps, by app id.
+ *
+ * @param {number[]} appIds
+ * @returns {Promise<Map<number, any>>}
+ */
+async function anonymousAppInfo(appIds){
+  const connection = await connect();
+  try {
+    await logOnAnonymously(connection);
+    return (await productInfo(connection, { apps: appIds })).apps;
+  } finally {
+    connection.close();
+  }
+}
 
 /**
  * @typedef {Object} StoreGame
@@ -79,12 +123,15 @@ const ownerOf = (session) => createHash("sha256").update(session.refreshToken).d
  */
 
 /**
- * @param {{ cache: string, bundles: string, language?: string }} where
+ * @param {{ cache: string, bundles: string, language?: string,
+ *     appInfo?: (appIds: number[]) => Promise<Map<number, any>> }} where
  *     The directory kept caches go in -- sizes and art, nothing of an
  *     account -- and the directory bottles are kept in (the engine
- *     repository's `bundles/`, whose tools run from its parent).
+ *     repository's `bundles/`, whose tools run from its parent). `appInfo`
+ *     reads what Steam tells anyone of apps: an anonymous logon, unless a
+ *     test answers for Steam.
  */
-export function createSteamStore({ cache, bundles, language = "english" }){
+export function createSteamStore({ cache, bundles, language = "english", appInfo = anonymousAppInfo }){
   const engine = dirname(bundles);
   /**
    * Each session's games as Steam describes them, read at most every ten minutes.
@@ -133,20 +180,6 @@ export function createSteamStore({ cache, bundles, language = "english" }){
   /** Art being fetched or kept, by file. @type {Map<string, Promise<string | null>>} */
   const artFetches = new Map();
 
-  /** A connection to the first connection manager that answers. */
-  async function connect(){
-    const directory = await (await fetch("https://api.steampowered.com/ISteamDirectory/"
-      + "GetCMListForConnect/v1/?cellid=0&cmtype=websockets")).json();
-    for (const server of directory.response.serverlist.slice(0, 8)){
-      try {
-        return await connectCm({ endpoint: server.endpoint });
-      } catch {
-        // the next one
-      }
-    }
-    throw new Error("no Steam connection manager answered");
-  }
-
   /** A connection logged on with a session. @param {SteamSession} session */
   async function signedIn(session){
     const connection = await connect();
@@ -179,43 +212,6 @@ export function createSteamStore({ cache, bundles, language = "english" }){
   }
 
   /**
-   * The depots an install takes -- Windows', the language's and those for every
-   * language, not a DLC's -- their sizes added up, and Steam's launch option.
-   *
-   * @param {any} info  An app's product info.
-   */
-  function describe(info){
-    const depots = info?.depots ?? {};
-    let bytes = 0;
-    /** @type {{ id: number, gid: bigint }[]} */
-    const chosen = [];
-    for (const [id, depot] of Object.entries(depots)){
-      const size = Number(depot?.manifests?.public?.size ?? 0);
-      const gid = depot?.manifests?.public?.gid;
-      const os = String(depot?.config?.oslist ?? "");
-      const lang = String(depot?.config?.language ?? "");
-      if (/^[0-9]+$/.test(id) && size > 0 && gid && (!os || os.split(",").includes("windows"))
-        && (!lang || lang === language) && !depot?.dlcappid){
-        bytes += size;
-        chosen.push({ id: Number(id), gid: BigInt(gid) });
-      }
-    }
-    const launch = Object.values(info?.config?.launch ?? {}).find((option) => {
-      const os = String(/** @type {any} */ (option)?.config?.oslist ?? "");
-      return /** @type {any} */ (option)?.executable && (!os || os.split(",").includes("windows"));
-    });
-    return {
-      bytes,
-      depots: chosen,
-      build: String(depots?.branches?.public?.buildid ?? ""),
-      launch: launch ? {
-        executable: String(/** @type {any} */ (launch).executable),
-        arguments: String(/** @type {any} */ (launch).arguments ?? ""),
-      } : null,
-    };
-  }
-
-  /**
    * A game as the store shows it, before what is installed and measured.
    *
    * @param {number} appId @param {string} name @param {any} info  Its product info.
@@ -225,7 +221,7 @@ export function createSteamStore({ cache, bundles, language = "english" }){
       appId,
       name,
       exact: false,
-      ...describe(info),
+      ...describeApp(info, language),
       header: artHere(appId, "header.jpg"),
       capsule: artHere(appId, "library_600x900.jpg"),
       hero: artHere(appId, "library_hero.jpg"),
@@ -284,6 +280,119 @@ export function createSteamStore({ cache, bundles, language = "english" }){
       connection?.close?.();
       measuring = false;
     }
+  }
+
+  /**
+   * What Steam tells anyone of the apps not read in the last ten minutes, read.
+   *
+   * @param {number[]} appIds
+   */
+  async function readPublic(appIds){
+    const stale = appIds.filter((id) => !(Date.now() - (publicApps.get(id)?.at ?? 0) < 10 * 60_000));
+    if (stale.length === 0) return;
+    const apps = await appInfo(stale);
+    for (const id of stale){
+      const info = /** @type {any} */ (apps.get(id));
+      const game = String(info?.common?.type ?? "").toLowerCase() === "game"
+        ? storeGame(id, String(info.common.name ?? id), info) : null;
+      publicApps.set(id, { at: Date.now(), game });
+    }
+  }
+
+  /**
+   * Downloads an app with the engine's steam-install.mjs and packs it into a
+   * bottle, unless it is being done: then the owner is shown that run.
+   *
+   * @param {string} owner
+   * @param {{ appId: number, name: string, bytes: number,
+   *     launch: { executable: string, arguments: string } | null }} game
+   * @param {string[]} opens  How the download opens the depots: `--session -`
+   *     or `--keys -`, and what goes with it.
+   * @param {string} input  The session or the keys, for the download's stdin.
+   * @returns {InstallJob}
+   */
+  function start(owner, game, opens, input){
+    const appId = game.appId;
+    const running = jobs.get(appId);
+    if (running && (running.job.state === "downloading" || running.job.state === "packing")){
+      running.owners.add(owner);
+      return running.job;
+    }
+    if (!game.launch) throw refused(`${game.name} has no Windows launch option`);
+    /** @type {InstallJob} */
+    const job = { appId, state: "downloading", done: 0, total: Math.round(game.bytes / 2 ** 20),
+      message: "Connecting to Steam…" };
+    jobs.set(appId, { job, owners: new Set([owner]) });
+    const id = `steam-${appId}`;
+    const staging = join(bundles, ".staging", id);
+    /**
+     * A tool's run, its output read line by line.
+     *
+     * @param {string[]} args @param {(line: string) => void} onLine
+     * @param {string} [stdin]  Written to its stdin.
+     */
+    const run = (args, onLine, stdin = "") => new Promise((resolve, reject) => {
+      const child = spawn(process.execPath, args, { cwd: engine });
+      // A tool that ends before reading its stdin breaks the pipe: its exit
+      // code says what happened, and the error would otherwise end this server.
+      child.stdin.on("error", () => {});
+      child.stdin.end(stdin);
+      let rest = "";
+      const read = (/** @type {Buffer} */ chunk) => {
+        rest += chunk.toString("utf8");
+        const lines = rest.split("\n");
+        rest = lines.pop() ?? "";
+        lines.forEach(onLine);
+      };
+      child.stdout.on("data", read);
+      child.stderr.on("data", read);
+      child.on("error", reject);
+      child.on("close", (code) => (code === 0 ? resolve(undefined)
+        : reject(new Error(`${args[0]} ended with ${code}: ${rest.trim() || job.message}`))));
+    });
+    (async () => {
+      // The session or the keys on stdin, never in a file or the command line
+      // another process could read.
+      await run(["tools/steam-install.mjs", ...opens, "--app", String(appId), "--out", staging],
+        (line) => {
+          const progress = /([0-9]+) of ([0-9]+) MiB \(([0-9.]+) MiB\/s\)/.exec(line);
+          if (progress){
+            job.done = Number(progress[1]);
+            job.total = Number(progress[2]) || job.total;
+            job.message = `${progress[3]} MiB/s`;
+          } else if (line.trim()){
+            job.message = line.trim();
+          }
+        }, input);
+      job.state = "packing";
+      job.message = "Packing the bottle…";
+      const entry = /** @type {{ executable: string }} */ (game.launch).executable;
+      await run(["tools/make-btl.mjs", "pack", staging, id, `--entry=${entry}`], (line) => {
+        if (line.trim()) job.message = line.trim().slice(-120);
+      });
+      const path = join(bundles, id, "manifest.json");
+      const kept = JSON.parse(await readFile(path, "utf8"));
+      Object.assign(kept, {
+        title: game.name,
+        kind: "game",
+        steam: { appId },
+        ...game.launch?.arguments ? { commandLine: game.launch.arguments } : {},
+        // Steam's own addresses: a bottle carries them wherever it goes, and
+        // the launcher shows them through its own (`art`).
+        coverLarge: `${ART}/${appId}/library_600x900.jpg`,
+        coverSmall: `${ART}/${appId}/library_600x900.jpg`,
+        wallpaper: `${ART}/${appId}/library_hero.jpg`,
+      });
+      await writeFile(path, `${JSON.stringify(kept, null, 4)}\n`);
+      await rm(staging, { recursive: true, force: true });
+      job.state = "done";
+      job.bundle = id;
+      job.message = "Installed";
+    })().catch((/** @type {Error} */ e) => {
+      job.state = "failed";
+      job.message = e.message;
+    });
+    return job;
   }
 
   return {
@@ -383,22 +492,7 @@ export function createSteamStore({ cache, bundles, language = "english" }){
      */
     async apps(appIds){
       const wanted = [...new Set(appIds)];
-      const stale = wanted.filter((id) => !(Date.now() - (publicApps.get(id)?.at ?? 0) < 10 * 60_000));
-      if (stale.length > 0){
-        const connection = await connect();
-        try {
-          await logOnAnonymously(connection);
-          const { apps } = await productInfo(connection, { apps: stale });
-          for (const id of stale){
-            const info = /** @type {any} */ (apps.get(id));
-            const game = String(info?.common?.type ?? "").toLowerCase() === "game"
-              ? storeGame(id, String(info.common.name ?? id), info) : null;
-            publicApps.set(id, { at: Date.now(), game });
-          }
-        } finally {
-          connection.close();
-        }
-      }
+      await readPublic(wanted);
       const bottles = await installed();
       return wanted.flatMap((id) => {
         const kept = publicApps.get(id)?.game;
@@ -412,13 +506,14 @@ export function createSteamStore({ cache, bundles, language = "english" }){
     },
 
     /**
-     * The installs a session asked for since the server started.
+     * The installs a session, or a bridged browser by its installer id, asked
+     * for since the server started.
      *
-     * @param {SteamSession} session
+     * @param {SteamSession | string} who
      * @returns {InstallJob[]}
      */
-    jobs(session){
-      const owner = ownerOf(session);
+    jobs(who){
+      const owner = ownerOf(who);
       return [...jobs.values()].filter((one) => one.owners.has(owner)).map((one) => one.job);
     },
 
@@ -477,91 +572,52 @@ export function createSteamStore({ cache, bundles, language = "english" }){
      * @returns {Promise<InstallJob>}
      */
     async install(session, appId){
-      const owner = ownerOf(session);
       // Asked of the session's own library first: an app is installed for an
       // account that owns it, and its progress shown to one.
       const game = (await this.library(session)).find((one) => one.appId === appId);
       if (!game) throw new Error(`app ${appId} is not in the account's library`);
-      const running = jobs.get(appId);
-      if (running && (running.job.state === "downloading" || running.job.state === "packing")){
-        running.owners.add(owner);
-        return running.job;
+      return start(ownerOf(session), game, ["--session", "-", "--language", language],
+        JSON.stringify({ accountName: session.accountName, refreshToken: session.refreshToken }));
+    },
+
+    /**
+     * What an install of an app downloads, from what Steam tells anyone: the
+     * depots whose keys and manifest request codes a bridged browser asks its
+     * bridge for (`installWithKeys`).
+     *
+     * @param {number} appId
+     * @returns {Promise<import("./src/steam/install.js").InstallPlan>}
+     */
+    async plan(appId){
+      await readPublic([appId]);
+      const game = publicApps.get(appId)?.game;
+      if (!game) throw refused(`app ${appId} is not a game Steam describes`);
+      return { appId, depots: game.depots.map(({ id, gid }) => ({ depot: id, gid: String(gid) })) };
+    },
+
+    /**
+     * Downloads an app with the depots' keys and manifest request codes a
+     * bridged browser's account was given, checked against this server's own
+     * plan, and packs it into a bottle. They are held for the run and handed
+     * to the download on its stdin; the download logs on as nobody.
+     *
+     * @param {string} installer  The browser's installer id: its progress is shown to it.
+     * @param {unknown} request  `{ appId, depots: [{ depot, gid, key, code }] }`, from the network.
+     * @returns {Promise<InstallJob>}
+     */
+    async installWithKeys(installer, request){
+      const appId = /** @type {any} */ (request)?.appId;
+      if (!Number.isInteger(appId) || appId <= 0) throw refused("an install is { appId, depots }");
+      const plan = await this.plan(appId);
+      /** @type {ReturnType<typeof checkInstallRequest>} */
+      let access;
+      try {
+        access = checkInstallRequest(request, plan);
+      } catch (e){
+        throw refused(/** @type {Error} */ (e).message);
       }
-      if (!game.launch) throw new Error(`${game.name} has no Windows launch option`);
-      /** @type {InstallJob} */
-      const job = { appId, state: "downloading", done: 0, total: Math.round(game.bytes / 2 ** 20),
-        message: "Connecting to Steam…" };
-      jobs.set(appId, { job, owners: new Set([owner]) });
-      const id = `steam-${appId}`;
-      const staging = join(bundles, ".staging", id);
-      /**
-       * A tool's run, its output read line by line.
-       *
-       * @param {string[]} args @param {(line: string) => void} onLine
-       * @param {string} [input]  Written to its stdin.
-       */
-      const run = (args, onLine, input = "") => new Promise((resolve, reject) => {
-        const child = spawn(process.execPath, args, { cwd: engine });
-        // A tool that ends before reading its stdin breaks the pipe: its exit
-        // code says what happened, and the error would otherwise end this server.
-        child.stdin.on("error", () => {});
-        child.stdin.end(input);
-        let rest = "";
-        const read = (/** @type {Buffer} */ chunk) => {
-          rest += chunk.toString("utf8");
-          const lines = rest.split("\n");
-          rest = lines.pop() ?? "";
-          lines.forEach(onLine);
-        };
-        child.stdout.on("data", read);
-        child.stderr.on("data", read);
-        child.on("error", reject);
-        child.on("close", (code) => (code === 0 ? resolve(undefined)
-          : reject(new Error(`${args[0]} ended with ${code}: ${rest.trim() || job.message}`))));
-      });
-      (async () => {
-        // The session on stdin, never in a file or the command line another
-        // process could read.
-        await run(["tools/steam-install.mjs", "--session", "-", "--app", String(appId),
-          "--out", staging, "--language", language], (line) => {
-          const progress = /([0-9]+) of ([0-9]+) MiB \(([0-9.]+) MiB\/s\)/.exec(line);
-          if (progress){
-            job.done = Number(progress[1]);
-            job.total = Number(progress[2]) || job.total;
-            job.message = `${progress[3]} MiB/s`;
-          } else if (line.trim()){
-            job.message = line.trim();
-          }
-        }, JSON.stringify({ accountName: session.accountName, refreshToken: session.refreshToken }));
-        job.state = "packing";
-        job.message = "Packing the bottle…";
-        const entry = /** @type {{ executable: string }} */ (game.launch).executable;
-        await run(["tools/make-btl.mjs", "pack", staging, id, `--entry=${entry}`], (line) => {
-          if (line.trim()) job.message = line.trim().slice(-120);
-        });
-        const path = join(bundles, id, "manifest.json");
-        const kept = JSON.parse(await readFile(path, "utf8"));
-        Object.assign(kept, {
-          title: game.name,
-          kind: "game",
-          steam: { appId },
-          ...game.launch?.arguments ? { commandLine: game.launch.arguments } : {},
-          // Steam's own addresses: a bottle carries them wherever it goes, and
-          // the launcher shows them through its own (`art`).
-          coverLarge: `${ART}/${appId}/library_600x900.jpg`,
-          coverSmall: `${ART}/${appId}/library_600x900.jpg`,
-          wallpaper: `${ART}/${appId}/library_hero.jpg`,
-        });
-        await writeFile(path, `${JSON.stringify(kept, null, 4)}\n`);
-        await rm(staging, { recursive: true, force: true });
-        job.state = "done";
-        job.bundle = id;
-        job.message = "Installed";
-      })().catch((/** @type {Error} */ e) => {
-        job.state = "failed";
-        job.message = e.message;
-      });
-      return job;
+      const game = /** @type {ReturnType<typeof storeGame>} */ (publicApps.get(appId)?.game);
+      return start(ownerOf(installer), game, ["--keys", "-"], JSON.stringify(access));
     },
   };
 }
