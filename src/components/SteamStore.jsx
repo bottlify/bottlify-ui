@@ -105,7 +105,8 @@ function StoreCard({ game, job, onInstall, onPlay }) {
         sx={{ width: 150, height: 225, objectFit: "cover", borderRadius: 1, bgcolor: "action.hover" }} />
       <Typography variant="body2" noWrap title={game.name}>{game.name}</Typography>
       <Typography variant="caption" color="text.secondary">
-        {game.bytes > 0 ? size(game.bytes) : "size unknown"}
+        {/* "~" while it is the depots added up, before its files are measured. */}
+        {game.bytes > 0 ? `${game.exact ? "" : "~"}${size(game.bytes)}` : "size unknown"}
       </Typography>
       {busy ? (
         <Box>
@@ -175,6 +176,18 @@ export function SteamStore({ onClose, onInstalled, onPlay }) {
       setPhase("error");
     });
   }, []);
+
+  // The server measures sizes in the background: read again while some are
+  // still the depots added up.
+  const measuring = phase === "library" && games.some((game) => !game.exact && game.bytes > 0);
+  useEffect(() => {
+    if (!measuring) return undefined;
+    const timer = setInterval(() => {
+      fetch("/steam/library").then((r) => (r.ok ? r.json() : null))
+        .then((list) => list && setGames(list)).catch(() => {});
+    }, 15_000);
+    return () => clearInterval(timer);
+  }, [measuring]);
 
   // Every install's progress while the store is open; one that finishes adds
   // its bottle to the library.
