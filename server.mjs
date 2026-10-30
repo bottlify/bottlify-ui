@@ -7,7 +7,7 @@
 import { createServer, request } from "node:http";
 import { createServer as createSecureServer } from "node:https";
 import { createReadStream, readFileSync } from "node:fs";
-import { readFile, stat, readdir } from "node:fs/promises";
+import { mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, extname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { deflateSync } from "node:zlib";
@@ -257,6 +257,85 @@ async function answerBookmark(req, res, pathname){
   return false;
 }
 
+/**
+ * Where the Steam sign-in page (/steam) keeps the session it was given, for
+ * the tools on this machine (`tools/steam-signin.mjs --token` reads the same
+ * form). A credential: outside the repository, readable by its owner alone,
+ * and never answered back to a page.
+ */
+const STEAM_SESSION = resolve(UI_ROOT, ".steam", "session.json");
+/** @type {{ at: number, list: string[] } | null} */
+let steamManagers = null;
+
+/**
+ * The Steam page, the connection managers' WebSocket addresses -- Steam's
+ * directory answers no page from another origin, so this process asks it --
+ * and the session the page hands over or takes back.
+ *
+ * @param {import("node:http").IncomingMessage} req
+ * @param {import("node:http").ServerResponse} res
+ * @param {string} pathname
+ */
+async function answerSteam(req, res, pathname){
+  if (pathname === "/steam" && (req.method === "GET" || req.method === "HEAD")){
+    const page = resolve(DIST, "steam.html");
+    const size = await sizeOf(page);
+    if (size === null || size === undefined){ res.writeHead(404).end("the UI is not built"); return true; }
+    sendFile(req, res, page, size);
+    return true;
+  }
+  if (pathname === "/steam/managers" && req.method === "GET"){
+    try {
+      if (!steamManagers || Date.now() - steamManagers.at > 10 * 60_000){
+        const directory = await (await fetch("https://api.steampowered.com/ISteamDirectory/"
+          + "GetCMListForConnect/v1/?cellid=0&cmtype=websockets")).json();
+        /** @type {string[]} */
+        const list = directory.response.serverlist.map((/** @type {any} */ s)=>s.endpoint);
+        // Port 443 first: the one a firewall least often closes.
+        list.sort((a, b)=>Number(!a.endsWith(":443")) - Number(!b.endsWith(":443")));
+        steamManagers = { at: Date.now(), list: list.slice(0, 12) };
+      }
+      res.writeHead(200, { ...commonHeaders("application/json"), "Cache-Control": "no-store" })
+        .end(JSON.stringify(steamManagers.list));
+    } catch (e){
+      res.writeHead(502, commonHeaders("text/plain; charset=utf-8"))
+        .end(`Steam's directory did not answer: ${/** @type {Error} */ (e).message}`);
+    }
+    return true;
+  }
+  if (pathname === "/steam/session" && req.method === "DELETE"){
+    await rm(STEAM_SESSION, { force: true });
+    res.writeHead(204).end();
+    return true;
+  }
+  if (pathname === "/steam/session" && req.method === "POST"){
+    const chunks = [];
+    let length = 0;
+    for await (const chunk of req){
+      length += chunk.length;
+      if (length > 16_384){ res.writeHead(413).end(); return true; }
+      chunks.push(chunk);
+    }
+    let session;
+    try {
+      session = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+    } catch {
+      session = null;
+    }
+    if (typeof session?.accountName !== "string" || typeof session?.refreshToken !== "string"){
+      res.writeHead(400, commonHeaders("text/plain; charset=utf-8"))
+        .end("a session is { accountName, refreshToken }");
+      return true;
+    }
+    await mkdir(dirname(STEAM_SESSION), { recursive: true });
+    await writeFile(STEAM_SESSION, JSON.stringify({ accountName: session.accountName,
+      refreshToken: session.refreshToken }), { mode: 0o600 });
+    res.writeHead(204).end();
+    return true;
+  }
+  return false;
+}
+
 const handler = async(req, res)=>{
   const url = new URL(req.url ?? "/", "http://localhost");
   const pathname = url.pathname;
@@ -307,6 +386,8 @@ const handler = async(req, res)=>{
       .end(JSON.stringify(ids));
     return;
   }
+
+  if (await answerSteam(req, res, pathname)) return;
 
   if (await answerBookmark(req, res, pathname)) return;
 

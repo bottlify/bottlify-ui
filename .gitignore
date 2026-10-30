@@ -11,3 +11,6 @@ dist/
 /TODO.md
 /design/
 /public/covers/
+
+# The Steam session the /steam page hands the server: a credential.
+/.steam/
