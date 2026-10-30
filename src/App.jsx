@@ -18,6 +18,7 @@ import {
   archiveDisc, isDiscImage, isZipArchive, readZip, storageHeadroom,
 } from "@bottlify/installer";
 import { ArchiveDialog } from "./components/ArchiveDialog.jsx";
+import { AddDialog } from "./components/AddDialog.jsx";
 import { AppHeader } from "./components/AppHeader.jsx";
 import { Footer } from "./components/Footer.jsx";
 import { InstallScreen } from "./components/InstallScreen.jsx";
@@ -55,6 +56,7 @@ export default function App() {
   const [editingBundle, setEditingBundle] = useState(
     /** @type {{ bundle: any, mode: "machine" | "describe" } | null} */ (null));
   const chooser = useRef(null);
+  const [adding, setAdding] = useState(false);
   // Add's choice: a file, or Steam, which is signed in to under Game Accounts.
   // The file being looked at and read, and the way to stop that.
   const [reading, setReading] = useState(null);
@@ -169,11 +171,14 @@ export default function App() {
    * descriptor every ISO 9660 image has -- is not read at all here: the engine
    * mounts the file itself as a drive and reads it a range at a time.
    */
-  const handleChosen = async (event) => {
+  const handleChosen = (event) => {
     const file = event.target.files?.[0];
     // Cleared so choosing the same file twice still fires a change.
     event.target.value = "";
-    if (!file) return;
+    if (file) openFile(file);
+  };
+  /** @param {File} file  Chosen in the picker or dropped on Add. */
+  const openFile = async (file) => {
     // Up before anything is awaited: the checks and the read below take
     // seconds for a large file, and nothing on the page may stay unchanged
     // through them.
@@ -264,8 +269,7 @@ export default function App() {
           can be started; on the front page they would be controls over
           nothing. */}
         <AppHeader
-          onAdd={inLibrary && config?.allowInstall ? () => chooser.current?.click() : null}
-          onAddFromAccount={inLibrary ? () => setSettings("accounts") : null}
+          onAdd={inLibrary && config?.allowInstall ? () => setAdding(true) : null}
           onSettings={inLibrary ? () => setSettings(true) : null}
           onStorage={inLibrary ? () => setSettings("storage") : null}
         />
@@ -287,6 +291,24 @@ export default function App() {
             onClose={() => setNotice(null)}>
             {notice}
           </Alert>
+        )}
+
+        {adding && (
+          <AddDialog
+            onChoose={() => {
+              setAdding(false);
+              chooser.current?.click();
+            }}
+            onDrop={(file) => {
+              setAdding(false);
+              openFile(file);
+            }}
+            onAccounts={() => {
+              setAdding(false);
+              setSettings("accounts");
+            }}
+            onClose={() => setAdding(false)}
+          />
         )}
 
         {asking && (
