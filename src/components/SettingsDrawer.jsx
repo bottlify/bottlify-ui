@@ -10,6 +10,7 @@ import {
 } from "@mui/material";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FilesDialog } from "./FilesDialog.jsx";
+import { StorageSettings } from "./StorageSettings.jsx";
 import { EDITABLE_TYPES } from "../api/config.js";
 import { mountOf } from "../engine/patches.js";
 import { bottleFiles, liveFiles } from "../engine/volumes.js";
@@ -77,6 +78,7 @@ const SECTIONS = [
   { key: "bottle", title: "Settings", says: "Logging, profiling, the quantum, the refresh rate" },
   { key: "logs", title: "Logs", says: "Everything the engine has said, as it says it" },
   { key: "files", title: "Files", says: "The bottle's volume, as the program sees it" },
+  { key: "storage", title: "Storage", says: "What each bottle keeps in this browser, and clearing it" },
 ];
 
 /** Said once per group rather than per control, where a group is all one answer. */
@@ -135,10 +137,11 @@ export function SettingsDrawer({
   const change = useCallback((patch) => setSettings(saveSettings(patch)), []);
   const here = SECTIONS.find((entry) => entry.key === section) ?? null;
 
-  // Closing puts the panel back where it opens from, so reopening it is not a
-  // continuation of whatever was last read.
+  // Opening and closing put the panel back where it opens from, so reopening
+  // it is not a continuation of whatever was last read, and a panel opened
+  // onto a section shows that section.
   useEffect(() => {
-    if (!open) setSection(start);
+    setSection(start);
   }, [open, start]);
 
   const body = (
@@ -186,6 +189,7 @@ export function SettingsDrawer({
         <FilesDialog title={bundle?.title ?? bundleId} files={files} editableTypes={EDITABLE_TYPES}
           onClose={() => setSection(null)} />
       )}
+      {section === "storage" && <StorageSettings />}
       {section === "files" && !files && (
         <Typography variant="body2" color="text.secondary" sx={{ p: 2 }}>
           No bottle is open.

@@ -14,6 +14,7 @@ import { LabelBadges, VersionBadge } from "./VersionBadge.jsx";
 import { FilesDialog } from "./FilesDialog.jsx";
 import { bottleFiles } from "../engine/volumes.js";
 import { residency } from "../engine/btl.js";
+import { mayNotFit, siteSpace, sizeText } from "../engine/stored.js";
 import { EDITABLE_TYPES } from "../api/config.js";
 import {
   DEFAULT_SHADERS, DRIVER_RULES_CHOICES, GRAPHICS_CHOICES, MEMORY_CHOICES, SHADER_CHOICES,
@@ -479,19 +480,26 @@ export function GameDetails({
   const [whole, setWhole] = useState(/** @type {boolean | null} */ (null));
   const [unchecked, setUnchecked] = useState(false);
   const [held, setHeld] = useState(0);
+  // What a start still downloads beside the room this site has left, when the
+  // one is larger than the other: said on Play, never in its way.
+  const [tight, setTight] = useState(/** @type {{ missing: number, free: number } | null} */ (null));
   useEffect(() => {
     if (!bundle) return undefined;
     setUnchecked(false);
+    setTight(null);
     if (bundle.local) {
       setWhole(true);
       return undefined;
     }
     let live = true;
     setWhole(null);
-    residency(bundle).then((here) => {
+    residency(bundle).then(async (here) => {
       if (!live) return;
       setWhole(here.resident === here.blocks);
       setHeld(here.bytes > 0 ? here.residentBytes / here.bytes : 0);
+      const missing = here.bytes - here.residentBytes;
+      const space = await siteSpace().catch(() => null);
+      if (live && space && mayNotFit(missing, space)) setTight({ missing, free: space.free });
     }, () => live && setUnchecked(true));
     return () => { live = false; };
   }, [bundle]);
@@ -700,6 +708,12 @@ export function GameDetails({
                 Play
               </Button>
             </Box>
+            {tight && (
+              <Typography variant="caption" color="warning.main" sx={{ display: "block", textAlign: "right", mt: 1 }}>
+                May not fit: {sizeText(tight.missing)} still to download, {sizeText(tight.free)} free
+                for this site (the browser&apos;s estimate).
+              </Typography>
+            )}
           </Box>
         </Box>
       </Box>
