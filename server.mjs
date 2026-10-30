@@ -15,6 +15,7 @@ import { createRelayServer, permits } from "@bottlify/networking/server";
 import { programIcon } from "@bottlify/core/icon";
 import { openBundle } from "@bottlify/core/bundle/node";
 import { connectCm, library, logOn } from "@bottlify/core/steam";
+import { createSteamStore } from "./steam-store.mjs";
 import { ICON_SIZES, headForBottle, homeManifest, iconFile, iconPath } from "./src/engine/home-screen.js";
 
 /**
@@ -269,6 +270,8 @@ const STEAM_SESSION = resolve(UI_ROOT, ".steam", "session.json");
 let steamManagers = null;
 /** @type {{ at: number, account: any } | null} */
 let steamAccount = null;
+/** The account's library and installs (steam-store.mjs). */
+const steamStore = createSteamStore({ session: STEAM_SESSION, bundles: BUNDLES });
 
 /**
  * The kept session's account and the games it owns, signed in afresh.
@@ -352,8 +355,41 @@ async function answerSteam(req, res, pathname){
     }
     return true;
   }
+  // The account's games for the store, and the installs: started by a POST of
+  // { appId }, followed by GETs of every install's progress.
+  if (pathname === "/steam/library" && req.method === "GET"){
+    try {
+      const games = await steamStore.library();
+      res.writeHead(200, commonHeaders("application/json; charset=utf-8")).end(JSON.stringify(games));
+    } catch (e){
+      res.writeHead(e?.code === "ENOENT" ? 404 : 502, commonHeaders("text/plain; charset=utf-8"))
+        .end(e?.code === "ENOENT" ? "nobody is signed in to Steam" : `Steam did not answer: ${e?.message}`);
+    }
+    return true;
+  }
+  if (pathname === "/steam/install" && req.method === "GET"){
+    res.writeHead(200, commonHeaders("application/json; charset=utf-8"))
+      .end(JSON.stringify(steamStore.jobs()));
+    return true;
+  }
+  if (pathname === "/steam/install" && req.method === "POST"){
+    const chunks = [];
+    for await (const chunk of req){
+      chunks.push(chunk);
+      if (chunks.length > 16){ res.writeHead(413).end(); return true; }
+    }
+    try {
+      const { appId } = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+      const job = await steamStore.install(Number(appId));
+      res.writeHead(202, commonHeaders("application/json; charset=utf-8")).end(JSON.stringify(job));
+    } catch (e){
+      res.writeHead(400, commonHeaders("text/plain; charset=utf-8")).end(String(e?.message ?? e));
+    }
+    return true;
+  }
   if (pathname === "/steam/session" && req.method === "DELETE"){
     steamAccount = null;
+    steamStore.forget();
     await rm(STEAM_SESSION, { force: true });
     res.writeHead(204).end();
     return true;
@@ -377,6 +413,8 @@ async function answerSteam(req, res, pathname){
         .end("a session is { accountName, refreshToken }");
       return true;
     }
+    steamAccount = null;
+    steamStore.forget();
     await mkdir(dirname(STEAM_SESSION), { recursive: true });
     await writeFile(STEAM_SESSION, JSON.stringify({ accountName: session.accountName,
       refreshToken: session.refreshToken }), { mode: 0o600 });

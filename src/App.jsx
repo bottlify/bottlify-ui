@@ -5,7 +5,7 @@
  */
 
 import { Alert, Box, CircularProgress, Typography } from "@mui/material";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { getAvailableBundles, getUnlistedBundle } from "./api/bundles.js";
 import { importBottle } from "./engine/bottles.js";
 import { opensAsPage } from "./engine/bookmark.js";
@@ -21,6 +21,8 @@ import { ArchiveDialog } from "./components/ArchiveDialog.jsx";
 import { AppHeader } from "./components/AppHeader.jsx";
 import { Footer } from "./components/Footer.jsx";
 import { InstallScreen } from "./components/InstallScreen.jsx";
+import { AddDialog } from "./components/AddDialog.jsx";
+import { SteamStore } from "./components/SteamStore.jsx";
 import { Landing } from "./components/Landing.jsx";
 import { License } from "./components/License.jsx";
 import { BottleSettingsDialog, GameDetails } from "./components/GameDetails.jsx";
@@ -53,6 +55,9 @@ export default function App() {
   const [editingBundle, setEditingBundle] = useState(
     /** @type {{ bundle: any, mode: "machine" | "describe" } | null} */ (null));
   const chooser = useRef(null);
+  // Add's choice -- a file or a store -- and the Steam store once chosen.
+  const [adding, setAdding] = useState(false);
+  const [store, setStore] = useState(false);
   // The file being looked at and read, and the way to stop that.
   const [reading, setReading] = useState(null);
   const readingAbort = useRef(null);
@@ -89,6 +94,7 @@ export default function App() {
   // Raised by every bottle saved, so the library lists it at once -- the
   // server's and this browser's alike -- without a reload.
   const [libraryRevision, setLibraryRevision] = useState(0);
+  const libraryChanged = useCallback(() => setLibraryRevision((n) => n + 1), []);
   useEffect(() => {
     let cancelled = false;
     getAvailableBundles()
@@ -258,7 +264,7 @@ export default function App() {
           can be started; on the front page they would be controls over
           nothing. */}
         <AppHeader
-          onAdd={inLibrary && config?.allowInstall ? () => chooser.current?.click() : null}
+          onAdd={inLibrary && config?.allowInstall ? () => setAdding(true) : null}
           onSettings={inLibrary ? () => setSettings(true) : null}
         />
         {config?.allowInstall && (
@@ -279,6 +285,31 @@ export default function App() {
             onClose={() => setNotice(null)}>
             {notice}
           </Alert>
+        )}
+
+        {adding && (
+          <AddDialog
+            onFile={() => {
+              setAdding(false);
+              chooser.current?.click();
+            }}
+            onSteam={() => {
+              setAdding(false);
+              setStore(true);
+            }}
+            onClose={() => setAdding(false)}
+          />
+        )}
+
+        {store && (
+          <SteamStore
+            onClose={() => setStore(false)}
+            onInstalled={libraryChanged}
+            onPlay={(id) => {
+              setStore(false);
+              navigate(`/play/${encodeURIComponent(id)}`);
+            }}
+          />
         )}
 
         {asking && (
