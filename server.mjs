@@ -14,6 +14,7 @@ import { deflateSync } from "node:zlib";
 import { createRelayServer, permits } from "@bottlify/networking/server";
 import { programIcon } from "@bottlify/core/icon";
 import { openBundle } from "@bottlify/core/bundle/node";
+import { connectCm, library, logOn } from "@bottlify/core/steam";
 import { ICON_SIZES, headForBottle, homeManifest, iconFile, iconPath } from "./src/engine/home-screen.js";
 
 /**
@@ -266,6 +267,37 @@ async function answerBookmark(req, res, pathname){
 const STEAM_SESSION = resolve(UI_ROOT, ".steam", "session.json");
 /** @type {{ at: number, list: string[] } | null} */
 let steamManagers = null;
+/** @type {{ at: number, account: any } | null} */
+let steamAccount = null;
+
+/**
+ * The kept session's account and the games it owns, signed in afresh.
+ *
+ * @returns {Promise<{ steamId: string, accountName: string, apps: number[] }>}
+ */
+async function signedInAccount(){
+  const session = JSON.parse(await readFile(STEAM_SESSION, "utf8"));
+  const directory = await (await fetch("https://api.steampowered.com/ISteamDirectory/"
+    + "GetCMListForConnect/v1/?cellid=0&cmtype=websockets")).json();
+  let connection = null;
+  for (const server of directory.response.serverlist.slice(0, 8)){
+    try {
+      connection = await connectCm({ endpoint: server.endpoint });
+      break;
+    } catch {
+      // the next one
+    }
+  }
+  if (!connection) throw new Error("no Steam connection manager answered");
+  try {
+    const { steamId, licenses } = await logOn(connection, session);
+    const games = await library(connection, licenses);
+    return { steamId: String(steamId), accountName: session.accountName,
+      apps: games.map((game) => game.appid).sort((a, b) => a - b) };
+  } finally {
+    connection.close();
+  }
+}
 
 /**
  * The Steam page, the connection managers' WebSocket addresses -- Steam's
@@ -303,7 +335,25 @@ async function answerSteam(req, res, pathname){
     }
     return true;
   }
+  // The signed-in account and the games its licences grant, which a bottle
+  // that needs Steam running is started with (createApp's win32.steam): signed
+  // in here with the kept session, whose token never leaves this machine.
+  if (pathname === "/steam/account" && req.method === "GET"){
+    try {
+      steamAccount = steamAccount && Date.now() - steamAccount.at < 10 * 60_000
+        ? steamAccount : { at: Date.now(), account: await signedInAccount() };
+      res.writeHead(200, commonHeaders("application/json; charset=utf-8"))
+        .end(JSON.stringify(steamAccount.account));
+    } catch (e){
+      steamAccount = null;
+      res.writeHead(e?.code === "ENOENT" ? 404 : 502, commonHeaders("text/plain; charset=utf-8"))
+        .end(e?.code === "ENOENT" ? "nobody is signed in to Steam (/steam)"
+          : `Steam did not answer: ${/** @type {Error} */ (e).message}`);
+    }
+    return true;
+  }
   if (pathname === "/steam/session" && req.method === "DELETE"){
+    steamAccount = null;
     await rm(STEAM_SESSION, { force: true });
     res.writeHead(204).end();
     return true;

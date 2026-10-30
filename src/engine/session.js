@@ -772,6 +772,11 @@ async function run({ bundle, media, canvas, report: show, silentInstall = false,
   const patch = prefix ? null : await patchFor(bundle.id);
   const imagePath = prefix ? prefix.imagePath : started.imagePath;
 
+  // The signed-in Steam account, for a bottle that is a Steam app; null when
+  // nobody is signed in, and the program finds no Steam running.
+  const steamAccount = bundle?.steam?.appId
+    ? await fetch("/steam/account").then((r) => (r.ok ? r.json() : null)).catch(() => null)
+    : null;
   /** @type {Record<string, any>} */
   const options = {
     // Where the engine runs: a worker of its own unless asked otherwise.
@@ -862,6 +867,9 @@ async function run({ bundle, media, canvas, report: show, silentInstall = false,
     // the page, and the bundle as the room -- two tabs playing the same title
     // are on one LAN, and a host outside it is reached only if the server was
     // started allowing it. Without it the program has no network.
+    // A Steam app is started with Steam running for the account signed in on
+    // /steam, the app's ownership answered from that account's licences.
+    ...(steamAccount ? { win32: { steam: { ...steamAccount, appId: bundle?.steam?.appId } } } : {}),
     ...(networking ? { network: {
       module: new URL("/networking/client/index.js", window.location.href).href,
       url: `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host}/networking/relay`,

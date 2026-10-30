@@ -49,6 +49,8 @@ import { localBottles } from "../engine/bottles.js";
  * @property {string | null} status How far it was found to run: a `STATUSES` value,
  *                                  null while nobody has checked.
  * @property {"game" | "application"} kind
+ * @property {{ appId: number }} [steam]  A Steam app: started with Steam
+ *     running for the signed-in account (`/steam/account`).
  */
 
 /** The marks a bottle may carry beside its version, shown on its card. */
