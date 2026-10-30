@@ -98,9 +98,9 @@ export default function App() {
   // The Steam account signed in in this browser: its games are in the library.
   const steam = useSteam(libraryChanged);
   const steamSignedIn = steam.signedIn;
-  const signedIn = useCallback(async (session) => {
+  const signedIn = useCallback(async () => {
     setSigningIn(false);
-    await steamSignedIn(session);
+    await steamSignedIn();
   }, [steamSignedIn]);
   useEffect(() => {
     let cancelled = false;

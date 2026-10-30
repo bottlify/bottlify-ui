@@ -6,13 +6,13 @@
 
 /**
  * The Steam sign-in page (/steam): a QR code for the Steam app, then the
- * account's library. The sign-in goes through the launcher's server, which
- * keeps nothing of it; the session is kept in this browser alone
+ * account's library. The sign-in goes through the bridge or the launcher's
+ * server, which keeps nothing of it; the session is kept in this browser alone
  * (`client.js`), so the next visit is signed in without a code.
  */
 
 import { encodeQr, qrToSvg } from "@bottlify/core/steam";
-import { keepSession, keptSession, sessionHeaders, signIn } from "./client.js";
+import { signIn, signOut, steamAccountName, steamGames } from "./client.js";
 
 /** @param {string} id */
 const element = (id) => /** @type {HTMLElement} */ (document.getElementById(id));
@@ -24,10 +24,7 @@ const status = (text) => {
 /** @param {string} accountName */
 async function showLibrary(accountName) {
   status(`${accountName}: reading the library…`);
-  const answer = await fetch("/steam/library", { headers: await sessionHeaders() });
-  if (!answer.ok) throw new Error(await answer.text());
-  /** @type {{ appId: number, name: string }[]} */
-  const games = await answer.json();
+  const games = await steamGames();
   status(`${accountName}: ${games.length} games. The session is kept in this browser.`);
   element("games").replaceChildren(...games.map((game) => {
     const item = document.createElement("li");
@@ -40,7 +37,7 @@ async function showLibrary(accountName) {
 async function signInHere() {
   for (;;) {
     try {
-      const session = await signIn({
+      const account = await signIn({
         onChallenge: (url) => {
           element("qr").innerHTML = qrToSvg(encodeQr(url), 6);
           status("Scan with the Steam app: Steam Guard → the QR scanner.");
@@ -48,8 +45,7 @@ async function signInHere() {
         onScanned: () => status("Scanned. Approve the sign-in in the Steam app."),
       });
       element("qr").innerHTML = "";
-      await keepSession(session);
-      return session;
+      return account;
     } catch (e) {
       element("qr").innerHTML = "";
       status(`${/** @type {Error} */ (e).message} — a new code…`);
@@ -60,10 +56,10 @@ async function signInHere() {
 
 async function run() {
   status("Connecting to Steam…");
-  const kept = await keptSession();
+  const kept = await steamAccountName();
   if (kept) {
     try {
-      await showLibrary(kept.accountName);
+      await showLibrary(kept);
       return;
     } catch (e) {
       status(`The kept session did not log on: ${/** @type {Error} */ (e).message}`);
@@ -73,8 +69,7 @@ async function run() {
 }
 
 element("signout").addEventListener("click", async () => {
-  await fetch("/steam/session", { method: "DELETE", headers: await sessionHeaders() }).catch(() => {});
-  await keepSession(null);
+  await signOut().catch(() => {});
   location.reload();
 });
 

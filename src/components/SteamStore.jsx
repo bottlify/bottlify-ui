@@ -10,7 +10,10 @@ import {
 } from "@mui/material";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { encodeQr, qrToSvg } from "@bottlify/core/steam";
-import { keepSession, keptSession, sessionHeaders, signIn } from "../steam/client.js";
+import {
+  sessionHeaders, signIn, signOut as signOutHere, steamAccountName, steamGames, steamJobs,
+} from "../steam/client.js";
+import { steamBridge } from "../steam/bridge.js";
 
 /** @typedef {import("../../steam-store.mjs").StoreGame} StoreGame */
 /** @typedef {import("../../steam-store.mjs").InstallJob} InstallJob */
@@ -19,13 +22,17 @@ import { keepSession, keptSession, sessionHeaders, signIn } from "../steam/clien
 const size = (bytes) => (bytes >= 1 << 30 ? `${(bytes / (1 << 30)).toFixed(1)} GB`
   : `${Math.max(1, Math.round(bytes / (1 << 20)))} MB`);
 
+/** Why a game cannot be installed while the session is the bridge's. */
+const NO_INSTALL_IN_BRIDGE = "Install needs the server sign-in until streamed bottles land";
+
 /** @param {InstallJob | undefined} job */
 const busy = (job) => job?.state === "downloading" || job?.state === "packing";
 
 /**
  * The Steam account signed in in this browser, its games and their installs,
  * for the library to show beside the bottles. Its session is this browser's
- * own (`steam/client.js`), handed to the server with each request.
+ * own (`steam/client.js`): the bridge's, or handed to the server with each
+ * request. Installs are the server's, which only the second has.
  *
  * @param {() => void} onInstalled  A bottle was added: the library lists it.
  */
@@ -34,30 +41,31 @@ export function useSteam(onInstalled) {
   const [games, setGames] = useState(/** @type {StoreGame[]} */ ([]));
   const [jobs, setJobs] = useState(/** @type {Map<number, InstallJob>} */ (new Map()));
   const [error, setError] = useState("");
+  const [bridged, setBridged] = useState(false);
   const finished = useRef(new Set());
 
   const load = useCallback(async () => {
-    const session = await keptSession();
-    setAccount(session?.accountName ?? null);
-    if (!session) return;
-    const headers = await sessionHeaders();
-    const answer = await fetch("/steam/library", { headers });
-    if (!answer.ok) {
-      setError(await answer.text());
+    setBridged(Boolean(await steamBridge()));
+    const name = await steamAccountName();
+    setAccount(name);
+    if (!name) return;
+    try {
+      setGames(await steamGames());
+    } catch (e) {
+      setError(String(/** @type {Error} */ (e).message));
       return;
     }
     setError("");
-    setGames(await answer.json());
-    const list = await fetch("/steam/install", { headers }).then((r) => (r.ok ? r.json() : []));
-    setJobs(new Map(list.map((/** @type {InstallJob} */ job) => [job.appId, job])));
+    const list = await steamJobs();
+    setJobs(new Map(list.map((job) => [job.appId, job])));
   }, []);
   useEffect(() => {
     load().catch((e) => setError(String(e?.message ?? e)));
   }, [load]);
 
-  // The server measures sizes in the background: read again while some are
-  // still the depots added up.
-  const measuring = games.some((game) => !game.bundle && !game.exact && game.bytes > 0);
+  // The server measures sizes in the background, with a session it has: read
+  // again while some are still the depots added up.
+  const measuring = !bridged && games.some((game) => !game.bundle && !game.exact && game.bytes > 0);
   useEffect(() => {
     if (!measuring) return undefined;
     const timer = setInterval(() => load().catch(() => {}), 15_000);
@@ -70,8 +78,7 @@ export function useSteam(onInstalled) {
     if (!installing) return undefined;
     let stopped = false;
     const timer = setInterval(async () => {
-      const list = await fetch("/steam/install", { headers: await sessionHeaders() })
-        .then((r) => (r.ok ? r.json() : [])).catch(() => []);
+      const list = await steamJobs();
       if (stopped) return;
       setJobs(new Map(list.map((/** @type {InstallJob} */ job) => [job.appId, job])));
       for (const job of list) {
@@ -90,16 +97,11 @@ export function useSteam(onInstalled) {
   }, [installing, onInstalled]);
 
   // Kept the same from render to render: the sign-in restarts when its callback changes.
-  /** @param {import("../steam/header.js").SteamSession} session */
-  const signedIn = useCallback(async (session) => {
-    await keepSession(session);
+  const signedIn = useCallback(async () => {
     await load();
   }, [load]);
   const signOut = useCallback(async () => {
-    // Told first, with the session, so the server drops what it read for it.
-    await fetch("/steam/session", { method: "DELETE", headers: await sessionHeaders() })
-      .catch(() => {});
-    await keepSession(null);
+    await signOutHere().catch((e) => setError(String(e?.message ?? e)));
     setAccount(null);
     setGames([]);
     setJobs(new Map());
@@ -116,17 +118,18 @@ export function useSteam(onInstalled) {
     setJobs((now) => new Map(now).set(appId, job));
   }, []);
 
-  return { account, games, jobs, error, signedIn, signOut, install };
+  return { account, games, jobs, error, signedIn, signOut, install,
+    installUnavailable: bridged ? NO_INSTALL_IN_BRIDGE : "" };
 }
 
 /**
  * The QR sign-in: a code from Steam's own authentication, approved in the
- * Steam app on the person's phone. The launcher's server talks to Steam for
- * this page and hands the session to it alone, so it works on whatever
- * address the launcher was opened by.
+ * Steam app on the person's phone. The bridge talks to Steam for this page,
+ * or else the launcher's server does and hands the session to it alone, so it
+ * works on whatever address the launcher was opened by.
  *
  * @param {Object} props
- * @param {(session: import("../steam/header.js").SteamSession) => void} props.onSignedIn
+ * @param {(account: { accountName: string }) => void} props.onSignedIn
  * @param {() => void} props.onClose
  */
 export function SteamSignIn({ onSignedIn, onClose }) {
@@ -137,7 +140,7 @@ export function SteamSignIn({ onSignedIn, onClose }) {
     (async () => {
       while (!stop.signal.aborted) {
         try {
-          const session = await signIn({
+          const account = await signIn({
             signal: stop.signal,
             onChallenge: (url) => {
               setQr(qrToSvg(encodeQr(url), 5));
@@ -145,7 +148,7 @@ export function SteamSignIn({ onSignedIn, onClose }) {
             },
             onScanned: () => setStatus("Scanned. Approve the sign-in in the Steam app."),
           });
-          onSignedIn(session);
+          onSignedIn(account);
           return;
         } catch (e) {
           if (stop.signal.aborted) return;
@@ -189,8 +192,9 @@ export function SteamSignIn({ onSignedIn, onClose }) {
  * @param {StoreGame} props.game
  * @param {InstallJob | undefined} props.job
  * @param {() => void} props.onInstall
+ * @param {string} [props.unavailable]  Why it cannot be installed here, if it cannot.
  */
-export function SteamInstall({ game, job, onInstall }) {
+export function SteamInstall({ game, job, onInstall, unavailable }) {
   return (
     <Box sx={{ pt: 1, display: "flex", flexDirection: "column", gap: 0.5 }}>
       <Typography variant="caption" color="text.secondary">
@@ -210,9 +214,13 @@ export function SteamInstall({ game, job, onInstall }) {
         </Box>
       ) : (
         <>
-          <Button size="small" variant="outlined" onClick={onInstall} disabled={!game.launch}>
-            {game.launch ? "Install" : "No Windows build"}
+          <Button size="small" variant="outlined" onClick={onInstall}
+            disabled={!game.launch || Boolean(unavailable)} title={unavailable || undefined}>
+            {!game.launch ? "No Windows build" : unavailable ? "Install unavailable" : "Install"}
           </Button>
+          {unavailable && game.launch && (
+            <Typography variant="caption" color="text.secondary">{unavailable}</Typography>
+          )}
           {job?.state === "failed" && (
             <Typography variant="caption" color="error" title={job.message} noWrap>
               {job.message}

@@ -3,6 +3,9 @@
   "networking": true,
   "libraryTags": true,
   "preloadBottles": true,
+  "bridge": {
+    "steam": true
+  },
   "server": {
     "url": "/",
     "token": "set-your-own"

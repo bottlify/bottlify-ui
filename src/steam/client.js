@@ -9,6 +9,11 @@
  * to the launcher's server with each request that needs it and never left
  * there. One browser signed in is not every device that opens the launcher.
  *
+ * With the Bottlify bridge in this browser (`bridge.js`) the session is the
+ * extension's instead: the sign-in, the account and its games' ids come from
+ * it, the token never reaches this page or the server, and the server is asked
+ * only what Steam tells anyone -- the games' names, art and launch options.
+ *
  * Kept in this origin's IndexedDB, the refresh token encrypted with an
  * AES-GCM key made non-extractable and stored beside it: the storage files on
  * disk hold no token in the clear, and only this origin's code can have the
@@ -16,8 +21,12 @@
  */
 
 import { SESSION_HEADER, encodeSession } from "./header.js";
+import { ask, steamBridge } from "./bridge.js";
 
 /** @typedef {import("./header.js").SteamSession} SteamSession */
+/** @typedef {import("../../steam-store.mjs").StoreGame} StoreGame */
+/** @typedef {import("../../steam-store.mjs").InstallJob} InstallJob */
+/** @typedef {{ steamId: string, accountName: string, apps: number[] }} SteamAccount */
 
 const DB = "bottlify-steam";
 const STORE = "kept";
@@ -122,25 +131,46 @@ export async function keepSession(session) {
   await write(session).catch(() => {});
 }
 
-/** The headers that hand this browser's session to the server, or none. */
+/**
+ * The headers that hand this browser's session to the server, or none --
+ * none with the bridge, whatever was kept here before it came.
+ */
 export async function sessionHeaders() {
+  if (await steamBridge()) return {};
   const session = await keptSession();
   return session ? { [SESSION_HEADER]: encodeSession(session) } : {};
 }
 
 /**
- * Signs in with a QR code through the launcher's server: it talks to Steam's
- * connection manager -- which refuses a page from anywhere but localhost --
- * relays the challenges, and hands the session to this page alone, keeping
- * nothing. Resolves once approved in the Steam app.
+ * Signs in with a QR code, in the bridge, or else through the launcher's
+ * server: it talks to Steam's connection manager -- which refuses a page from
+ * anywhere but localhost -- relays the challenges, and hands the session to
+ * this page alone, keeping nothing; it is kept here. Resolves once approved
+ * in the Steam app.
  *
  * @param {Object} options
  * @param {(challengeUrl: string) => void} options.onChallenge
  * @param {() => void} [options.onScanned]
- * @param {AbortSignal} [options.signal]  Stops the sign-in on the server too.
+ * @param {AbortSignal} [options.signal]  Stops the sign-in where it runs too.
+ * @returns {Promise<{ accountName: string }>}
+ */
+export async function signIn(options) {
+  if (await steamBridge()) {
+    return ask("signIn", {}, { signal: options.signal, onEvent: (name, data) => {
+      if (name === "challenge") options.onChallenge(data.url);
+      else if (name === "scanned") options.onScanned?.();
+    } });
+  }
+  const session = await signInOnServer(options);
+  await keepSession(session);
+  return { accountName: session.accountName };
+}
+
+/**
+ * @param {Parameters<typeof signIn>[0]} options
  * @returns {Promise<SteamSession>}
  */
-export function signIn({ onChallenge, onScanned, signal }) {
+function signInOnServer({ onChallenge, onScanned, signal }) {
   return new Promise((resolve, reject) => {
     const events = new EventSource("/steam/signin");
     const end = (/** @type {() => void} */ then) => {
@@ -156,4 +186,62 @@ export function signIn({ onChallenge, onScanned, signal }) {
     // the caller's to start again.
     events.onerror = () => end(() => reject(new Error("the sign-in's connection to the server dropped")));
   });
+}
+
+/** Signs out: in the bridge, or the server told first, with the session, to drop what it read. */
+export async function signOut() {
+  if (await steamBridge()) {
+    await ask("signOut");
+    return;
+  }
+  await fetch("/steam/session", { method: "DELETE", headers: await sessionHeaders() })
+    .catch(() => {});
+  await keepSession(null);
+}
+
+/**
+ * The account signed in in this browser and the games its licences grant,
+ * which a bottle that needs Steam running is started with; null for nobody.
+ *
+ * @returns {Promise<SteamAccount | null>}
+ */
+export async function steamAccount() {
+  if (await steamBridge()) return ask("account");
+  if (!await keptSession()) return null;
+  const answer = await fetch("/steam/account", { headers: await sessionHeaders() });
+  return answer.ok ? answer.json() : null;
+}
+
+/** The signed-in account's name, or null for nobody. @returns {Promise<string | null>} */
+export async function steamAccountName() {
+  if (await steamBridge()) return (await ask("account"))?.accountName ?? null;
+  return (await keptSession())?.accountName ?? null;
+}
+
+/**
+ * The signed-in account's games as the store shows them. With the bridge the
+ * account's app ids are all the server is given.
+ *
+ * @returns {Promise<StoreGame[]>}
+ */
+export async function steamGames() {
+  const account = await steamBridge() ? await ask("account") : null;
+  const answer = account
+    ? await fetch("/steam/apps", { method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ apps: account.apps }) })
+    : await fetch("/steam/library", { headers: await sessionHeaders() });
+  if (!answer.ok) throw new Error(await answer.text());
+  return answer.json();
+}
+
+/**
+ * The installs this browser's session asked the server for; none with the
+ * bridge, whose session the server never has.
+ *
+ * @returns {Promise<InstallJob[]>}
+ */
+export async function steamJobs() {
+  if (await steamBridge()) return [];
+  return fetch("/steam/install", { headers: await sessionHeaders() })
+    .then((r) => (r.ok ? r.json() : [])).catch(() => []);
 }

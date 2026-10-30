@@ -11,7 +11,9 @@
  * account's own session and packed into a bottle the library lists.
  *
  * The session is the asking browser's, handed over with each request: used
- * for that request or that install's run and written nowhere. What is cached
+ * for that request or that install's run and written nowhere. A browser whose
+ * session the Bottlify bridge keeps hands over none: it is told what Steam
+ * tells anyone of its games (`apps`), by their ids. What is cached
  * from it -- the account, its library, its installs -- is kept per session,
  * so one browser's account is never answered to another.
  *
@@ -26,8 +28,8 @@ import { createHash } from "node:crypto";
 import { mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import {
-  FILE_FLAG_DIRECTORY, connectCm, contentServers, depotKey, library, logOn, manifest,
-  manifestRequestCode, signInWithQr,
+  FILE_FLAG_DIRECTORY, connectCm, contentServers, depotKey, library, logOn, logOnAnonymously,
+  manifest, manifestRequestCode, productInfo, signInWithQr,
 } from "@bottlify/core/steam";
 
 /**
@@ -120,6 +122,14 @@ export function createSteamStore({ cache, bundles, language = "english" }){
     for (const [app, size] of Object.entries(JSON.parse(text))) sizes.set(Number(app), size);
   }).catch(() => {});
   let measuring = false;
+  /**
+   * What Steam tells anyone of an app, by app id, read at most every ten
+   * minutes: the game as the store shows it, or null for an app that is not a
+   * game or that Steam does not describe to an anonymous logon.
+   *
+   * @type {Map<number, { at: number, game: ReturnType<typeof storeGame> | null }>}
+   */
+  const publicApps = new Map();
   /** Art being fetched or kept, by file. @type {Map<string, Promise<string | null>>} */
   const artFetches = new Map();
 
@@ -202,6 +212,24 @@ export function createSteamStore({ cache, bundles, language = "english" }){
         executable: String(/** @type {any} */ (launch).executable),
         arguments: String(/** @type {any} */ (launch).arguments ?? ""),
       } : null,
+    };
+  }
+
+  /**
+   * A game as the store shows it, before what is installed and measured.
+   *
+   * @param {number} appId @param {string} name @param {any} info  Its product info.
+   */
+  function storeGame(appId, name, info){
+    return {
+      appId,
+      name,
+      exact: false,
+      ...describe(info),
+      header: artHere(appId, "header.jpg"),
+      capsule: artHere(appId, "library_600x900.jpg"),
+      hero: artHere(appId, "library_hero.jpg"),
+      bundle: null,
     };
   }
 
@@ -322,16 +350,8 @@ export function createSteamStore({ cache, bundles, language = "english" }){
         const { connection, licenses } = await signedIn(session);
         try {
           const games = await library(connection, licenses);
-          cached = { at: Date.now(), games: games.map((game) => ({
-            appId: game.appid,
-            name: game.name,
-            exact: false,
-            ...describe(game.info),
-            header: artHere(game.appid, "header.jpg"),
-            capsule: artHere(game.appid, "library_600x900.jpg"),
-            hero: artHere(game.appid, "library_hero.jpg"),
-            bundle: null,
-          })) };
+          cached = { at: Date.now(),
+            games: games.map((game) => storeGame(game.appid, game.name, game.info)) };
           libraries.set(owner, cached);
         } finally {
           connection.close();
@@ -349,6 +369,46 @@ export function createSteamStore({ cache, bundles, language = "english" }){
         return { ...game, bundle: bottle?.id ?? null, bytes: bytes ?? game.bytes,
           exact: bytes !== null && bytes !== undefined };
       });
+    },
+
+    /**
+     * Games by app id, as the store shows them, from what Steam tells an
+     * anonymous logon: for a browser whose session the bridge keeps, which
+     * knows the account's app ids and hands over nothing else. Sizes stay the
+     * depots added up -- measuring takes the account's depot keys -- but for
+     * a game installed here.
+     *
+     * @param {number[]} appIds
+     * @returns {Promise<StoreGame[]>}
+     */
+    async apps(appIds){
+      const wanted = [...new Set(appIds)];
+      const stale = wanted.filter((id) => !(Date.now() - (publicApps.get(id)?.at ?? 0) < 10 * 60_000));
+      if (stale.length > 0){
+        const connection = await connect();
+        try {
+          await logOnAnonymously(connection);
+          const { apps } = await productInfo(connection, { apps: stale });
+          for (const id of stale){
+            const info = /** @type {any} */ (apps.get(id));
+            const game = String(info?.common?.type ?? "").toLowerCase() === "game"
+              ? storeGame(id, String(info.common.name ?? id), info) : null;
+            publicApps.set(id, { at: Date.now(), game });
+          }
+        } finally {
+          connection.close();
+        }
+      }
+      const bottles = await installed();
+      return wanted.flatMap((id) => {
+        const kept = publicApps.get(id)?.game;
+        if (!kept) return [];
+        // eslint-disable-next-line no-unused-vars
+        const { depots, build, ...game } = kept;
+        const bottle = bottles.get(id);
+        return [{ ...game, bundle: bottle?.id ?? null, bytes: bottle?.bytes || game.bytes,
+          exact: Boolean(bottle?.bytes) }];
+      }).sort((a, b) => a.name.localeCompare(b.name));
     },
 
     /**

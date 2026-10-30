@@ -38,7 +38,7 @@ import { shownToThePerson } from "./boxes.js";
 import { keepEnding, reportParts } from "./journal.js";
 import { endRun, noteRun } from "./blackbox.js";
 import { isTouchScreen } from "./touch.js";
-import { sessionHeaders } from "../steam/client.js";
+import { steamAccount } from "../steam/client.js";
 import { phoneScreen, viewOf } from "../screen.js";
 import {
   CHANGED, GPU_JOURNAL, SHADER_CHOICES, bottleConfigFor, driverRulesFor, loadSettings,
@@ -775,10 +775,7 @@ async function run({ bundle, media, canvas, report: show, silentInstall = false,
 
   // The Steam account signed in in this browser, for a bottle that is a Steam
   // app; null when nobody is, and the program finds no Steam running.
-  const steamAccount = bundle?.steam?.appId
-    ? await fetch("/steam/account", { headers: await sessionHeaders() })
-      .then((r) => (r.ok ? r.json() : null)).catch(() => null)
-    : null;
+  const signedInSteam = bundle?.steam?.appId ? await steamAccount().catch(() => null) : null;
   /** @type {Record<string, any>} */
   const options = {
     // Where the engine runs: a worker of its own unless asked otherwise.
@@ -871,7 +868,7 @@ async function run({ bundle, media, canvas, report: show, silentInstall = false,
     // started allowing it. Without it the program has no network.
     // A Steam app is started with Steam running for the account signed in in
     // this browser, the app's ownership answered from that account's licences.
-    ...(steamAccount ? { win32: { steam: { ...steamAccount, appId: bundle?.steam?.appId } } } : {}),
+    ...(signedInSteam ? { win32: { steam: { ...signedInSteam, appId: bundle?.steam?.appId } } } : {}),
     ...(networking ? { network: {
       module: new URL("/networking/client/index.js", window.location.href).href,
       url: `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host}/networking/relay`,

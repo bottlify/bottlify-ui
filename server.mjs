@@ -335,6 +335,37 @@ async function answerSteam(req, res, pathname){
     res.end();
     return true;
   }
+  // Games by app id, from what Steam tells anyone, for a browser whose session
+  // the bridge keeps: asked with { apps: [appId, ...] } and no session.
+  if (pathname === "/steam/apps" && req.method === "POST"){
+    const text = commonHeaders("text/plain; charset=utf-8");
+    const chunks = [];
+    let bytes = 0;
+    for await (const chunk of req){
+      chunks.push(chunk);
+      bytes += chunk.length;
+      if (bytes > 256 * 1024){ res.writeHead(413).end(); return true; }
+    }
+    /** @type {unknown} */
+    let apps;
+    try {
+      apps = JSON.parse(Buffer.concat(chunks).toString("utf8")).apps;
+    } catch {
+      apps = null;
+    }
+    if (!Array.isArray(apps) || apps.length > 20_000
+      || !apps.every((id)=>Number.isInteger(id) && id > 0 && id <= 0xFFFFFFFF)){
+      res.writeHead(400, text).end("apps are { apps: [appId, ...] }");
+      return true;
+    }
+    try {
+      const answer = await steamStore.apps(apps);
+      res.writeHead(200, commonHeaders("application/json; charset=utf-8")).end(JSON.stringify(answer));
+    } catch (e){
+      res.writeHead(502, text).end(String(/** @type {Error} */ (e)?.message ?? e));
+    }
+    return true;
+  }
   if (!pathname.startsWith("/steam/")) return false;
 
   // Everything below is asked with the browser's own session, which is used
