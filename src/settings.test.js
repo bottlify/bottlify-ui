@@ -261,14 +261,14 @@ test("a bottle's Windows and graphics are the person's, else its manifest's, els
     game: { graphics: "all" },
   }, "only names the engine knows are kept");
   assert.deepEqual(bottleConfigFor(settings, { id: "benchmark", windows: "win2000" }),
-    { windows: "win2000", graphicsApi: "directx7", gpuProfile: "sm2" });
+    { windows: "win2000", graphicsApi: "directx7", gpuProfile: "sm3" });
   assert.deepEqual(bottleConfigFor(settings, { id: "game", graphics: "directx8" }),
-    { gpuProfile: "sm2" }, "every API chosen over the manifest's one passes none");
+    { gpuProfile: "sm3" }, "every API chosen over the manifest's one passes none");
   assert.deepEqual(bottleConfigFor(settings, { id: "plain", graphics: "directx9" }),
-    { graphicsApi: "directx9", gpuProfile: "sm2" },
+    { graphicsApi: "directx9", gpuProfile: "sm3" },
     "the manifest's own when the person chose nothing");
-  assert.deepEqual(bottleConfigFor(settings, { id: "plain" }), { gpuProfile: "sm2" },
-    "the adapter's profile is model 2's unless a bottle chooses another");
+  assert.deepEqual(bottleConfigFor(settings, { id: "plain" }), { gpuProfile: "sm3" },
+    "the adapter's profile is model 3's unless a bottle chooses another");
   const chosen = normalise({ bottleConfig: { mine: { shaders: "sm1" }, junk: { shaders: "sm9" } } });
   assert.deepEqual(chosen.bottleConfig, { mine: { shaders: "sm1" } });
   assert.equal(bottleConfigFor(chosen, { id: "mine", shaders: "sm3" }).gpuProfile, "sm1",

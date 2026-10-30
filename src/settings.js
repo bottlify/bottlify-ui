@@ -137,8 +137,10 @@ export const GRAPHICS_CHOICES = [
  * The profile the bottle's video adapter is shown with, by shader model: a
  * card of that model its programs know, by the engine's `gpuProfile` names. A
  * game picks its render path from the card it is told of, and takes its
- * weakest on one it does not know; model 2 is the one most of the games of
- * DirectX 9's years know best.
+ * weakest on one it does not know. Model 3 is the default: a game of the
+ * later DirectX 9 years checks for it before it makes a device and refuses to
+ * start on less, while an older one that knows model 2 best says so in its
+ * bottle.
  */
 export const SHADER_CHOICES = [
   { value: "sm1", label: "Shader model 1 (GeForce4 Ti)" },
@@ -149,7 +151,7 @@ export const SHADER_CHOICES = [
 ];
 
 /** The profile a bottle that chooses none is shown with. */
-export const DEFAULT_SHADERS = "sm2";
+export const DEFAULT_SHADERS = "sm3";
 
 /**
  * How much memory the guest machine has, in megabytes. A game sizes its caches
