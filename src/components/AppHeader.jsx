@@ -9,6 +9,7 @@ import {
 } from "@mui/material";
 import { useEffect, useRef, useState } from "react";
 import { CHANGED, loadSettings, saveSettings } from "../settings.js";
+import { SpaceIndicator } from "./StorageSettings.jsx";
 
 /**
  * The bar carried by both the landing page and the library.
@@ -22,8 +23,10 @@ import { CHANGED, loadSettings, saveSettings } from "../settings.js";
  *        at all -- installing is configuration, not a disabled control.
  * @param {(() => void) | null} [props.onSettings]  Absent likewise: the settings
  *        are about runs, and belong only where a run can be started.
+ * @param {(() => void) | null} [props.onStorage]  Absent likewise: the room this
+ *        site has left, which opens what each bottle keeps here.
  */
-export function AppHeader({ onAdd, onSettings }) {
+export function AppHeader({ onAdd, onSettings, onStorage }) {
   return (
     <Box
       component="header"
@@ -55,6 +58,7 @@ export function AppHeader({ onAdd, onSettings }) {
       </Link>
 
       <Stack direction="row" spacing={1} sx={{ ml: "auto" }} alignItems="center">
+        {onStorage && <SpaceIndicator onOpen={onStorage} />}
         {onAdd && (
           <Button
             size="small"

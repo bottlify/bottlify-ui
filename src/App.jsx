@@ -49,7 +49,8 @@ export default function App() {
   // An unpacked archive waiting for the person to pick the program it starts.
   const [archive, setArchive] = useState(null);
   const [notice, setNotice] = useState(null);
-  const [settings, setSettings] = useState(false);
+  // Open or not, or the section it opens onto.
+  const [settings, setSettings] = useState(/** @type {boolean | string} */ (false));
   // The bottle a card's gear opened the settings of, or its pencil the
   // name and pictures of.
   const [editingBundle, setEditingBundle] = useState(
@@ -273,6 +274,7 @@ export default function App() {
         <AppHeader
           onAdd={inLibrary && config?.allowInstall ? () => setAdding(true) : null}
           onSettings={inLibrary ? () => setSettings(true) : null}
+          onStorage={inLibrary ? () => setSettings("storage") : null}
         />
         {config?.allowInstall && (
           <Box
@@ -381,7 +383,8 @@ export default function App() {
           says so rather than showing an empty journal. The running one has a
           gear of its own, because the stage covers this header. */}
         <SettingsDrawer
-          open={settings}
+          open={settings !== false}
+          start={typeof settings === "string" ? settings : null}
           onClose={() => setSettings(false)}
           facts={[{ label: "Library", value: `${bundles.length} title${bundles.length === 1 ? "" : "s"}` }]}
         />
