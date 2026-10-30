@@ -5,7 +5,8 @@
  */
 
 import {
-  Box, Button, ClickAwayListener, IconButton, Link, Paper, Popper, Slider, Stack, Tooltip, Typography,
+  Box, Button, ClickAwayListener, IconButton, Link, Menu, MenuItem, Paper, Popper, Slider, Stack,
+  Tooltip, Typography,
 } from "@mui/material";
 import { useEffect, useRef, useState } from "react";
 import { CHANGED, loadSettings, saveSettings } from "../settings.js";
@@ -21,12 +22,15 @@ import { SpaceIndicator } from "./StorageSettings.jsx";
  * @param {Object} props
  * @param {(() => void) | null} [props.onAdd]  Absent means the button is not there
  *        at all -- installing is configuration, not a disabled control.
+ * @param {(() => void) | null} [props.onAddFromAccount]  Add's second way in: the
+ *        game accounts, whose games show in the library each with its Install.
  * @param {(() => void) | null} [props.onSettings]  Absent likewise: the settings
  *        are about runs, and belong only where a run can be started.
  * @param {(() => void) | null} [props.onStorage]  Absent likewise: the room this
  *        site has left, which opens what each bottle keeps here.
  */
-export function AppHeader({ onAdd, onSettings, onStorage }) {
+export function AppHeader({ onAdd, onAddFromAccount, onSettings, onStorage }) {
+  const [adding, setAdding] = useState(/** @type {HTMLElement | null} */ (null));
   return (
     <Box
       component="header"
@@ -63,12 +67,20 @@ export function AppHeader({ onAdd, onSettings, onStorage }) {
           <Button
             size="small"
             variant="outlined"
-            onClick={onAdd}
+            onClick={(event) => (onAddFromAccount ? setAdding(event.currentTarget) : onAdd())}
             startIcon={<span className="glyphicon glyphicon-plus" />}
             sx={{ color: "text.primary" }}
           >
             Add
           </Button>
+        )}
+        {onAdd && onAddFromAccount && (
+          <Menu anchorEl={adding} open={Boolean(adding)} onClose={() => setAdding(null)}>
+            <MenuItem onClick={() => { setAdding(null); onAdd(); }}>From a file…</MenuItem>
+            <MenuItem onClick={() => { setAdding(null); onAddFromAccount(); }}>
+              From a game account…
+            </MenuItem>
+          </Menu>
         )}
         {onSettings && (
           <Tooltip title="Settings">

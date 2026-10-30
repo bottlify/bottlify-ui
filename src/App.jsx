@@ -265,6 +265,7 @@ export default function App() {
           nothing. */}
         <AppHeader
           onAdd={inLibrary && config?.allowInstall ? () => chooser.current?.click() : null}
+          onAddFromAccount={inLibrary ? () => setSettings("accounts") : null}
           onSettings={inLibrary ? () => setSettings(true) : null}
           onStorage={inLibrary ? () => setSettings("storage") : null}
         />
