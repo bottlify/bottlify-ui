@@ -224,7 +224,7 @@ export function GameGrid({
           cards, under a heading each once there are any of the first. */}
       {[
         { key: "local", heading: "In this browser", items: shown.filter((one) => one.local) },
-        { key: "server", heading: "On the server", items: shown.filter((one) => !one.local && !one.store) },
+        { key: "server", heading: "On the server", items: shown.filter((one) => !one.local && !one.store?.provider) },
         // A store being read shows so, before its games are known as after.
         ...(known ?? []).map(({ provider, syncing }) => ({ key: provider.id, syncing,
           heading: `On ${provider.name}, not installed${syncing ? " · syncing…" : ""}`,
@@ -247,7 +247,7 @@ export function GameGrid({
               gap: 2.5,
             }}
           >
-            {group.items.map((bundle) => (bundle.store ? (
+            {group.items.map((bundle) => (bundle.store?.provider ? (
               <GameCard key={`${group.key}:${bundle.id}`} bundle={bundle}
                 footer={<StoreInstall game={bundle.store.game}
                   job={known?.find((one) => one.provider.id === bundle.store.provider)
