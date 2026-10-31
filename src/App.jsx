@@ -11,6 +11,7 @@ import { importBottle } from "./engine/bottles.js";
 import { opensAsPage } from "./engine/bookmark.js";
 import { formatOf, unsupportedNotice } from "./engine/formats.js";
 import { residency } from "./engine/btl.js";
+import { webgpuStatus } from "./engine/webgpu.js";
 import { DownloadDialog } from "./components/DownloadDialog.jsx";
 import { getConfig } from "./api/config.js";
 import { readFile } from "./api/readFile.js";
@@ -44,6 +45,11 @@ export default function App() {
   const [bundles, setBundles] = useState([]);
   const [error, setError] = useState(null);
   const [selected, setSelected] = useState(null);
+  // Whether a game can start here at all: asked before the library fills.
+  const [gpu, setGpu] = useState(null);
+  useEffect(() => {
+    webgpuStatus().then(setGpu);
+  }, []);
   const [config, setConfig] = useState(null);
   const [media, setMedia] = useState(null);
   // An unpacked archive waiting for the person to pick the program it starts.
@@ -331,6 +337,15 @@ export default function App() {
           <License takedownEmail={config?.takedownEmail} />
         ) : !inLibrary ? (
           <Landing />
+        ) : gpu === null ? (
+          <Box sx={{ p: 4, display: "flex", justifyContent: "center" }}>
+            <CircularProgress />
+          </Box>
+        ) : !gpu.ok ? (
+          <Alert severity="error" variant="outlined" sx={{ m: 4 }}>
+            {gpu.reason} Bottlify draws everything through WebGPU, so no game will start in this
+            browser. Use a current Chrome or Edge with hardware acceleration on.
+          </Alert>
         ) : error ? (
           <Typography color="error" sx={{ p: 4 }}>
           Could not load the library: {error}
