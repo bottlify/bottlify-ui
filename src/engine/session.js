@@ -916,6 +916,9 @@ async function run({ bundle, media, canvas, report: show, silentInstall = false,
     // `?gpu=sm1` .. `sm4` or `host`: the video adapter's profile, over the bottle's.
     ...(SHADER_CHOICES.some((one) => one.value === query.get("gpu"))
       ? { gpuProfile: query.get("gpu") } : {}),
+    // `?adapter=software`: the browser's software adapter (SwiftShader) in
+    // place of the GPU, for judging a picture no driver distorted.
+    ...(query.get("adapter") === "software" ? { gpuAdapter: "software" } : {}),
     // The saved areas, plus whatever `?log=call.audio,call.com&logSize=40000`
     // on the launcher's own address asks for. Everything a program decides
     // about a device it decides while starting up, and a category switched on
