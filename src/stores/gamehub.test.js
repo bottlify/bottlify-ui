@@ -8,40 +8,74 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 const ORIGIN = "https://play.bottlify.app";
+const EXTENSION = "chrome-extension://abcdefghijklmnopabcdefghijklmnop";
+const PEER = "bottlify-bridge";
 
 /**
- * A page with the bridge's content script in it, as far as bridge.js sees:
- * every message posted is heard by the page's listeners, as a window's own
- * are, and `answer` replies to a request the way the bridge does.
+ * A page with GameHub in it, as far as gamehub.js sees: the content script,
+ * which `answer` answers on the page's own origin, and each store's session
+ * frame the page embeds, which `frameAnswer` answers from the extension's
+ * origin. Every message carries its window and origin, as a browser's do.
  *
- * @param {{ marked?: boolean, answer: (request: any, reply: (body: object) => void) => void }} options
+ * @param {{ marked?: boolean, answer: (request: any, reply: (body: object) => void) => void,
+ *   frameAnswer?: (request: any, reply: (body: object) => void) => void }} options
  */
-async function page({ marked = true, answer }) {
-  const window = new EventTarget();
-  /** @type {any[]} */
+async function page({ marked = true, answer, frameAnswer = () => {} }) {
+  const events = new EventTarget();
+  /** @type {any[]} What the content script was posted. */
   const posted = [];
-  const dispatch = (/** @type {any} */ data, origin = ORIGIN) => window.dispatchEvent(
-    Object.assign(new Event("message"), { data, origin }));
-  Object.assign(globalThis, {
-    location: { origin: ORIGIN },
-    document: { documentElement: { dataset: marked ? { bottlifyBridge: "0.1.0" } : {} } },
-    addEventListener: window.addEventListener.bind(window),
-    removeEventListener: window.removeEventListener.bind(window),
+  /** @type {any[]} What the frames were posted. */
+  const toFrames = [];
+  /** @type {any[]} The frames embedded. */
+  const frames = [];
+  /** @type {any} */
+  let win = null;
+  const dispatch = (/** @type {any} */ data, origin = ORIGIN, source = win) => events.dispatchEvent(
+    Object.assign(new Event("message"), { data, origin, source }));
+  win = {
     postMessage: (/** @type {any} */ data, /** @type {string} */ origin) => {
       assert.equal(origin, ORIGIN, "posted to this origin alone");
       posted.push(data);
       queueMicrotask(() => {
         dispatch(data);
-        if (data.to === "bottlify-bridge") {
-          answer(data, (body) => dispatch({ from: "bottlify-bridge", id: data.id, ...body }));
-        }
+        if (data.to === PEER) answer(data, (body) => dispatch({ from: PEER, id: data.id, ...body }));
       });
     },
+  };
+  const document = {
+    documentElement: { dataset: marked ? { bottlifyBridge: "0.1.0" } : {} },
+    createElement: () => {
+      const frameWindow = {
+        postMessage: (/** @type {any} */ data, /** @type {string} */ origin) => {
+          assert.equal(origin, EXTENSION, "posted to the extension's frame alone");
+          toFrames.push(data);
+          queueMicrotask(() => frameAnswer(data,
+            (body) => dispatch({ from: PEER, id: data.id, ...body }, EXTENSION, frameWindow)));
+        },
+      };
+      const frame = { style: {}, setAttribute: () => {}, contentWindow: frameWindow };
+      frames.push(frame);
+      return frame;
+    },
+    body: { append: (/** @type {any} */ frame) => queueMicrotask(() =>
+      dispatch({ from: PEER, ready: true }, EXTENSION, frame.contentWindow)) },
+  };
+  Object.assign(globalThis, {
+    window: win,
+    location: { origin: ORIGIN },
+    document,
+    addEventListener: events.addEventListener.bind(events),
+    removeEventListener: events.removeEventListener.bind(events),
   });
-  // A fresh module a page: what it learnt of the bridge is kept per page.
+  // A fresh module a page: what it learnt of GameHub is kept per page.
   const module = await import(`./gamehub.js?page=${Math.random()}`);
-  return { ...module, posted, dispatch };
+  return { ...module, posted, toFrames, frames, dispatch };
 }
+
+/** The content script's hello, with the extension's origin. @param {any} request @param {(body: object) => void} reply */
+const hello = (request, reply) => reply(request.op === "hello"
+  ? { result: { version: "0.2.0", origin: EXTENSION, stores: [{ id: "steam", name: "Steam", on: true }] } }
+  : { error: `${request.op} is asked of a store's frame` });
 
 test("no mark on the page: no bridge, and nothing is asked", async () => {
   const { gamehub, posted } = await page({ marked: false, answer: () => assert.fail() });
@@ -61,23 +95,37 @@ test("GameHub says which stores it has, and which the site has on", async () => 
   assert.equal(await older.gamehub(), null, "an extension that does not list stores is none");
 });
 
-test("an answer is its own request's: the result or the error", async () => {
-  const { ask, dispatch } = await page({ answer: (request, reply) => {
-    if (request.op === "list") {
-      // Another request's answer, one from elsewhere, and an event, are not its answer.
-      dispatch({ from: "bottlify-bridge", id: request.id + 100, result: "other" });
-      dispatch({ from: "bottlify-bridge", id: request.id, result: "forged" }, "https://evil.example");
-      reply({ event: "progress", data: {} });
-      reply({ result: [{ id: "70" }] });
-    } else {
-      reply({ error: "Steam is switched off for this site" });
-    }
+test("every op but hello is the store's session frame's, embedded once from the extension", async () => {
+  const { ask, frames, toFrames, posted } = await page({ answer: hello, frameAnswer: (request, reply) => {
+    reply(request.op === "list" ? { result: [{ id: "70" }] } : { error: "Steam is switched off for this site" });
   } });
   assert.deepEqual(await ask("list", { store: "steam" }), [{ id: "70" }]);
   await assert.rejects(ask("account", { store: "steam" }), /switched off/);
+  assert.equal(frames.length, 1, "one frame for the store");
+  assert.equal(frames[0].src, `${EXTENSION}/steam/session.html`);
+  assert.deepEqual(toFrames.map((one) => one.op), ["list", "account"]);
+  assert.deepEqual(posted.map((one) => one.op), ["hello"], "the content script is asked hello alone");
 });
 
-const EXTENSION = "chrome-extension://abcdefghijklmnopabcdefghijklmnop";
+test("an answer is its own request's: from its frame, its origin, its id", async () => {
+  const { ask, dispatch, frames } = await page({ answer: hello, frameAnswer: (request, reply) => {
+    const frame = frames[0].contentWindow;
+    // Another request's answer, one from another origin or window, and an event, are not its answer.
+    dispatch({ from: PEER, id: request.id + 100, result: "other" }, EXTENSION, frame);
+    dispatch({ from: PEER, id: request.id, result: "forged" }, "https://evil.example", frame);
+    dispatch({ from: PEER, id: request.id, result: "forged" }, EXTENSION, {});
+    dispatch({ from: PEER, id: request.id, result: "forged" }, ORIGIN);
+    reply({ event: "progress", data: {} });
+    reply({ result: [{ id: "70" }] });
+  } });
+  assert.deepEqual(await ask("list", { store: "steam" }), [{ id: "70" }]);
+});
+
+test("a GameHub without session frames is said to be too old", async () => {
+  const { ask } = await page({ answer: (_request, reply) =>
+    reply({ result: { version: "0.1.0", stores: [{ id: "steam", name: "Steam", on: true }] } }) });
+  await assert.rejects(ask("list", { store: "steam" }), /too old/);
+});
 
 test("a store's sign-in page is GameHub's, at its origin by the store's id", async () => {
   const stores = [{ id: "steam", name: "Steam", on: true }];
