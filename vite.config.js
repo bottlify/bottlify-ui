@@ -46,7 +46,5 @@ export default defineConfig({
   build: {
     outDir: "dist",
     emptyOutDir: true,
-    // The Steam sign-in is a page of its own (/steam), apart from the app.
-    rollupOptions: { input: { main: "index.html", steam: "steam.html" } },
   },
 });

@@ -49,8 +49,9 @@ import { localBottles } from "../engine/bottles.js";
  * @property {string | null} status How far it was found to run: a `STATUSES` value,
  *                                  null while nobody has checked.
  * @property {"game" | "application"} kind
- * @property {{ appId: number }} [steam]  A Steam app: started with Steam
- *     running for the signed-in account (`/steam/account`).
+ * @property {{ appId: number }} [steam]  A store's game carries its store's id of it under
+ *     the store's name (`stores/providers.js`, `gameOf`): Steam's, its app id.
+ * @property {string} [coverFallback]  The picture shown where its cover does not load.
  */
 
 /** The marks a bottle may carry beside its version, shown on its card. */
@@ -180,11 +181,8 @@ export async function saveBundleArt(upload, id, slot, file) {
   return describeBundle(id, (await response.json()).manifest);
 }
 
-/** A picture on Steam's CDN, under any of its hosts: the app and the file. */
-const STEAM_ART = /^https:\/\/[a-z0-9.-]*steamstatic\.com\/(?:store_item_assets\/)?steam\/apps\/([0-9]+)\/([a-z0-9_]+\.(?:jpg|png))(?:\?.*)?$/;
-
 /**
- * Resolves a cover href: absolute hrefs are used as-is, but for Steam's, `./name`
+ * Resolves a cover href: absolute hrefs are used as-is, `./name`
  * is a file in the bottle's own directory -- where a picture set from the
  * launcher is kept -- and other relative ones are files under `/covers/`.
  *
@@ -195,10 +193,8 @@ const STEAM_ART = /^https:\/\/[a-z0-9.-]*steamstatic\.com\/(?:store_item_assets\
 function coverHref(href, id) {
   if (!href) return "";
   if (href.startsWith("./")) return `/bundles/${encodeURIComponent(id)}/${href.slice(2)}`;
-  // Steam's CDN sends no Cross-Origin-Resource-Policy, so this cross-origin
-  // isolated page may not show its pictures: they come through the server.
-  const steam = STEAM_ART.exec(href);
-  if (steam) return `/steam/art/${steam[1]}/${steam[2]}`;
+  // A store's art too: the Bottlify bridge gives its responses the headers
+  // this cross-origin isolated page needs of a picture from elsewhere.
   if (href.startsWith("/") || href.startsWith("http")) return href;
   return `/covers/${href}`;
 }

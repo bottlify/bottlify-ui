@@ -23,10 +23,11 @@
  * run goes on from there.
  */
 
-import { downloadChunk, installBundle } from "@bottlify/core/steam";
+import { downloadChunk } from "@bottlify/core/steam";
+import { installBundle } from "@bottlify/core/steam/install";
 import { bottlesFolder } from "../engine/bottles.js";
 
-/** @typedef {import("@bottlify/core/steam").DepotOpening} DepotOpening */
+/** @typedef {import("@bottlify/core/steam/install").DepotOpening} DepotOpening */
 
 /** @param {MessagePort} port */
 function serve(port) {
@@ -98,7 +99,7 @@ const base64 = (bytes) => btoa(String.fromCharCode(...bytes));
  */
 async function install({ id, depots, servers, installscript, executable, manifest, ports }, signal) {
   const folder = await (await bottlesFolder()).getDirectoryHandle(id, { create: true });
-  /** @type {import("@bottlify/core/steam").InstallProgress | null} */
+  /** @type {import("@bottlify/core/steam/install").InstallProgress | null} */
   let resume = null;
   try {
     const kept = JSON.parse(await (await (await folder.getFileHandle("install.json")).getFile()).text());

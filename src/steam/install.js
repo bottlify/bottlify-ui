@@ -5,37 +5,24 @@
  */
 
 /**
- * An install of a Steam app, as the page and the launcher's server both see
- * it: which depots it downloads (`describeApp`, the server's plan) and, for a
- * browser whose session the Bottlify bridge keeps, what opens them -- each
- * depot's key and a manifest request code, asked of the bridge
- * (`depotOpenings`), with which the page installs the app itself. A depot's key
- * is the same for every owner and a request code lasts minutes; the session's
- * token stays in the bridge. The server's own check of such a request
- * (`checkInstallRequest`) is for a page that hands it the keys instead.
+ * A Steam app as this page sees it, from what Steam tells anyone of it -- its
+ * product info, which the Bottlify bridge answers (`productInfo`): the game the
+ * library shows (`storeGame`), and what an install of it downloads
+ * (`installPlan`) and opens each depot with -- its key and a manifest request
+ * code, asked of the bridge for the signed-in account (`depotOpenings`). A
+ * depot's key is the same for every owner and a request code lasts minutes;
+ * the session's token stays in the bridge.
  */
 
-import { readDepotAccess, wantedDepot, windowsLaunch, writeDepotAccess } from "@bottlify/core/steam";
+import { depotOwners, sharedDepots, wantedDepot, windowsLaunch } from "@bottlify/core/steam";
 
-/**
- * Steam's own art for an app, on its CDN. Kept in a bottle's manifest as it
- * is; a page is given it through the launcher's server (steam-store.mjs's
- * `art`), because the CDN sends no Cross-Origin-Resource-Policy, which the
- * launcher's cross-origin isolated page needs of an image from elsewhere.
- */
-export const STEAM_ART = "https://shared.steamstatic.com/store_item_assets/steam/apps";
+/** Steam's name for the language an install takes. */
+export const LANGUAGE = "english";
 
 /**
- * A Steam bottle's covers and background, as its manifest names them: Steam's
- * own addresses, which a bottle carries wherever it goes.
- *
- * @param {number} appId
+ * @typedef {import("../stores/providers.js").StoreGame & {
+ *   appId: number, launch: { executable: string, arguments: string } | null }} SteamGame
  */
-export const steamArt = (appId) => ({
-  coverLarge: `${STEAM_ART}/${appId}/library_600x900.jpg`,
-  coverSmall: `${STEAM_ART}/${appId}/library_600x900.jpg`,
-  wallpaper: `${STEAM_ART}/${appId}/library_hero.jpg`,
-});
 
 /**
  * @typedef {Object} InstallPlan  What an install of an app downloads: its depots
@@ -91,13 +78,67 @@ export function describeApp(info, language) {
 }
 
 /**
+ * A game as the library shows it, or null for an app that is not a game:
+ * its size the depots' added up, and installable while it has a Windows
+ * launch option.
+ *
+ * @param {number} appId
+ * @param {any} info  Its product info.
+ * @returns {SteamGame | null}
+ */
+export function storeGame(appId, info) {
+  if (String(info?.common?.type ?? "").toLowerCase() !== "game") return null;
+  const { bytes, launch } = describeApp(info, LANGUAGE);
+  return { id: String(appId), appId, name: String(info.common.name ?? appId), bytes, exact: false,
+    installable: launch !== null, launch };
+}
+
+/**
+ * What an install of an app downloads, from its product info and that of the
+ * apps whose depots it names (the engine's `depotOwners`, `sharedDepots`).
+ *
+ * @param {number} appId
+ * @param {any} info
+ * @param {Map<number, any>} owners  The owning apps' product info, by app id.
+ * @returns {InstallPlan}
+ */
+export function installPlan(appId, info, owners) {
+  const described = describeApp(info, LANGUAGE);
+  return {
+    appId,
+    name: String(info?.common?.name ?? appId),
+    depots: described.depots.map(({ id, gid }) => ({ depot: id, gid: String(gid) })),
+    shared: sharedDepots(info, owners, LANGUAGE)
+      .map(({ id, app, gid }) => ({ depot: id, app, gid: String(gid) })),
+    ...described.installscript ? { installscript: described.installscript } : {},
+    launch: described.launch,
+  };
+}
+
+/**
+ * An install's plan, asked of the bridge: the app's product info, then its
+ * redistributables' owners'.
+ *
+ * @param {number} appId
+ * @param {(op: string, args: Record<string, unknown>) => Promise<any>} ask  The bridge's.
+ * @returns {Promise<InstallPlan>}
+ */
+export async function askPlan(appId, ask) {
+  const info = (await ask("productInfo", { apps: [appId] }))?.[appId];
+  if (!info) throw new Error(`Steam does not describe app ${appId}`);
+  const ids = depotOwners(info);
+  const owners = ids.length ? await ask("productInfo", { apps: ids }) : {};
+  return installPlan(appId, info, new Map(ids.map((id) => [id, owners?.[id]])));
+}
+
+/**
  * What opens each depot of a plan -- the app's, then the redistributables',
  * each asked of the bridge under the app that owns it -- as the engine's
  * `installBundle` takes them.
  *
  * @param {InstallPlan} plan
  * @param {(op: string, args: Record<string, unknown>) => Promise<any>} ask  The bridge's.
- * @returns {Promise<import("@bottlify/core/steam").DepotOpening[]>}
+ * @returns {Promise<import("@bottlify/core/steam/install").DepotOpening[]>}
  */
 export function depotOpenings(plan, ask) {
   const wanted = [
@@ -111,31 +152,4 @@ export function depotOpenings(plan, ask) {
     key: await ask("depotKey", { app, depot }),
     code: BigInt(await ask("manifestCode", { app, depot, gid })),
   })));
-}
-
-/**
- * The server's check of a page's request against its own plan for the app:
- * exactly the plan's depots at the plan's manifests, each with a key and a
- * code in their shapes. What the download is handed, or a refusal that names
- * no key or code.
- *
- * @param {unknown} body  The request, from the network.
- * @param {InstallPlan} plan
- * @returns {ReturnType<typeof writeDepotAccess>}
- */
-export function checkInstallRequest(body, plan) {
-  const request = /** @type {any} */ (body);
-  if (request?.appId !== plan.appId) throw new Error(`the request is not for app ${plan.appId}`);
-  const access = readDepotAccess(request.depots);
-  const wanted = new Map(plan.depots.map(({ depot, gid }) => [depot, gid]));
-  for (const { depot, gid } of access) {
-    if (!wanted.has(depot)) throw new Error(`depot ${depot} is not one an install of ${plan.appId} takes`);
-    if (wanted.get(depot) !== String(gid)) {
-      throw new Error(`depot ${depot} has changed on Steam since it was asked for; install again`);
-    }
-  }
-  if (access.length !== wanted.size) {
-    throw new Error(`an install of ${plan.appId} takes depots ${[...wanted.keys()].join(", ")}`);
-  }
-  return writeDepotAccess(access);
 }

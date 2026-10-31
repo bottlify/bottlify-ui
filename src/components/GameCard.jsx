@@ -23,7 +23,7 @@ import { LabelBadges, VersionBadge } from "./VersionBadge.jsx";
  * @param {() => void} [props.onEdit]  The pencil in its right corner: the bottle's
  *     name, pictures and labels, as the card's details edit them.
  * @param {import("react").ReactNode} [props.footer]  What the card's foot adds -- a
- *     Steam game not installed yet: its Install.
+ *     store's game not installed yet: its Install.
  */
 export function GameCard({ bundle, onSelect, onSettings, onEdit, footer }) {
   /**
@@ -73,6 +73,12 @@ export function GameCard({ bundle, onSelect, onSettings, onEdit, footer }) {
           component="img"
           image={bundle.coverSmall}
           alt={bundle.title}
+          // A store's game without a cover of its own shows the picture its
+          // store has of it instead (a Steam app's store header).
+          onError={(event) => {
+            const img = event.currentTarget;
+            if (bundle.coverFallback && img.src !== bundle.coverFallback) img.src = bundle.coverFallback;
+          }}
           sx={{
             // The art on disk is 3:4, so this crops nothing; it is declared so a
             // cover of another shape is centred and trimmed rather than letting

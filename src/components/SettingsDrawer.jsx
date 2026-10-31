@@ -11,7 +11,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FilesDialog } from "./FilesDialog.jsx";
 import { StorageSettings } from "./StorageSettings.jsx";
-import { SteamAccount } from "./SteamStore.jsx";
+import { StoreAccount } from "./Stores.jsx";
 import { EDITABLE_TYPES } from "../api/config.js";
 import { mountOf } from "../engine/patches.js";
 import { bottleFiles, liveFiles } from "../engine/volumes.js";
@@ -122,13 +122,13 @@ const APPLIES_NEXT_START = "Applies to the next start.";
  * @param {import("../api/bundles.js").BundleManifest | null} [props.bundle]  Its
  *        manifest, for the files: where the game's directory is, and before a run
  *        what the game will see.
- * @param {ReturnType<typeof import("./SteamStore.jsx").useSteam> | null} [props.steam]
- *        The Steam account the library shows the games of; without it there is
+ * @param {ReturnType<typeof import("./Stores.jsx").useStores> | null} [props.stores]
+ *        The game stores the library shows the games of; without them there is
  *        no Game Accounts section -- a running stage has no library to fill.
  */
 export function SettingsDrawer({
   open, onClose, app = null, running = false, facts = [], inline = false, start = null,
-  bundleId = "untitled", bundle = null, steam = null,
+  bundleId = "untitled", bundle = null, stores = null,
 }) {
   const [section, setSection] = useState(start);
   // The one file editor: the running machine's volume while a title runs, what
@@ -140,7 +140,7 @@ export function SettingsDrawer({
   // without the panel being reopened.
   const [settings, setSettings] = useState(loadSettings);
   const change = useCallback((patch) => setSettings(saveSettings(patch)), []);
-  const sections = SECTIONS.filter((entry) => entry.key !== "accounts" || steam);
+  const sections = SECTIONS.filter((entry) => entry.key !== "accounts" || stores);
   const here = sections.find((entry) => entry.key === section) ?? null;
 
   // Opening and closing put the panel back where it opens from, so reopening
@@ -196,9 +196,11 @@ export function SettingsDrawer({
           onClose={() => setSection(null)} />
       )}
       {section === "storage" && <StorageSettings />}
-      {section === "accounts" && steam && (
+      {section === "accounts" && stores && (
         <Stack gap={1.5} sx={{ p: 2, overflowY: "auto" }}>
-          <SteamAccount steam={steam} />
+          {stores.stores.map((store) => (
+            <StoreAccount key={store.provider.id} store={store} stores={stores} />
+          ))}
         </Stack>
       )}
       {section === "files" && !files && (
