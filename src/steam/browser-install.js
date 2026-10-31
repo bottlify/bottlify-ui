@@ -5,18 +5,16 @@
  */
 
 /**
- * A Steam game installed in this browser, with the Bottlify bridge: the bridge
- * answers the app's product info and each depot's key and manifest code, and
- * the page downloads from Steam's content servers itself (the bridge opens
- * them to this origin), decodes in workers and writes the bottle into this
- * origin's file system (`install-worker.js`), where the library lists it
- * beside the bottles kept here. The launcher's server has no part in it. A run
- * stopped part way, by its signal or a closed tab, goes on where it was when
- * the next one starts.
+ * A Steam game installed in this browser, by Steam's own files: GameHub's
+ * `download` answers what an install needs -- the depots at their manifests,
+ * each with its key and a request code, the content servers, the launch
+ * option, the install script -- and the page downloads from Steam's content
+ * servers itself (GameHub opens them to this origin), decodes in workers and
+ * writes the bottle into this origin's file system (`install-worker.js`),
+ * where the library lists it beside the bottles kept here. A run stopped part
+ * way, by its signal or a closed tab, goes on where it was when the next one
+ * starts.
  */
-
-import { steamArt } from "@bottlify/core/steam";
-import { askPlan, depotOpenings } from "./install.js";
 
 /** @typedef {import("../stores/providers.js").InstallProgress} InstallProgress */
 
@@ -44,20 +42,25 @@ const decoderCount = () => Math.max(1, Math.min(4, (navigator.hardwareConcurrenc
 /**
  * Installs an app of the account's in this browser.
  *
- * @param {number} appId
- * @param {(op: string, args?: Record<string, unknown>) => Promise<any>} ask  The bridge's Steam ops.
- * @param {(progress: InstallProgress) => void} onProgress
- * @param {AbortSignal} [signal]  Stops it; what it has done is kept.
+ * @param {Object} task
+ * @param {string} task.store  `steam`: the bottle's manifest names it.
+ * @param {string} task.game  The app's id.
+ * @param {{ name: string, launch: { executable: string, arguments: string } | null,
+ *     installscript?: string, art: { header: string, cover: string, hero: string },
+ *     servers: { host: string, vhost: string }[],
+ *     depots: { depot: number, gid: string, key: Uint8Array, code: string, shared: boolean }[] }}
+ *     task.download  What GameHub answered.
+ * @param {(progress: InstallProgress) => void} task.onProgress
+ * @param {AbortSignal} [task.signal]  Stops it; what it has done is kept.
  * @returns {Promise<string>}  The bottle it installed.
  */
-export async function installInBrowser(appId, ask, onProgress, signal) {
+export async function installSteamGame({ store, game, download: plan, onProgress, signal }) {
   const stopped = () => Object.assign(new Error(STOPPED), { stopped: true });
-  onProgress({ state: "downloading", done: 0, total: 0, message: "Asking Steam…" });
-  const plan = await askPlan(appId, ask);
-  if (!plan.launch) throw new Error(`${plan.name ?? appId} has no Windows launch option`);
-  const [depots, servers] = await Promise.all([depotOpenings(plan, ask), ask("contentServers")]);
-  if (!servers?.length) throw new Error("Steam offered no content server this browser can reach");
+  if (!plan.launch) throw new Error(`${plan.name ?? game} has no Windows launch option`);
+  if (!plan.servers?.length) throw new Error("Steam offered no content server this browser can reach");
   if (signal?.aborted) throw stopped();
+  const servers = plan.servers;
+  const depots = plan.depots.map((one) => ({ ...one, gid: BigInt(one.gid), code: BigInt(one.code) }));
   // Kept when the disk runs low, as a bottle a person chose is (bottles.js):
   // a game of gigabytes gone with the origin's storage is downloaded again.
   await navigator.storage?.persist?.().catch(() => false);
@@ -77,9 +80,9 @@ export async function installInBrowser(appId, ask, onProgress, signal) {
   onProgress({ state: "downloading", done: 0, total: 0, message: "Reading the depots…" });
   const started = Date.now();
   let first = -1;
-  const id = `steam-${appId}`;
+  const id = `${store}-${game}`;
   const executable = plan.launch.executable.replace(/\//g, "\\");
-  const art = steamArt(appId);
+  const art = plan.art;
   const cancel = () => installer.postMessage({ cancel: true });
   signal?.addEventListener("abort", cancel, { once: true });
   try {
@@ -108,12 +111,12 @@ export async function installInBrowser(appId, ask, onProgress, signal) {
         ...plan.installscript ? { installscript: plan.installscript } : {},
         manifest: {
           id,
-          title: plan.name ?? `Steam app ${appId}`,
+          title: plan.name ?? `Steam app ${game}`,
           kind: "game",
           labels: [],
           entry: executable,
           revision: 1,
-          steam: { appId },
+          store: { id: store, game },
           installedFrom: "Steam",
           ...plan.launch?.arguments ? { commandLine: plan.launch.arguments } : {},
           // Steam's own addresses: a bottle carries them wherever it goes.

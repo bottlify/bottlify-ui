@@ -38,7 +38,7 @@ import { shownToThePerson } from "./boxes.js";
 import { keepEnding, reportParts } from "./journal.js";
 import { endRun, noteRun } from "./blackbox.js";
 import { isTouchScreen } from "./touch.js";
-import { providerOf } from "../stores/providers.js";
+import { loadProviders, providerOf } from "../stores/providers.js";
 import { phoneScreen, viewOf } from "../screen.js";
 import {
   CHANGED, GPU_JOURNAL, SHADER_CHOICES, bottleConfigFor, driverRulesFor, loadSettings,
@@ -776,8 +776,8 @@ async function run({ bundle, media, canvas, report: show, silentInstall = false,
   // A store's game starts with what its store says a run needs: Steam's, the
   // client running for the account signed in in this browser, the app's
   // ownership ticket and Valve's client files its DRM checks the client against.
-  const storeRun = await providerOf(bundle)?.runData(/** @type {any} */ (bundle))
-    .catch(() => ({})) ?? {};
+  const storeRun = bundle ? await providerOf(bundle, await loadProviders())
+    ?.runData(/** @type {any} */ (bundle)).catch(() => ({})) ?? {} : {};
   /** @type {Record<string, any>} */
   const options = {
     // Where the engine runs: a worker of its own unless asked otherwise.

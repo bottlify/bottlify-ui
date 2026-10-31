@@ -10,7 +10,7 @@ import {
 } from "@mui/material";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { encodeQr, qrToSvg } from "@bottlify/core/steam";
-import { PROVIDERS } from "../stores/providers.js";
+import { NEEDS_GAMEHUB, knownProviders, loadProviders } from "../stores/providers.js";
 
 /** @typedef {import("../stores/providers.js").StoreProvider} StoreProvider */
 /** @typedef {import("../stores/providers.js").StoreGame} StoreGame */
@@ -76,13 +76,30 @@ const fresh = (provider) => ({ provider, available: false, ...lastKnown(provider
 
 /**
  * Every store's account in this browser, its games and their installs, for the
- * library to show beside the bottles and Settings to sign in to.
+ * library to show beside the bottles and Settings to sign in to: the stores
+ * GameHub lists, those it listed last time shown until it answers. `gamehub`
+ * is false without GameHub, null until it is known.
  *
  * @param {() => void} onInstalled  A bottle was added: the library lists it.
- * @param {StoreProvider[]} [providers]
+ * @param {() => Promise<StoreProvider[]>} [load]  The stores, asked of GameHub.
  */
-export function useStores(onInstalled, providers = PROVIDERS) {
+export function useStores(onInstalled, load = loadProviders) {
+  const [providers, setProviders] = useState(knownProviders);
+  const [gamehub, setGamehub] = useState(/** @type {boolean | null} */ (null));
   const [stores, setStores] = useState(() => providers.map(fresh));
+  useEffect(() => {
+    let gone = false;
+    load().then((now) => {
+      if (gone) return;
+      setGamehub(now.length > 0);
+      setProviders(now);
+      setStores((all) => now.map((provider) =>
+        ({ ...all.find((one) => one.provider.id === provider.id) ?? fresh(provider), provider })));
+    }, () => !gone && setGamehub(false));
+    return () => {
+      gone = true;
+    };
+  }, [load]);
   /** Installs going on, by `<store>:<game>`. @type {import("react").MutableRefObject<Map<string, AbortController>>} */
   const going = useRef(new Map());
 
@@ -93,7 +110,7 @@ export function useStores(onInstalled, providers = PROVIDERS) {
   /** @param {StoreProvider} provider @param {{ fresh?: boolean }} [options] */
   // Read on every visit and on Sync; what was known before stays shown, marked
   // as being synced, until the store answers.
-  const load = useCallback(async (provider, options = {}) => {
+  const read = useCallback(async (provider, options = {}) => {
     update(provider.id, () => ({ syncing: true }));
     try {
       const available = await provider.available().catch(() => false);
@@ -115,14 +132,14 @@ export function useStores(onInstalled, providers = PROVIDERS) {
   }, [update]);
 
   useEffect(() => {
-    for (const provider of providers) load(provider);
-  }, [providers, load]);
+    if (gamehub) for (const provider of providers) read(provider);
+  }, [gamehub, providers, read]);
 
   const byId = useCallback((/** @type {string} */ id) =>
     /** @type {StoreProvider} */ (providers.find((one) => one.id === id)), [providers]);
 
   /** Signed in: its games read. @param {string} id */
-  const signedIn = useCallback((id) => load(byId(id)), [load, byId]);
+  const signedIn = useCallback((id) => read(byId(id)), [read, byId]);
 
   /** @param {string} id */
   const signOut = useCallback(async (id) => {
@@ -132,7 +149,7 @@ export function useStores(onInstalled, providers = PROVIDERS) {
   }, [byId, update]);
 
   /** The account's games read again from the store. @param {string} id */
-  const sync = useCallback((id) => load(byId(id), { fresh: true }), [byId, load]);
+  const sync = useCallback((id) => read(byId(id), { fresh: true }), [byId, read]);
 
   /** @param {string} id @param {StoreGame} game */
   const install = useCallback(async (id, game) => {
@@ -157,7 +174,7 @@ export function useStores(onInstalled, providers = PROVIDERS) {
   /** Stops an install; Install goes on from where it stopped. @param {string} id @param {StoreGame} game */
   const cancel = useCallback((id, game) => going.current.get(`${id}:${game.id}`)?.abort(), []);
 
-  return { stores, signedIn, signOut, sync, install, cancel };
+  return { stores, gamehub, signedIn, signOut, sync, install, cancel };
 }
 
 /**
@@ -279,6 +296,22 @@ export function StoreAccount({ store, stores }) {
         </Alert>
       )}
       {signingIn && <StoreSignIn provider={provider} onSignedIn={done} onClose={() => setSigningIn(false)} />}
+    </Box>
+  );
+}
+
+/**
+ * Settings → Game Accounts without GameHub: no store can be signed in to here.
+ */
+export function NoGameHub() {
+  return (
+    <Box sx={{ border: "1px solid", borderColor: "divider", borderRadius: 1, p: 1.5 }}>
+      <Typography variant="subtitle2">Game stores</Typography>
+      <Typography variant="body2" color="text.secondary">{NEEDS_GAMEHUB}</Typography>
+      <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 1 }}>
+        Add the Bottlify GameHub extension to this browser, then reload: sign-in, your games and
+        their installs all go through it.
+      </Typography>
     </Box>
   );
 }

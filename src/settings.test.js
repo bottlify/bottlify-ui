@@ -140,8 +140,8 @@ test("the library opens whole, and what is checked after is kept", async () => {
   assert.equal(DEFAULTS.librarySort, "name");
   assert.deepEqual(normalise({}).libraryFilters, []);
   // Values the library does not have, repeats and a wrong shape are not passed on.
-  assert.deepEqual(normalise({ libraryFilters: ["test", "nonsense", "test", 7, "steam"] }).libraryFilters,
-    ["test", "steam"]);
+  assert.deepEqual(normalise({ libraryFilters: ["test", "nonsense", "test", 7, "store:steam", "steam"] })
+    .libraryFilters, ["test", "store:steam"]);
   assert.deepEqual(normalise({ libraryFilters: "demo" }).libraryFilters, []);
   assert.equal(normalise({ librarySort: "random" }).librarySort, "name");
 

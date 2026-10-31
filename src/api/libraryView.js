@@ -5,26 +5,47 @@
  */
 
 import { LABELS, STATUSES } from "./bundles.js";
-import { PROVIDERS, providerOf } from "../stores/providers.js";
+import { gameIdOf, storeOf } from "../stores/providers.js";
+
+/**
+ * @typedef {{ key: string, title: string,
+ *   options: { value: string, label: string }[],
+ *   of: (bundle: import("./bundles.js").BundleManifest) => string[] }} FilterGroup
+ */
+
+/** A store as a filter's value: `store:steam`. @param {string} id */
+const storeValue = (id) => `store:${id}`;
+
+/**
+ * Where a bottle comes from: each store GameHub lists, or none of them. A
+ * store's game counts as the store's whether installed or still only a card.
+ *
+ * @param {{ id: string, name: string }[]} stores
+ * @returns {FilterGroup}
+ */
+const sourceGroup = (stores) => ({
+  key: "source",
+  title: "Source",
+  options: [...stores.map(({ id, name }) => ({ value: storeValue(id), label: name })),
+    { value: "other", label: "Other" }],
+  of: (bundle) => {
+    const store = /** @type {any} */ (bundle).store?.provider ?? storeOf(bundle);
+    return [store ? storeValue(store) : "other"];
+  },
+});
 
 /**
  * What the library can be narrowed by, in groups: where a bottle comes from,
  * what kind of program it is (its kind and its labels), how far it was found
  * to run. `of` is what a bottle answers in that group.
  *
- * @type {{ key: string, title: string,
- *   options: { value: string, label: string }[],
- *   of: (bundle: import("./bundles.js").BundleManifest) => string[] }[]}
+ * @param {{ id: string, name: string }[]} [stores]  The stores, which the sources name.
+ * @returns {FilterGroup[]}
  */
-export const FILTER_GROUPS = [
-  {
-    key: "source",
-    title: "Source",
-    options: [...PROVIDERS.map(({ id, name }) => ({ value: id, label: name })),
-      { value: "other", label: "Other" }],
-    // A store's game counts as the store's whether installed or still only a card.
-    of: (bundle) => [bundle.store?.provider ?? providerOf(bundle)?.id ?? "other"],
-  },
+export const filterGroups = (stores = []) => [sourceGroup(stores), ...TAGS];
+
+/** @type {FilterGroup[]} */
+const TAGS = [
   {
     key: "kind",
     title: "Kind",
@@ -39,8 +60,20 @@ export const FILTER_GROUPS = [
   },
 ];
 
-/** Every value a filter can hold, across the groups. */
+/** The groups with no store known yet. */
+export const FILTER_GROUPS = filterGroups();
+
+/** Every value a filter can hold but a store's, across the groups. */
 export const FILTERS = FILTER_GROUPS.flatMap((group) => group.options);
+
+/**
+ * Whether a value is one a filter can hold: one of `FILTERS`, or a store's,
+ * which GameHub names.
+ *
+ * @param {unknown} value
+ */
+export const isFilter = (value) => typeof value === "string"
+  && (FILTERS.some((one) => one.value === value) || /^store:[a-z][a-z0-9]{0,31}$/.test(value));
 
 /**
  * The library with every store's games beside the bottles: a game not
@@ -55,26 +88,27 @@ export const FILTERS = FILTER_GROUPS.flatMap((group) => group.options);
  * @returns {any[]}
  */
 export function withStoreGames(bundles, stores) {
-  const providers = stores.map((one) => one.provider);
   /** @type {Map<string, Set<string>>} Each store's games the account owns. */
   const owned = new Map(stores.map(({ provider, games }) =>
     [provider.id, new Set(games.map((game) => game.id))]));
   /** @param {any} bottle */
   const ownedBottle = (bottle) => {
-    const provider = providerOf(bottle, providers);
-    return !provider || Boolean(owned.get(provider.id)?.has(/** @type {string} */ (provider.gameOf(bottle))));
+    const store = storeOf(bottle);
+    return !store || Boolean(owned.get(store)?.has(/** @type {string} */ (gameIdOf(bottle))));
   };
   // A store's bottle shows only while the account signed in owns it: without
-  // the store it could not start, and another account's is not this one's.
+  // the store -- without GameHub, or signed out -- it could not start, and
+  // another account's is not this one's.
   return [
     ...bundles.filter(ownedBottle),
     ...stores.flatMap(({ provider, games }) => games.filter((game) => game.installable
-      && !bundles.some((one) => provider.gameOf(one) === game.id)).map((game) => ({
-      id: `${provider.id}:${game.id}`, title: game.name, version: "", labels: [], status: null,
-      kind: "game", coverSmall: provider.getCover(game, "capsule"),
-      coverFallback: provider.getCover(game, "header"),
-      store: { provider: provider.id, game },
-    }))),
+      && !bundles.some((one) => storeOf(one) === provider.id && gameIdOf(one) === game.id))
+      .map((game) => ({
+        id: `${provider.id}:${game.id}`, title: game.name, version: "", labels: [], status: null,
+        kind: "game", coverSmall: provider.getCover(game, "capsule"),
+        coverFallback: provider.getCover(game, "header"),
+        store: { provider: provider.id, game },
+      }))),
   ];
 }
 
@@ -113,13 +147,13 @@ const COMPARE = {
  * bottles whose title holds `query`. The result is in the order `sort` names.
  *
  * @param {import("./bundles.js").BundleManifest[]} bundles
- * @param {{ query: string, filters: string[], sort: string }} view
- *     `filters` the values checked (`FILTERS`).
+ * @param {{ query: string, filters: string[], sort: string, groups?: FilterGroup[] }} view
+ *     `filters` the values checked; `groups` those offered (`filterGroups`).
  * @returns {import("./bundles.js").BundleManifest[]}
  */
-export function viewLibrary(bundles, { query, filters, sort }) {
+export function viewLibrary(bundles, { query, filters, sort, groups: offered = FILTER_GROUPS }) {
   const needle = query.trim().toLowerCase();
-  const groups = FILTER_GROUPS
+  const groups = offered
     .map((group) => ({ of: group.of, checked: group.options.map((one) => one.value)
       .filter((value) => filters.includes(value)) }))
     .filter((group) => group.checked.length > 0);
