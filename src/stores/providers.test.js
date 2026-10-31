@@ -87,10 +87,10 @@ async function page({ gamehub = true } = {}) {
     events.dispatchEvent(Object.assign(new Event("message"), { data, origin, source }));
   /** An op asked of the content script or a frame, answered as GameHub would. @param {any} data @param {string} origin @param {any} source */
   const answer = (data, origin, source) => queueMicrotask(() => {
-    if (data.to !== "bottlify-bridge") return;
+    if (data.to !== "bottlify-gamehub") return;
     current.asked.push([data.op, data.args]);
     const result = /** @type {any} */ (OPS)[data.op]?.(data.args);
-    dispatch({ from: "bottlify-bridge", id: data.id, result }, origin, source);
+    dispatch({ from: "bottlify-gamehub", id: data.id, result }, origin, source);
   });
   /** @type {any} */
   const win = { postMessage: (/** @type {any} */ data) => answer(data, ORIGIN, win) };
@@ -100,13 +100,13 @@ async function page({ gamehub = true } = {}) {
     location: { origin: ORIGIN },
     window: win,
     document: {
-      documentElement: { dataset: gamehub ? { bottlifyBridge: "0.2.0" } : {} },
+      documentElement: { dataset: gamehub ? { bottlifyGamehub: "0.2.0" } : {} },
       createElement: () => {
         const frameWindow = { postMessage: (/** @type {any} */ data) => answer(data, EXTENSION, frameWindow) };
         return { style: {}, setAttribute: () => {}, contentWindow: frameWindow };
       },
       body: { append: (/** @type {any} */ frame) => queueMicrotask(() =>
-        dispatch({ from: "bottlify-bridge", ready: true }, EXTENSION, frame.contentWindow)) },
+        dispatch({ from: "bottlify-gamehub", ready: true }, EXTENSION, frame.contentWindow)) },
     },
     localStorage: { getItem: (/** @type {string} */ key) => stored.get(key) ?? null,
       setItem: (/** @type {string} */ key, /** @type {string} */ value) => stored.set(key, value) },

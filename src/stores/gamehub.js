@@ -6,7 +6,7 @@
 
 /**
  * GameHub, when this browser has it: the Bottlify extension
- * (`modules/bridge` in the engine repository) that keeps the game stores'
+ * (`modules/gamehub` in the engine repository) that keeps the game stores'
  * accounts and speaks their protocols, the sessions kept in itself, out of the
  * page's reach. The page asks with store-neutral ops (`src/protocol.js` there),
  * the store an argument, over `window.postMessage`: `hello` of the extension's
@@ -17,7 +17,7 @@
  * extension's, and is told the account's name when it is done.
  */
 
-const PEER = "bottlify-bridge";
+const PEER = "bottlify-gamehub";
 let lastId = 0;
 
 /**
@@ -121,7 +121,7 @@ let greeted = null;
  * @returns {Promise<Hello | null>}
  */
 export function gamehub() {
-  if (document.documentElement.dataset.bottlifyBridge === undefined) return Promise.resolve(null);
+  if (document.documentElement.dataset.bottlifyGamehub === undefined) return Promise.resolve(null);
   greeted ??= ask("hello").then((hello) => (Array.isArray(hello?.stores) ? hello : null))
     .catch(() => null);
   return greeted;

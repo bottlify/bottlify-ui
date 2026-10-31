@@ -9,7 +9,7 @@ import assert from "node:assert/strict";
 
 const ORIGIN = "https://play.bottlify.app";
 const EXTENSION = "chrome-extension://abcdefghijklmnopabcdefghijklmnop";
-const PEER = "bottlify-bridge";
+const PEER = "bottlify-gamehub";
 
 /**
  * A page with GameHub in it, as far as gamehub.js sees: the content script,
@@ -43,7 +43,7 @@ async function page({ marked = true, answer, frameAnswer = () => {} }) {
     },
   };
   const document = {
-    documentElement: { dataset: marked ? { bottlifyBridge: "0.1.0" } : {} },
+    documentElement: { dataset: marked ? { bottlifyGamehub: "0.1.0" } : {} },
     createElement: () => {
       const frameWindow = {
         postMessage: (/** @type {any} */ data, /** @type {string} */ origin) => {
@@ -77,7 +77,7 @@ const hello = (request, reply) => reply(request.op === "hello"
   ? { result: { version: "0.2.0", origin: EXTENSION, stores: [{ id: "steam", name: "Steam", on: true }] } }
   : { error: `${request.op} is asked of a store's frame` });
 
-test("no mark on the page: no bridge, and nothing is asked", async () => {
+test("no mark on the page: no GameHub, and nothing is asked", async () => {
   const { gamehub, posted } = await page({ marked: false, answer: () => assert.fail() });
   assert.equal(await gamehub(), null);
   assert.deepEqual(posted, []);

@@ -37,7 +37,7 @@ test("a picture set from the launcher is the bottle's own file, the others where
   assert.equal(shipped.wallpaper, "/covers/doom-3-cover.webp", "and the stage falls back to the cover");
 });
 
-test("Steam's pictures are shown from Steam, the bridge opening them to the page", () => {
+test("Steam's pictures are shown from Steam, GameHub opening them to the page", () => {
   const cover = "https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/400/library_600x900.jpg";
   const hero = "https://cdn.akamai.steamstatic.com/steam/apps/400/library_hero.jpg?t=1";
   const bottle = describeBundle("steam-400", { coverLarge: cover, wallpaper: hero });

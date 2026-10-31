@@ -9,7 +9,7 @@
  * script (`browser-install.js` starts them):
  *
  *  - a decoder, given a port: fetches a chunk from Steam's content servers
- *    (the bridge opens them to this origin), decrypts and decompresses it and
+ *    (GameHub opens them to this origin), decrypts and decompresses it and
  *    sends the bytes back -- LZMA in JavaScript is a fifth of a second a
  *    mebibyte, so there are several;
  *  - the install, given the depots' keys and codes and the decoders' ports:

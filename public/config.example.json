@@ -3,7 +3,7 @@
   "networking": true,
   "libraryTags": true,
   "preloadBottles": true,
-  "bridge": {
+  "gamehub": {
     "steam": true
   },
   "server": {

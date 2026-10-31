@@ -22,7 +22,7 @@
  *   "cpu": { "placement": "auto" },
  *   "server": { "url": "/", "token": "..." },
  *   "editableTypes": ["txt", "cfg", "ini"],
- *   "bridge": { "steam": true }
+ *   "gamehub": { "steam": true }
  *
  * `server` is the bottle server, which keeps bottles for everyone who opens
  * the library. `false`, left out, or without a `url`, there is none: a bottle
@@ -62,10 +62,10 @@
  * `editableTypes` are the extensions the file explorer opens in its editor:
  * text a person may change by hand. Left out, `EDITABLE_TYPES`.
  *
- * `bridge` is read by the Bottlify bridge extension, not by this app: a
+ * `gamehub` is read by the Bottlify GameHub extension, not by this app: a
  * platform set to `false` has the extension's rules for it switched off in
- * every browser that opens the site, and the launcher's server talks to it
- * instead. Left out, a platform is on.
+ * every browser that opens the site, and the store is off here: the launcher
+ * has no other way to it. Left out, a store is on.
  *
  * `takedownEmail` is where a rights holder writes about a program in the
  * library, said on the Credits & licenses page ("takedownEmail":

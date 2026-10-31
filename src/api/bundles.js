@@ -194,7 +194,7 @@ export async function saveBundleArt(upload, id, slot, file) {
 function coverHref(href, id) {
   if (!href) return "";
   if (href.startsWith("./")) return `/bundles/${encodeURIComponent(id)}/${href.slice(2)}`;
-  // A store's art too: the Bottlify bridge gives its responses the headers
+  // A store's art too: GameHub gives its responses the headers
   // this cross-origin isolated page needs of a picture from elsewhere.
   if (href.startsWith("/") || href.startsWith("http")) return href;
   return `/covers/${href}`;
