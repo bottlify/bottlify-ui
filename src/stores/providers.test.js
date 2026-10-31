@@ -14,6 +14,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 const ORIGIN = "https://play.bottlify.app";
+const EXTENSION = "chrome-extension://abcdefghijklmnopabcdefghijklmnop";
 const KEY = Uint8Array.from({ length: 32 }, (_, i) => i);
 const SERVERS = [{ host: "a:443", vhost: "cache1-fra1.steamcontent.com", type: "CDN" }];
 const ART = "https://shared.steamstatic.com/store_item_assets/steam/apps/70";
@@ -46,7 +47,7 @@ class FakeWorker {
 
 /** What GameHub answers for Steam: the ops a page may ask, each keyed by the store. */
 const OPS = {
-  hello: () => ({ version: "0.2.0", stores: [{ id: "steam", name: "Steam", on: true },
+  hello: () => ({ version: "0.2.0", origin: EXTENSION, stores: [{ id: "steam", name: "Steam", on: true },
     { id: "gog", name: "GOG", on: false }] }),
   account: () => ({ name: "someone" }),
   list: () => [{ id: "70", name: "A Game", bytes: 3, exact: false, installable: true,
@@ -59,32 +60,58 @@ const OPS = {
   runData: (/** @type {any} */ args) => ({ win32: { steam: { appId: Number(args.game), accountName: "someone" } } }),
 };
 
-/** A page with GameHub in it or not; every request and every op asked kept. */
+/**
+ * A page with GameHub in it or not -- its content script answering `hello` on
+ * the page's origin, each store's session frame every other op from the
+ * extension's -- every request and every op asked kept.
+ */
+/**
+ * One page's events for the whole file: gamehub.js, which providers.js
+ * imports, is one module for every test here and keeps the frames it made, so
+ * a frame made in one test answers the next one's ops through `current`.
+ */
+const events = new EventTarget();
+/** @type {{ asked: Array<[string, any]> }} */
+const current = { asked: [] };
+
 async function page({ gamehub = true } = {}) {
-  const window = new EventTarget();
   /** @type {string[]} */
   const requests = [];
   /** @type {Array<[string, any]>} */
   const asked = [];
+  current.asked = asked;
   /** @type {Map<string, string>} */
   const stored = new Map();
   FakeWorker.made = [];
+  const dispatch = (/** @type {any} */ data, /** @type {string} */ origin, /** @type {any} */ source) =>
+    events.dispatchEvent(Object.assign(new Event("message"), { data, origin, source }));
+  /** An op asked of the content script or a frame, answered as GameHub would. @param {any} data @param {string} origin @param {any} source */
+  const answer = (data, origin, source) => queueMicrotask(() => {
+    if (data.to !== "bottlify-bridge") return;
+    current.asked.push([data.op, data.args]);
+    const result = /** @type {any} */ (OPS)[data.op]?.(data.args);
+    dispatch({ from: "bottlify-bridge", id: data.id, result }, origin, source);
+  });
+  /** @type {any} */
+  const win = { postMessage: (/** @type {any} */ data) => answer(data, ORIGIN, win) };
   Object.defineProperty(globalThis, "navigator", { value: { hardwareConcurrency: 4 }, configurable: true });
   Object.assign(globalThis, {
     Worker: FakeWorker,
     location: { origin: ORIGIN },
-    document: { documentElement: { dataset: gamehub ? { bottlifyBridge: "0.2.0" } : {} } },
+    window: win,
+    document: {
+      documentElement: { dataset: gamehub ? { bottlifyBridge: "0.2.0" } : {} },
+      createElement: () => {
+        const frameWindow = { postMessage: (/** @type {any} */ data) => answer(data, EXTENSION, frameWindow) };
+        return { style: {}, setAttribute: () => {}, contentWindow: frameWindow };
+      },
+      body: { append: (/** @type {any} */ frame) => queueMicrotask(() =>
+        dispatch({ from: "bottlify-bridge", ready: true }, EXTENSION, frame.contentWindow)) },
+    },
     localStorage: { getItem: (/** @type {string} */ key) => stored.get(key) ?? null,
       setItem: (/** @type {string} */ key, /** @type {string} */ value) => stored.set(key, value) },
-    addEventListener: window.addEventListener.bind(window),
-    removeEventListener: window.removeEventListener.bind(window),
-    postMessage: (/** @type {any} */ data) => queueMicrotask(() => {
-      if (data.to !== "bottlify-bridge") return;
-      asked.push([data.op, data.args]);
-      const result = /** @type {any} */ (OPS)[data.op]?.(data.args);
-      window.dispatchEvent(Object.assign(new Event("message"), { origin: ORIGIN,
-        data: { from: "bottlify-bridge", id: data.id, result } }));
-    }),
+    addEventListener: events.addEventListener.bind(events),
+    removeEventListener: events.removeEventListener.bind(events),
     fetch: async (/** @type {string} */ url) => {
       requests.push(String(url));
       return new Response(null, { status: 404 });
