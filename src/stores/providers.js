@@ -14,7 +14,7 @@
  * Without GameHub there are no stores.
  */
 
-import { ask, gamehub } from "./gamehub.js";
+import { ask, gamehub, signInPage } from "./gamehub.js";
 import { INSTALLERS } from "./installers.js";
 
 /** What the page says of stores without GameHub. */
@@ -46,10 +46,9 @@ export const NEEDS_GAMEHUB = "Game stores need the Bottlify GameHub extension in
  * @property {string} unavailable  What the page says while it cannot.
  * @property {{
  *   account: () => Promise<{ name: string } | null>,
- *   signIn: (options: { onChallenge: (url: string) => void, onScanned?: () => void,
- *     signal?: AbortSignal }) => Promise<{ name: string }>,
+ *   signInPage: () => Promise<string | null>,
  *   signOut: () => Promise<void>,
- * }} auth  The account: a sign-in shows its challenge as a QR code.
+ * }} auth  The account: a sign-in is GameHub's page for the store, shown in a frame.
  * @property {(options?: { fresh?: boolean }) => Promise<StoreGame[]>} getList  The account's games.
  * @property {(game: StoreGame, kind: "header" | "capsule" | "hero") => string} getCover
  * @property {(game: StoreGame, onProgress: (progress: InstallProgress) => void,
@@ -103,11 +102,7 @@ export function storeProvider({ id, name }) {
     unavailable: NEEDS_GAMEHUB,
     auth: {
       account: () => ask("account", { store: id }),
-      signIn: ({ onChallenge, onScanned, signal }) => ask("signIn", { store: id }, { signal,
-        onEvent: (event, data) => {
-          if (event === "challenge") onChallenge(data.url);
-          else if (event === "scanned") onScanned?.();
-        } }),
+      signInPage: () => signInPage(id),
       signOut: async () => {
         await ask("signOut", { store: id });
       },

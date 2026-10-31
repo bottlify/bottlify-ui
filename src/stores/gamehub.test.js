@@ -61,40 +61,45 @@ test("GameHub says which stores it has, and which the site has on", async () => 
   assert.equal(await older.gamehub(), null, "an extension that does not list stores is none");
 });
 
-test("an answer is its own request's: events first, then the result or the error", async () => {
+test("an answer is its own request's: the result or the error", async () => {
   const { ask, dispatch } = await page({ answer: (request, reply) => {
-    if (request.op === "signIn") {
-      // Another request's answer, and one from elsewhere, are not this one's.
+    if (request.op === "list") {
+      // Another request's answer, one from elsewhere, and an event, are not its answer.
       dispatch({ from: "bottlify-bridge", id: request.id + 100, result: "other" });
       dispatch({ from: "bottlify-bridge", id: request.id, result: "forged" }, "https://evil.example");
-      reply({ event: "challenge", data: { url: "https://s.team/q/1/1" } });
-      reply({ event: "scanned", data: {} });
-      reply({ result: { accountName: "someone" } });
+      reply({ event: "progress", data: {} });
+      reply({ result: [{ id: "70" }] });
     } else {
       reply({ error: "Steam is switched off for this site" });
     }
   } });
-  /** @type {any[]} */
-  const events = [];
-  assert.deepEqual(await ask("signIn", { store: "steam" }, { onEvent: (name, data) => events.push([name, data]) }),
-    { accountName: "someone" });
-  assert.deepEqual(events, [["challenge", { url: "https://s.team/q/1/1" }], ["scanned", {}]]);
+  assert.deepEqual(await ask("list", { store: "steam" }), [{ id: "70" }]);
   await assert.rejects(ask("account", { store: "steam" }), /switched off/);
 });
 
-test("an aborted request is cancelled in the bridge by its id", async () => {
-  const stop = new AbortController();
-  /** @type {any[]} */
-  const cancelled = [];
-  const { ask, posted } = await page({ answer: (request, reply) => {
-    if (request.op === "cancel") {
-      cancelled.push(request.args.target);
-      reply({ result: {} });
-    }
-  } });
-  const going = ask("signIn", { store: "steam" }, { signal: stop.signal });
-  stop.abort();
-  await new Promise((resolve) => setTimeout(resolve, 10));
-  assert.deepEqual(cancelled, [posted.find((one) => one.op === "signIn").id]);
-  going.catch(() => {});
+const EXTENSION = "chrome-extension://abcdefghijklmnopabcdefghijklmnop";
+
+test("a store's sign-in page is GameHub's, at its origin by the store's id", async () => {
+  const stores = [{ id: "steam", name: "Steam", on: true }];
+  const { signInPage } = await page({ answer: (_request, reply) =>
+    reply({ result: { version: "0.2.0", origin: EXTENSION, stores } }) });
+  assert.equal(await signInPage("steam"), `${EXTENSION}/steam/signin.html`);
+  const older = await page({ answer: (_request, reply) => reply({ result: { version: "0.1.0", stores } }) });
+  assert.equal(await older.signInPage("steam"), null, "an extension without the page");
+  const forged = await page({ answer: (_request, reply) =>
+    reply({ result: { version: "0.2.0", origin: "https://evil.example", stores } }) });
+  assert.equal(await forged.signInPage("steam"), null, "only an extension's page is framed");
+});
+
+test("the page learns the account's name from the store's sign-in page alone", async () => {
+  const { signedInName } = await page({ answer: () => {} });
+  const framed = `${EXTENSION}/steam/signin.html`;
+  const said = { from: "bottlify-signin", store: "steam", signedIn: { name: "someone" } };
+  /** @param {any} data @param {string} origin */
+  const event = (data, origin) => /** @type {MessageEvent} */ (/** @type {unknown} */ ({ data, origin }));
+  assert.equal(signedInName(event(said, EXTENSION), framed, "steam"), "someone");
+  assert.equal(signedInName(event(said, "https://evil.example"), framed, "steam"), null,
+    "from elsewhere");
+  assert.equal(signedInName(event(said, EXTENSION), framed, "gog"), null, "another store's");
+  assert.equal(signedInName(event({ ...said, signedIn: null }, EXTENSION), framed, "steam"), null);
 });

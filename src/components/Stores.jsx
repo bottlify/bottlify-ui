@@ -9,8 +9,8 @@ import {
   LinearProgress, Stack, Typography,
 } from "@mui/material";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { encodeQr, qrToSvg } from "@bottlify/core/steam";
 import { NEEDS_GAMEHUB, knownProviders, loadProviders } from "../stores/providers.js";
+import { signedInName } from "../stores/gamehub.js";
 
 /** @typedef {import("../stores/providers.js").StoreProvider} StoreProvider */
 /** @typedef {import("../stores/providers.js").StoreGame} StoreGame */
@@ -178,8 +178,10 @@ export function useStores(onInstalled, load = loadProviders) {
 }
 
 /**
- * A store's QR sign-in: a code from the store's own authentication, approved
- * in its app on the person's phone.
+ * A store's sign-in: GameHub's own page for the store in a frame -- a QR code,
+ * or the account name and password with the store's second step. The page
+ * is the extension's: what is typed there and the session it ends in stay in
+ * GameHub, and this page is told the account's name.
  *
  * @param {Object} props
  * @param {StoreProvider} props.provider
@@ -187,49 +189,36 @@ export function useStores(onInstalled, load = loadProviders) {
  * @param {() => void} props.onClose
  */
 export function StoreSignIn({ provider, onSignedIn, onClose }) {
-  const [qr, setQr] = useState("");
-  const [status, setStatus] = useState(`Connecting to ${provider.name}…`);
+  const [page, setPage] = useState(/** @type {string | null | undefined} */ (undefined));
   useEffect(() => {
-    const stop = new AbortController();
-    (async () => {
-      while (!stop.signal.aborted) {
-        try {
-          await provider.auth.signIn({
-            signal: stop.signal,
-            onChallenge: (url) => {
-              setQr(qrToSvg(encodeQr(url), 5));
-              setStatus(`Scan with the ${provider.name} app on your phone.`);
-            },
-            onScanned: () => setStatus(`Scanned. Approve the sign-in in the ${provider.name} app.`),
-          });
-          onSignedIn();
-          return;
-        } catch (e) {
-          if (stop.signal.aborted) return;
-          setQr("");
-          setStatus(`${/** @type {Error} */ (e).message} — a new code…`);
-          // A moment before the next code, so a store that cannot be reached
-          // is not asked again in a tight loop.
-          await new Promise((resolve) => setTimeout(resolve, 3000));
-        }
-      }
-    })();
-    return () => stop.abort();
-  }, [provider, onSignedIn]);
+    let gone = false;
+    provider.auth.signInPage().then((url) => !gone && setPage(url), () => !gone && setPage(null));
+    return () => {
+      gone = true;
+    };
+  }, [provider]);
+  useEffect(() => {
+    if (!page) return undefined;
+    const heard = (/** @type {MessageEvent} */ event) => {
+      if (signedInName(event, page, provider.id) !== null) onSignedIn();
+    };
+    addEventListener("message", heard);
+    return () => removeEventListener("message", heard);
+  }, [page, provider, onSignedIn]);
   return (
     <Dialog open onClose={onClose} maxWidth="xs" fullWidth>
       <DialogTitle>Sign in to {provider.name}</DialogTitle>
-      <DialogContent dividers>
-        <Stack spacing={2} alignItems="center" sx={{ py: 2 }}>
-          {qr
-            ? <Box sx={{ bgcolor: "#fff", p: 1, borderRadius: 1, lineHeight: 0 }}
-              dangerouslySetInnerHTML={{ __html: qr }} />
-            : <CircularProgress />}
-          <Typography variant="body2" color="text.secondary" align="center">{status}</Typography>
-          <Typography variant="caption" color="text.secondary" align="center">
-            The session is kept by the Bottlify GameHub extension; your games then show in the library.
-          </Typography>
-        </Stack>
+      <DialogContent dividers sx={{ p: 0 }}>
+        {page === undefined && <Box sx={{ display: "flex", justifyContent: "center", py: 4 }}>
+          <CircularProgress /></Box>}
+        {page === null && <Alert severity="warning" sx={{ m: 2 }}>
+          This version of the Bottlify GameHub extension cannot sign in here; update it.</Alert>}
+        {page && <iframe src={page} title={`Sign in to ${provider.name}`}
+          style={{ display: "block", width: "100%", height: 480, border: 0 }} />}
+        <Typography variant="caption" color="text.secondary" component="p" sx={{ px: 2, py: 1 }}>
+          This sign-in is the Bottlify GameHub extension's: your password and the session stay in
+          it, out of this page's reach; your games then show in the library.
+        </Typography>
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose}>Cancel</Button>
@@ -287,8 +276,9 @@ export function StoreAccount({ store, stores }) {
           : store.account
             ? "Your games are in the library, each with Install. The session is kept by the "
               + "Bottlify GameHub extension in this browser."
-            : `Sign in with the ${provider.name} app on your phone: the games you own show in the `
-              + "library, each with Install. The session is kept by the Bottlify GameHub extension in this browser."}
+            : `Sign in with the ${provider.name} app on your phone or with your password: the games `
+              + "you own show in the library, each with Install. The session is kept by the Bottlify "
+              + "GameHub extension in this browser."}
       </Typography>
       {store.error && (
         <Alert severity="warning" variant="outlined" sx={{ mt: 1.5 }}>
