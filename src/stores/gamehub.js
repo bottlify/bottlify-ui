@@ -5,11 +5,11 @@
  */
 
 /**
- * The Bottlify bridge, when this browser has it: an extension
- * (`modules/bridge` in the engine repository) that talks to Steam for this
- * page and keeps the session in itself, out of the page's reach. The page asks
- * it over `window.postMessage` on its own origin; the protocol is the
- * extension's (`src/protocol.js` there).
+ * GameHub, when this browser has it: the Bottlify extension
+ * (`modules/bridge` in the engine repository) that keeps the game stores'
+ * accounts and speaks their protocols, the sessions kept in itself, out of the
+ * page's reach. The page asks it over `window.postMessage` on its own origin,
+ * with store-neutral ops (`src/protocol.js` there); the store is an argument.
  */
 
 const PEER = "bottlify-bridge";
@@ -46,20 +46,20 @@ export function ask(op, args = {}, { onEvent, signal } = {}) {
   });
 }
 
-/** @type {Promise<{ version: string, platforms: Record<string, boolean> } | null> | null} */
+/** @type {Promise<{ version: string, stores: { id: string, name: string, on: boolean }[] } | null> | null} */
 let greeted = null;
 
 /**
- * Whether the bridge is here and the site has a platform switched on in it;
- * false otherwise, and there is no such platform in this browser. The
- * extension marks the root element before any of this page's scripts runs, so
- * a page without it does not wait for an answer.
+ * GameHub, when this browser has it: its version and the stores it has, each
+ * said on or off for this site; null without it. The extension marks the root
+ * element before any of this page's scripts runs, so a page without it does
+ * not wait for an answer.
  *
- * @param {string} platform  `steam`, as the bridge names its ops `steam.…`.
- * @returns {Promise<boolean>}
+ * @returns {Promise<{ version: string, stores: { id: string, name: string, on: boolean }[] } | null>}
  */
-export function platformOn(platform) {
-  if (document.documentElement.dataset.bottlifyBridge === undefined) return Promise.resolve(false);
-  greeted ??= ask("hello").catch(() => null);
-  return greeted.then((hello) => Boolean(hello?.platforms?.[platform]));
+export function gamehub() {
+  if (document.documentElement.dataset.bottlifyBridge === undefined) return Promise.resolve(null);
+  greeted ??= ask("hello").then((hello) => (Array.isArray(hello?.stores) ? hello : null))
+    .catch(() => null);
+  return greeted;
 }

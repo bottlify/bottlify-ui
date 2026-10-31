@@ -17,7 +17,7 @@
  * -- except the display, which follows the screen this page is on.
  */
 
-import { FILTERS, SORTS } from "./api/libraryView.js";
+import { SORTS, isFilter } from "./api/libraryView.js";
 import { touchLayout } from "./engine/touch.js";
 
 const KEY = "bottlify.settings";
@@ -296,7 +296,7 @@ export function normalise(raw) {
     // not carried over -- read as filters they would hide all but the default
     // "Game" -- and the library opens whole.
     libraryFilters: Array.isArray(source.libraryFilters)
-      ? [...new Set(source.libraryFilters.filter((value) => FILTERS.some((one) => one.value === value)))]
+      ? [...new Set(source.libraryFilters.filter(isFilter))]
       : [],
     librarySort: SORTS.some((one) => one.value === source.librarySort)
       ? source.librarySort : DEFAULTS.librarySort,

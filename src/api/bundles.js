@@ -49,8 +49,9 @@ import { localBottles } from "../engine/bottles.js";
  * @property {string | null} status How far it was found to run: a `STATUSES` value,
  *                                  null while nobody has checked.
  * @property {"game" | "application"} kind
- * @property {{ appId: number }} [steam]  A store's game carries its store's id of it under
- *     the store's name (`stores/providers.js`, `gameOf`): Steam's, its app id.
+ * @property {{ id: string, game: string }} [store]  A store's game: the store, and its id
+ *     of the game (`stores/providers.js`); a bottle installed before says it as
+ *     `{ [store]: { appId } }`.
  * @property {string} [coverFallback]  The picture shown where its cover does not load.
  */
 

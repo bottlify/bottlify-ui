@@ -39,25 +39,26 @@ async function page({ marked = true, answer }) {
     },
   });
   // A fresh module a page: what it learnt of the bridge is kept per page.
-  const module = await import(`./bridge.js?page=${Math.random()}`);
+  const module = await import(`./gamehub.js?page=${Math.random()}`);
   return { ...module, posted, dispatch };
 }
 
 test("no mark on the page: no bridge, and nothing is asked", async () => {
-  const { platformOn, posted } = await page({ marked: false, answer: () => assert.fail() });
-  assert.equal(await platformOn("steam"), false);
+  const { gamehub, posted } = await page({ marked: false, answer: () => assert.fail() });
+  assert.equal(await gamehub(), null);
   assert.deepEqual(posted, []);
 });
 
-test("a platform counts only while the site has it on in the bridge", async () => {
-  for (const steam of [true, false]) {
-    const { platformOn } = await page({ answer: (request, reply) => {
-      assert.equal(request.op, "hello");
-      reply({ result: { version: "0.1.0", platforms: { steam } } });
-    } });
-    assert.equal(await platformOn("steam"), steam);
-    assert.equal(await platformOn("gog"), false, "one it does not name is off");
-  }
+test("GameHub says which stores it has, and which the site has on", async () => {
+  const stores = [{ id: "steam", name: "Steam", on: true }, { id: "gog", name: "GOG", on: false }];
+  const { gamehub } = await page({ answer: (request, reply) => {
+    assert.equal(request.op, "hello");
+    reply({ result: { version: "0.2.0", stores } });
+  } });
+  assert.deepEqual(await gamehub(), { version: "0.2.0", stores });
+  const older = await page({ answer: (_request, reply) => reply({ result: { version: "0.1.0",
+    platforms: { steam: true } } }) });
+  assert.equal(await older.gamehub(), null, "an extension that does not list stores is none");
 });
 
 test("an answer is its own request's: events first, then the result or the error", async () => {
@@ -75,10 +76,10 @@ test("an answer is its own request's: events first, then the result or the error
   } });
   /** @type {any[]} */
   const events = [];
-  assert.deepEqual(await ask("signIn", {}, { onEvent: (name, data) => events.push([name, data]) }),
+  assert.deepEqual(await ask("signIn", { store: "steam" }, { onEvent: (name, data) => events.push([name, data]) }),
     { accountName: "someone" });
   assert.deepEqual(events, [["challenge", { url: "https://s.team/q/1/1" }], ["scanned", {}]]);
-  await assert.rejects(ask("account"), /switched off/);
+  await assert.rejects(ask("account", { store: "steam" }), /switched off/);
 });
 
 test("an aborted request is cancelled in the bridge by its id", async () => {
@@ -91,7 +92,7 @@ test("an aborted request is cancelled in the bridge by its id", async () => {
       reply({ result: {} });
     }
   } });
-  const going = ask("signIn", {}, { signal: stop.signal });
+  const going = ask("signIn", { store: "steam" }, { signal: stop.signal });
   stop.abort();
   await new Promise((resolve) => setTimeout(resolve, 10));
   assert.deepEqual(cancelled, [posted.find((one) => one.op === "signIn").id]);

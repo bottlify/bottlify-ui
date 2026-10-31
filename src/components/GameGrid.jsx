@@ -9,11 +9,11 @@ import {
   Badge, Box, Button, ButtonBase, Checkbox, Chip, Divider, FormControlLabel, InputAdornment,
   MenuItem, Popover, TextField, Typography,
 } from "@mui/material";
-import { FILTER_GROUPS, FILTERS, SORTS, viewLibrary, withStoreGames } from "../api/libraryView.js";
+import { SORTS, filterGroups, viewLibrary, withStoreGames } from "../api/libraryView.js";
 import { loadSettings, saveSettings } from "../settings.js";
 import { GameCard } from "./GameCard.jsx";
 import { StoreInstall } from "./Stores.jsx";
-import { providerOf } from "../stores/providers.js";
+import { storeOf } from "../stores/providers.js";
 
 const toggled = (held, value) => (held.includes(value)
   ? held.filter((one) => one !== value)
@@ -27,7 +27,7 @@ const toggled = (held, value) => (held.includes(value)
  * @param {Object} props
  * @param {HTMLElement | null} props.anchor  Open while set.
  * @param {() => void} props.onClose
- * @param {typeof FILTER_GROUPS} props.groups  The groups offered.
+ * @param {import("../api/libraryView.js").FilterGroup[]} props.groups  The groups offered.
  * @param {string[]} props.checked
  * @param {(value: string) => void} props.onToggle
  * @param {() => void} props.onClear
@@ -122,11 +122,11 @@ export function GameGrid({
   // Where it comes from is asked only while something does come from a store;
   // kind and status only where the configuration offers them. A value of a
   // group not offered is kept for when it is, and meanwhile narrows nothing.
-  const fromStores = Boolean(known?.some((one) => one.account)) || bundles.some((one) => providerOf(one));
-  const offered = FILTER_GROUPS.filter((group) => (group.key === "source" ? fromStores : tagged));
+  const fromStores = Boolean(known?.some((one) => one.account)) || bundles.some((one) => storeOf(one));
+  const offered = filterGroups((known ?? []).map(({ provider }) => provider)).filter((group) => (group.key === "source" ? fromStores : tagged));
   const checked = filters.filter((value) => offered.some((group) =>
     group.options.some((one) => one.value === value)));
-  const shown = viewLibrary(everything, { query, filters: checked, sort });
+  const shown = viewLibrary(everything, { query, filters: checked, sort, groups: offered });
   const chooseFilters = (next) => {
     setFilters(next);
     saveSettings({ libraryFilters: next });
@@ -210,10 +210,11 @@ export function GameGrid({
           nothing is, so the plain library has no row of it. */}
       {checked.length > 0 && (
         <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.75, mt: -1.5, mb: 3 }}>
-          {FILTERS.filter((one) => checked.includes(one.value)).map(({ value, label }) => (
-            <Chip key={value} size="small" label={label}
-              onDelete={() => chooseFilters(toggled(filters, value))} />
-          ))}
+          {offered.flatMap((group) => group.options).filter((one) => checked.includes(one.value))
+            .map(({ value, label }) => (
+              <Chip key={value} size="small" label={label}
+                onDelete={() => chooseFilters(toggled(filters, value))} />
+            ))}
         </Box>
       )}
       {shown.length === 0 && (

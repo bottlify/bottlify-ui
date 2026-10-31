@@ -11,7 +11,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FilesDialog } from "./FilesDialog.jsx";
 import { StorageSettings } from "./StorageSettings.jsx";
-import { StoreAccount } from "./Stores.jsx";
+import { NoGameHub, StoreAccount } from "./Stores.jsx";
 import { EDITABLE_TYPES } from "../api/config.js";
 import { mountOf } from "../engine/patches.js";
 import { bottleFiles, liveFiles } from "../engine/volumes.js";
@@ -198,7 +198,7 @@ export function SettingsDrawer({
       {section === "storage" && <StorageSettings />}
       {section === "accounts" && stores && (
         <Stack gap={1.5} sx={{ p: 2, overflowY: "auto" }}>
-          {stores.stores.map((store) => (
+          {stores.gamehub === false ? <NoGameHub /> : stores.stores.map((store) => (
             <StoreAccount key={store.provider.id} store={store} stores={stores} />
           ))}
         </Stack>
