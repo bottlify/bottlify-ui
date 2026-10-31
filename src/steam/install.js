@@ -21,12 +21,17 @@ import { readDepotAccess, writeDepotAccess } from "@bottlify/core/steam";
  *     at their public manifests, the gids decimal strings.
  * @property {number} appId
  * @property {{ depot: number, gid: string }[]} depots
+ * @property {{ depot: number, app: number }[]} [shared]  The redistributables'
+ *     depots it names of other apps (`depotfromapp`): the download takes them
+ *     itself, with an anonymous logon, and the bridge is asked nothing for them.
  */
 
 /**
  * The depots an install takes -- Windows', the language's and those for every
  * language, not a DLC's -- their sizes added up, the build, and Steam's first
- * Windows launch option.
+ * Windows launch option; and those of other apps it names by the same rule,
+ * the redistributables (`shared`), which the engine's steam-install.mjs
+ * downloads and installs into the bottle.
  *
  * @param {any} info  An app's product info.
  * @param {string} language  Steam's name of it: `english`, `german`, …
@@ -36,15 +41,20 @@ export function describeApp(info, language) {
   let bytes = 0;
   /** @type {{ id: number, gid: bigint }[]} */
   const chosen = [];
+  /** @type {{ id: number, app: number }[]} */
+  const shared = [];
   for (const [id, depot] of Object.entries(depots)) {
     const size = Number(depot?.manifests?.public?.size ?? 0);
     const gid = depot?.manifests?.public?.gid;
     const os = String(depot?.config?.oslist ?? "");
     const lang = String(depot?.config?.language ?? "");
-    if (/^[0-9]+$/.test(id) && size > 0 && gid && (!os || os.split(",").includes("windows"))
-      && (!lang || lang === language) && !depot?.dlcappid) {
+    const wanted = /^[0-9]+$/.test(id) && (!os || os.split(",").includes("windows"))
+      && (!lang || lang === language) && !depot?.dlcappid;
+    if (wanted && size > 0 && gid) {
       bytes += size;
       chosen.push({ id: Number(id), gid: BigInt(gid) });
+    } else if (wanted && Number(depot?.depotfromapp) > 0) {
+      shared.push({ id: Number(id), app: Number(depot.depotfromapp) });
     }
   }
   const launch = Object.values(info?.config?.launch ?? {}).find((option) => {
@@ -54,6 +64,7 @@ export function describeApp(info, language) {
   return {
     bytes,
     depots: chosen,
+    shared,
     build: String(depots?.branches?.public?.buildid ?? ""),
     launch: launch ? {
       executable: String(/** @type {any} */ (launch).executable),

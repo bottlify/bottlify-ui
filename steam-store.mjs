@@ -471,7 +471,7 @@ export function createSteamStore({ cache, bundles, language = "english", appInfo
       const bottles = await installed();
       // The depots and the build are the server's to measure by, not the page's.
       // eslint-disable-next-line no-unused-vars
-      return cached.games.map(({ depots, build, ...game }) => {
+      return cached.games.map(({ depots, shared, build, ...game }) => {
         const bottle = bottles.get(game.appId);
         const measured = sizes.get(game.appId);
         const bytes = bottle?.bytes || (measured?.build === build ? measured.bytes : null);
@@ -498,7 +498,7 @@ export function createSteamStore({ cache, bundles, language = "english", appInfo
         const kept = publicApps.get(id)?.game;
         if (!kept) return [];
         // eslint-disable-next-line no-unused-vars
-        const { depots, build, ...game } = kept;
+        const { depots, shared, build, ...game } = kept;
         const bottle = bottles.get(id);
         return [{ ...game, bundle: bottle?.id ?? null, bytes: bottle?.bytes || game.bytes,
           exact: Boolean(bottle?.bytes) }];
@@ -583,7 +583,8 @@ export function createSteamStore({ cache, bundles, language = "english", appInfo
     /**
      * What an install of an app downloads, from what Steam tells anyone: the
      * depots whose keys and manifest request codes a bridged browser asks its
-     * bridge for (`installWithKeys`).
+     * bridge for (`installWithKeys`), and the redistributables' depots of other
+     * apps, which the download opens itself.
      *
      * @param {number} appId
      * @returns {Promise<import("./src/steam/install.js").InstallPlan>}
@@ -592,7 +593,8 @@ export function createSteamStore({ cache, bundles, language = "english", appInfo
       await readPublic([appId]);
       const game = publicApps.get(appId)?.game;
       if (!game) throw refused(`app ${appId} is not a game Steam describes`);
-      return { appId, depots: game.depots.map(({ id, gid }) => ({ depot: id, gid: String(gid) })) };
+      return { appId, depots: game.depots.map(({ id, gid }) => ({ depot: id, gid: String(gid) })),
+        shared: game.shared.map(({ id, app }) => ({ depot: id, app })) };
     },
 
     /**

@@ -26,6 +26,8 @@ const INFO = {
     106: { dlcappid: "999", manifests: { public: { gid: "6666", size: "60" } } },
     107: { manifests: { public: { gid: "7777", size: "0" } } },
     108: { manifests: { beta: { gid: "8888", size: "80" } } },
+    228986: { config: { oslist: "windows" }, depotfromapp: "228980", sharedinstall: "1" },
+    228999: { config: { oslist: "macos" }, depotfromapp: "228980" },
     branches: { public: { buildid: "4242" } },
   },
 };
@@ -58,10 +60,12 @@ test("the plan is Windows', the language's and every language's depots, not a DL
   assert.deepEqual(described.depots, [{ id: 101, gid: 1111111111111111111n }, { id: 102, gid: 2222n },
     { id: 104, gid: 4444n }]);
   assert.equal(described.bytes, 1060);
+  assert.deepEqual(described.shared, [{ id: 228986, app: 228980 }], "Windows' redistributables");
   assert.equal(described.build, "4242");
   assert.deepEqual(described.launch, { executable: "bin/game.exe", arguments: "-windowed" });
   assert.deepEqual(describeApp(INFO, "german").depots.map(({ id }) => id), [101, 102, 105]);
-  assert.deepEqual(describeApp(null, "english"), { bytes: 0, depots: [], build: "", launch: null });
+  assert.deepEqual(describeApp(null, "english"),
+    { bytes: 0, depots: [], shared: [], build: "", launch: null });
 });
 
 test("the page asks the bridge for each planned depot's key and code, and the server takes it", async () => {

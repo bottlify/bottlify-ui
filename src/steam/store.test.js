@@ -22,7 +22,8 @@ const game = (/** @type {string} */ name) => ({
   common: { type: "game", name },
   config: { launch: { 0: { executable: "game.exe" } } },
   depots: { 101: { manifests: { public: { gid: "1111", size: String(3 * 2 ** 20) } } },
-    102: { manifests: { public: { gid: "2222", size: "10" } } } },
+    102: { manifests: { public: { gid: "2222", size: "10" } } },
+    228986: { config: { oslist: "windows" }, depotfromapp: "228980" } },
 });
 const INFO = new Map([[70, game("Works")], [71, game("Fails")],
   [72, { common: { type: "tool", name: "A tool" } }]]);
@@ -75,8 +76,9 @@ test("an install with the bridge's keys: checked against the plan, handed over o
         return new Map(ids.map((id) => [id, INFO.get(id)]));
       } });
 
-    assert.deepEqual(await store.plan(70),
-      { appId: 70, depots: [{ depot: 101, gid: "1111" }, { depot: 102, gid: "2222" }] });
+    assert.deepEqual(await store.plan(70), { appId: 70,
+      depots: [{ depot: 101, gid: "1111" }, { depot: 102, gid: "2222" }],
+      shared: [{ depot: 228986, app: 228980 }] });
     await assert.rejects(store.plan(72), { refused: true, message: /not a game/ });
 
     const wrong = { ...request(70), depots: request(70).depots.slice(0, 1) };
