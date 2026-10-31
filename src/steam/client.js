@@ -22,6 +22,7 @@
  * browser decrypt it.
  */
 
+import { fetchClientFiles } from "@bottlify/core/steam";
 import { INSTALLER_HEADER, SESSION_HEADER, encodeSession, readInstaller } from "./header.js";
 import { ask, steamBridge } from "./bridge.js";
 import { installRequest } from "./install.js";
@@ -213,6 +214,43 @@ export async function steamAccount() {
   if (!await keptSession()) return null;
   const answer = await fetch("/steam/account", { headers: await sessionHeaders() });
   return answer.ok ? answer.json() : null;
+}
+
+/**
+ * What a Steam app's DRM asks the client it runs beside, with the bridge: the
+ * app's ownership ticket as Steam signed it for the account (none for an app
+ * it does not own), and Valve's own client DLLs, which a wrapper reads to
+ * check the client it loaded -- data the engine never runs, fetched from
+ * Valve's CDN here (the bridge opens it to this page) and kept in this
+ * browser's cache, never sent to the server. Empty without the bridge.
+ *
+ * @param {number} appId
+ * @returns {Promise<{ ownershipTickets?: Record<number, Uint8Array>,
+ *     clientFiles?: Record<string, Uint8Array> }>}
+ */
+export async function steamRunData(appId) {
+  if (!await steamBridge()) return {};
+  const [ticket, client] = await Promise.all([
+    ask("appOwnershipTicket", { app: appId }).catch(() => null),
+    // The package's name carries its hash, so a cached one is the one the
+    // manifest names; the manifest itself is asked each time.
+    fetchClientFiles({ fetch: async (url) => {
+      if (!String(url).endsWith(".zip")) return fetch(url);
+      const cache = await caches.open("steam-client");
+      const kept = await cache.match(url);
+      if (kept) return kept;
+      const fresh = await fetch(url);
+      if (fresh.ok) await cache.put(url, fresh.clone());
+      return fresh;
+    } }).catch((error) => {
+      console.warn("steam client files:", error);
+      return null;
+    }),
+  ]);
+  return {
+    ...(ticket ? { ownershipTickets: { [appId]: ticket } } : {}),
+    ...(client ? { clientFiles: client.files } : {}),
+  };
 }
 
 /** The signed-in account's name, or null for nobody. @returns {Promise<string | null>} */
