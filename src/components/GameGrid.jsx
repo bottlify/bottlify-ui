@@ -224,10 +224,11 @@ export function GameGrid({
       {[
         { key: "local", heading: "In this browser", items: shown.filter((one) => one.local) },
         { key: "server", heading: "On the server", items: shown.filter((one) => !one.local && !one.store) },
-        ...(known ?? []).map(({ provider }) => ({ key: provider.id,
-          heading: `On ${provider.name}, not installed`,
+        // A store being read shows so, before its games are known as after.
+        ...(known ?? []).map(({ provider, syncing }) => ({ key: provider.id, syncing,
+          heading: `On ${provider.name}, not installed${syncing ? " · syncing…" : ""}`,
           items: shown.filter((one) => one.store?.provider === provider.id) })),
-      ].filter((group) => group.items.length > 0).map((group, _index, groups) => (
+      ].filter((group) => group.items.length > 0 || group.syncing).map((group, _index, groups) => (
         <Box key={group.key} sx={{ mb: 4 }}>
           {groups.length > 1 || group.key !== "server" ? (
             <Typography variant="h6" color="text.secondary" sx={{ mb: 1.5 }}>

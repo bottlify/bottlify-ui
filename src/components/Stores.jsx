@@ -42,9 +42,37 @@ const size = (bytes) => (bytes >= 1 << 30 ? `${(bytes / (1 << 30)).toFixed(1)} G
 /** @param {InstallJob | undefined} job */
 const busy = (job) => job?.state === "downloading" || job?.state === "packing";
 
+/**
+ * The account and games a store last answered, kept in this browser so a
+ * reload shows them at once while they are read again; a convenience, so any
+ * failure to read or write it is no failure.
+ *
+ * @param {StoreProvider} provider
+ * @returns {{ account: string | null, games: StoreGame[] }}
+ */
+const lastKnown = (provider) => {
+  try {
+    const kept = JSON.parse(localStorage.getItem(`bottlify.store.${provider.id}`) ?? "null");
+    if (kept && Array.isArray(kept.games)) return { account: kept.account ?? null, games: kept.games };
+  } catch {
+    // Not kept, or not readable here.
+  }
+  return { account: null, games: [] };
+};
+
+/** @param {StoreProvider} provider @param {{ account: string | null, games: StoreGame[] } | null} what */
+const keep = (provider, what) => {
+  try {
+    if (what) localStorage.setItem(`bottlify.store.${provider.id}`, JSON.stringify(what));
+    else localStorage.removeItem(`bottlify.store.${provider.id}`);
+  } catch {
+    // Storage full or blocked: the next visit reads the store again, as it does anyway.
+  }
+};
+
 /** @param {StoreProvider} provider @returns {StoreState} */
-const fresh = (provider) => ({ provider, available: false, account: null, games: [],
-  jobs: new Map(), error: "", syncing: false });
+const fresh = (provider) => ({ provider, available: false, ...lastKnown(provider),
+  jobs: new Map(), error: "", syncing: true });
 
 /**
  * Every store's account in this browser, its games and their installs, for the
@@ -63,17 +91,26 @@ export function useStores(onInstalled, providers = PROVIDERS) {
     (one.provider.id === id ? { ...one, ...change(one) } : one))), []);
 
   /** @param {StoreProvider} provider @param {{ fresh?: boolean }} [options] */
+  // Read on every visit and on Sync; what was known before stays shown, marked
+  // as being synced, until the store answers.
   const load = useCallback(async (provider, options = {}) => {
-    const available = await provider.available().catch(() => false);
-    const account = available ? await provider.auth.account().catch(() => null) : null;
-    update(provider.id, () => ({ available, account: account?.name ?? null,
-      ...account ? {} : { games: [] } }));
-    if (!account) return;
+    update(provider.id, () => ({ syncing: true }));
     try {
+      const available = await provider.available().catch(() => false);
+      const account = available ? await provider.auth.account().catch(() => null) : null;
+      update(provider.id, () => ({ available, account: account?.name ?? null,
+        ...account ? {} : { games: [] } }));
+      if (!account) {
+        keep(provider, null);
+        return;
+      }
       const games = await provider.getList(options);
       update(provider.id, () => ({ games, error: "" }));
+      keep(provider, { account: account.name ?? null, games });
     } catch (e) {
       update(provider.id, () => ({ error: String(/** @type {Error} */ (e)?.message ?? e) }));
+    } finally {
+      update(provider.id, () => ({ syncing: false }));
     }
   }, [update]);
 
@@ -91,14 +128,11 @@ export function useStores(onInstalled, providers = PROVIDERS) {
   const signOut = useCallback(async (id) => {
     await byId(id).auth.signOut().catch((e) => update(id, () => ({ error: String(e?.message ?? e) })));
     update(id, () => ({ account: null, games: [], jobs: new Map(), error: "" }));
+    keep(byId(id), null);
   }, [byId, update]);
 
   /** The account's games read again from the store. @param {string} id */
-  const sync = useCallback(async (id) => {
-    update(id, () => ({ syncing: true }));
-    await load(byId(id), { fresh: true });
-    update(id, () => ({ syncing: false }));
-  }, [byId, load, update]);
+  const sync = useCallback((id) => load(byId(id), { fresh: true }), [byId, load]);
 
   /** @param {string} id @param {StoreGame} game */
   const install = useCallback(async (id, game) => {
@@ -176,7 +210,7 @@ export function StoreSignIn({ provider, onSignedIn, onClose }) {
             : <CircularProgress />}
           <Typography variant="body2" color="text.secondary" align="center">{status}</Typography>
           <Typography variant="caption" color="text.secondary" align="center">
-            The session is kept by the Bottlify extension; your games then show in the library.
+            The session is kept by the Bottlify GameHub extension; your games then show in the library.
           </Typography>
         </Stack>
       </DialogContent>
@@ -211,9 +245,11 @@ export function StoreAccount({ store, stores }) {
         <Box sx={{ flex: 1, minWidth: 0 }}>
           <Typography variant="subtitle2">{provider.name}</Typography>
           <Typography variant="body2" color="text.secondary" sx={{ wordBreak: "break-word" }}>
-            {!store.available ? provider.unavailable : store.account
+            {store.account
               ? `Signed in as ${store.account} · ${store.games.length} games`
-              : "Not signed in"}
+                + (store.syncing ? " · syncing…" : "")
+              : store.syncing ? "Connecting…"
+                : !store.available ? provider.unavailable : "Not signed in"}
           </Typography>
         </Box>
         {store.account && (
@@ -229,13 +265,13 @@ export function StoreAccount({ store, stores }) {
       </Stack>
       <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 1 }}>
         {!store.available
-          ? "Add the Bottlify extension to this browser, then reload: sign-in, your games and "
+          ? "Add the Bottlify GameHub extension to this browser, then reload: sign-in, your games and "
             + "their installs all go through it."
           : store.account
             ? "Your games are in the library, each with Install. The session is kept by the "
-              + "Bottlify extension in this browser."
+              + "Bottlify GameHub extension in this browser."
             : `Sign in with the ${provider.name} app on your phone: the games you own show in the `
-              + "library, each with Install. The session is kept by the Bottlify extension in this browser."}
+              + "library, each with Install. The session is kept by the Bottlify GameHub extension in this browser."}
       </Typography>
       {store.error && (
         <Alert severity="warning" variant="outlined" sx={{ mt: 1.5 }}>

@@ -23,7 +23,7 @@ import { storeGame } from "./install.js";
 /** @typedef {{ steamId: string, accountName: string, apps: number[], licenses?: number }} SteamAccount */
 
 /** What Steam in the launcher says without the bridge. */
-export const NEEDS_BRIDGE = "Steam needs the Bottlify extension in this browser.";
+export const NEEDS_BRIDGE = "Steam needs the Bottlify GameHub extension in this browser.";
 
 /**
  * The bridge's Steam ops.

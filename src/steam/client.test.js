@@ -125,7 +125,7 @@ test("the library's games are the account's, as Steam tells anyone of them throu
 test("without the bridge Steam says the extension is needed and asks nobody", async () => {
   const { steam, NEEDS_BRIDGE, requests, asked } = await page({ bridge: false });
   const needed = new RegExp(NEEDS_BRIDGE.replace(".", "\\."));
-  assert.match(NEEDS_BRIDGE, /Bottlify extension/);
+  assert.match(NEEDS_BRIDGE, /Bottlify GameHub extension/);
   assert.equal(steam.unavailable, NEEDS_BRIDGE);
   assert.equal(await steam.available(), false);
   await assert.rejects(steam.auth.signIn({ onChallenge: () => {} }), needed);
