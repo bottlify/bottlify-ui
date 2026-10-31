@@ -30,7 +30,7 @@ import { installRequest } from "./install.js";
 /** @typedef {import("./header.js").SteamSession} SteamSession */
 /** @typedef {import("../../steam-store.mjs").StoreGame} StoreGame */
 /** @typedef {import("../../steam-store.mjs").InstallJob} InstallJob */
-/** @typedef {{ steamId: string, accountName: string, apps: number[] }} SteamAccount */
+/** @typedef {{ steamId: string, accountName: string, apps: number[], licenses?: number }} SteamAccount */
 
 const DB = "bottlify-steam";
 const STORE = "kept";
@@ -261,12 +261,14 @@ export async function steamAccountName() {
 
 /**
  * The signed-in account's games as the store shows them. With the bridge the
- * account's app ids are all the server is given.
+ * account's app ids are all the server is given. Fresh: the licences read
+ * again from Steam, not as they were read a while ago.
  *
+ * @param {{ fresh?: boolean }} [options]
  * @returns {Promise<StoreGame[]>}
  */
-export async function steamGames() {
-  const account = await steamBridge() ? await ask("account") : null;
+export async function steamGames({ fresh = false } = {}) {
+  const account = await steamBridge() ? await ask("account", fresh ? { fresh } : {}) : null;
   const answer = account
     ? await fetch("/steam/apps", { method: "POST", headers: { "content-type": "application/json" },
       body: JSON.stringify({ apps: account.apps }) })

@@ -42,13 +42,13 @@ export function useSteam(onInstalled) {
   const [bridged, setBridged] = useState(false);
   const finished = useRef(new Set());
 
-  const load = useCallback(async () => {
+  const load = useCallback(async ({ fresh = false } = {}) => {
     setBridged(Boolean(await steamBridge()));
     const name = await steamAccountName();
     setAccount(name);
     if (!name) return;
     try {
-      setGames(await steamGames());
+      setGames(await steamGames({ fresh }));
     } catch (e) {
       setError(String(/** @type {Error} */ (e).message));
       return;
@@ -113,7 +113,15 @@ export function useSteam(onInstalled) {
     setJobs((now) => new Map(now).set(appId, job));
   }, []);
 
-  return { account, games, jobs, error, bridged, signedIn, signOut, install };
+  // Sync: the account's games read again from Steam.
+  const [syncing, setSyncing] = useState(false);
+  const sync = useCallback(async () => {
+    setSyncing(true);
+    await load({ fresh: true }).catch((e) => setError(String(e?.message ?? e)));
+    setSyncing(false);
+  }, [load]);
+
+  return { account, games, jobs, error, bridged, signedIn, signOut, install, sync, syncing };
 }
 
 /**
@@ -199,9 +207,17 @@ export function SteamAccount({ steam }) {
         <Box sx={{ flex: 1, minWidth: 0 }}>
           <Typography variant="subtitle2">Steam</Typography>
           <Typography variant="body2" color="text.secondary" sx={{ wordBreak: "break-word" }}>
-            {steam.account ? `Signed in as ${steam.account}` : "Not signed in"}
+            {steam.account
+              ? `Signed in as ${steam.account} · ${steam.games.length} games`
+              : "Not signed in"}
           </Typography>
         </Box>
+        {steam.account && (
+          <Button size="small" variant="outlined" color="inherit" disabled={steam.syncing}
+            onClick={steam.sync}>
+            {steam.syncing ? "Syncing…" : "Sync"}
+          </Button>
+        )}
         {steam.account
           ? <Button size="small" variant="outlined" color="inherit" onClick={steam.signOut}>Sign out</Button>
           : <Button size="small" variant="contained" onClick={() => setSigningIn(true)}>Sign in</Button>}
