@@ -105,4 +105,9 @@ test("a Steam game shows as a card only while it has a Windows build and no bott
   assert.deepEqual(merged.map((one) => one.id), ["Half-Life", "steam:400"]);
   assert.deepEqual(merged[1].steam, { appId: 400 });
   assert.equal(merged[1].store.name, "Portal");
+  // Without Steam, or with an account that does not own it, a Steam bottle is hidden.
+  assert.deepEqual(withSteamGames([installed, bottle("Quake", "game", [])], []).map((one) => one.id),
+    ["Quake"]);
+  assert.deepEqual(withSteamGames([installed], [game(400, "Portal")]).map((one) => one.id),
+    ["steam:400"]);
 });

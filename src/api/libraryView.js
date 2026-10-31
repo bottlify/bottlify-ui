@@ -52,8 +52,11 @@ export const FILTERS = FILTER_GROUPS.flatMap((group) => group.options);
  * @returns {any[]}
  */
 export function withSteamGames(bundles, games) {
+  // A bottle of a Steam game shows only while the account signed in owns it:
+  // without Steam it could not start, and another account's is not this one's.
+  const owned = new Set(games.map((game) => game.appId));
   return [
-    ...bundles,
+    ...bundles.filter((one) => !one.steam?.appId || owned.has(one.steam.appId)),
     ...games.filter((game) => game.launch && !game.bundle
       && !bundles.some((one) => one.steam?.appId === game.appId)).map((game) => ({
       id: `steam:${game.appId}`, title: game.name, version: "", labels: [], status: null,
