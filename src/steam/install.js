@@ -6,32 +6,56 @@
 
 /**
  * An install of a Steam app, as the page and the launcher's server both see
- * it: which depots it downloads (`describeApp`, the server's plan), and, for a
- * browser whose session the Bottlify bridge keeps, the request that hands the
- * server what opens them -- each depot's key and a manifest request code, asked
- * of the bridge (`installRequest`) and checked by the server against its own
- * plan (`checkInstallRequest`). A depot's key is the same for every owner and a
- * request code lasts minutes; the session's token stays in the bridge.
+ * it: which depots it downloads (`describeApp`, the server's plan) and, for a
+ * browser whose session the Bottlify bridge keeps, what opens them -- each
+ * depot's key and a manifest request code, asked of the bridge
+ * (`depotOpenings`), with which the page installs the app itself. A depot's key
+ * is the same for every owner and a request code lasts minutes; the session's
+ * token stays in the bridge. The server's own check of such a request
+ * (`checkInstallRequest`) is for a page that hands it the keys instead.
  */
 
-import { readDepotAccess, writeDepotAccess } from "@bottlify/core/steam";
+import { readDepotAccess, wantedDepot, windowsLaunch, writeDepotAccess } from "@bottlify/core/steam";
+
+/**
+ * Steam's own art for an app, on its CDN. Kept in a bottle's manifest as it
+ * is; a page is given it through the launcher's server (steam-store.mjs's
+ * `art`), because the CDN sends no Cross-Origin-Resource-Policy, which the
+ * launcher's cross-origin isolated page needs of an image from elsewhere.
+ */
+export const STEAM_ART = "https://shared.steamstatic.com/store_item_assets/steam/apps";
+
+/**
+ * A Steam bottle's covers and background, as its manifest names them: Steam's
+ * own addresses, which a bottle carries wherever it goes.
+ *
+ * @param {number} appId
+ */
+export const steamArt = (appId) => ({
+  coverLarge: `${STEAM_ART}/${appId}/library_600x900.jpg`,
+  coverSmall: `${STEAM_ART}/${appId}/library_600x900.jpg`,
+  wallpaper: `${STEAM_ART}/${appId}/library_hero.jpg`,
+});
 
 /**
  * @typedef {Object} InstallPlan  What an install of an app downloads: its depots
  *     at their public manifests, the gids decimal strings.
  * @property {number} appId
+ * @property {string} [name]
  * @property {{ depot: number, gid: string }[]} depots
- * @property {{ depot: number, app: number }[]} [shared]  The redistributables'
- *     depots it names of other apps (`depotfromapp`): the download takes them
- *     itself, with an anonymous logon, and the bridge is asked nothing for them.
+ * @property {{ depot: number, app: number, gid?: string }[]} [shared]  The
+ *     redistributables' depots it names of other apps (`depotfromapp`), at their
+ *     owners' public manifests: keys and codes for them are asked under the owner.
+ * @property {string} [installscript]  The app's own install script, a path in it.
+ * @property {{ executable: string, arguments: string } | null} [launch]
  */
 
 /**
  * The depots an install takes -- Windows', the language's and those for every
- * language, not a DLC's -- their sizes added up, the build, and Steam's first
- * Windows launch option; and those of other apps it names by the same rule,
- * the redistributables (`shared`), which the engine's steam-install.mjs
- * downloads and installs into the bottle.
+ * language, not a DLC's (the engine's `wantedDepot`) -- their sizes added up,
+ * the build, Steam's first Windows launch option and the app's install script;
+ * and those of other apps it names by the same rule, the redistributables
+ * (`shared`), which an install takes too.
  *
  * @param {any} info  An app's product info.
  * @param {string} language  Steam's name of it: `english`, `german`, …
@@ -46,10 +70,7 @@ export function describeApp(info, language) {
   for (const [id, depot] of Object.entries(depots)) {
     const size = Number(depot?.manifests?.public?.size ?? 0);
     const gid = depot?.manifests?.public?.gid;
-    const os = String(depot?.config?.oslist ?? "");
-    const lang = String(depot?.config?.language ?? "");
-    const wanted = /^[0-9]+$/.test(id) && (!os || os.split(",").includes("windows"))
-      && (!lang || lang === language) && !depot?.dlcappid;
+    const wanted = /^[0-9]+$/.test(id) && wantedDepot(depot, language);
     if (wanted && size > 0 && gid) {
       bytes += size;
       chosen.push({ id: Number(id), gid: BigInt(gid) });
@@ -57,39 +78,39 @@ export function describeApp(info, language) {
       shared.push({ id: Number(id), app: Number(depot.depotfromapp) });
     }
   }
-  const launch = Object.values(info?.config?.launch ?? {}).find((option) => {
-    const os = String(/** @type {any} */ (option)?.config?.oslist ?? "");
-    return /** @type {any} */ (option)?.executable && (!os || os.split(",").includes("windows"));
-  });
+  const launch = windowsLaunch(info);
   return {
     bytes,
     depots: chosen,
     shared,
     build: String(depots?.branches?.public?.buildid ?? ""),
-    launch: launch ? {
-      executable: String(/** @type {any} */ (launch).executable),
-      arguments: String(/** @type {any} */ (launch).arguments ?? ""),
-    } : null,
+    launch: launch ? { executable: String(launch.executable), arguments: String(launch.arguments ?? "") }
+      : null,
+    installscript: info?.extended?.installscript ? String(info.extended.installscript) : "",
   };
 }
 
 /**
- * The page's request for an install with the bridge: the plan's every depot
- * with its key and its manifest's request code, asked of the bridge.
+ * What opens each depot of a plan -- the app's, then the redistributables',
+ * each asked of the bridge under the app that owns it -- as the engine's
+ * `installBundle` takes them.
  *
  * @param {InstallPlan} plan
  * @param {(op: string, args: Record<string, unknown>) => Promise<any>} ask  The bridge's.
- * @returns {Promise<{ appId: number, depots: ReturnType<typeof writeDepotAccess> }>}
+ * @returns {Promise<import("@bottlify/core/steam").DepotOpening[]>}
  */
-export async function installRequest(plan, ask) {
-  const app = plan.appId;
-  const access = await Promise.all(plan.depots.map(async ({ depot, gid }) => ({
+export function depotOpenings(plan, ask) {
+  const wanted = [
+    ...plan.depots.map(({ depot, gid }) => ({ depot, gid, app: plan.appId, shared: false })),
+    ...(plan.shared ?? []).flatMap(({ depot, gid, app }) => (gid ? [{ depot, gid, app, shared: true }] : [])),
+  ];
+  return Promise.all(wanted.map(async ({ depot, gid, app, shared }) => ({
     depot,
     gid: BigInt(gid),
+    shared,
     key: await ask("depotKey", { app, depot }),
     code: BigInt(await ask("manifestCode", { app, depot, gid })),
   })));
-  return { appId: app, depots: writeDepotAccess(access) };
 }
 
 /**

@@ -11,7 +11,7 @@ import {
 import { useCallback, useEffect, useRef, useState } from "react";
 import { encodeQr, qrToSvg } from "@bottlify/core/steam";
 import {
-  signIn, signOut as signOutHere, startInstall, steamAccountName, steamGames, steamJobs,
+  cancelInstall, signIn, signOut as signOutHere, startInstall, steamAccountName, steamGames, steamJobs,
 } from "../steam/client.js";
 import { steamBridge } from "../steam/bridge.js";
 
@@ -29,8 +29,8 @@ const busy = (job) => job?.state === "downloading" || job?.state === "packing";
  * The Steam account signed in in this browser, its games and their installs,
  * for the library to show beside the bottles. Its session is this browser's
  * own (`steam/client.js`): the bridge's, or handed to the server with each
- * request. Installs are the server's, run with the session, or with the depots'
- * keys and codes the bridge answers.
+ * request. With the bridge an install runs in this browser, with the depots'
+ * keys and codes the bridge answers; without, the server runs it with the session.
  *
  * @param {() => void} onInstalled  A bottle was added: the library lists it.
  */
@@ -112,6 +112,12 @@ export function useSteam(onInstalled) {
       { appId, state: "failed", done: 0, total: 0, message: String(e?.message ?? e) }));
     setJobs((now) => new Map(now).set(appId, job));
   }, []);
+  /** Stops an install this browser runs; Install goes on from where it stopped. @param {number} appId */
+  const cancel = useCallback(async (appId) => {
+    cancelInstall(appId);
+    const list = await steamJobs();
+    setJobs(new Map(list.map((/** @type {InstallJob} */ job) => [job.appId, job])));
+  }, []);
 
   // Sync: the account's games read again from Steam.
   const [syncing, setSyncing] = useState(false);
@@ -121,7 +127,7 @@ export function useSteam(onInstalled) {
     setSyncing(false);
   }, [load]);
 
-  return { account, games, jobs, error, bridged, signedIn, signOut, install, sync, syncing };
+  return { account, games, jobs, error, bridged, signedIn, signOut, install, cancel, sync, syncing };
 }
 
 /**
@@ -242,14 +248,16 @@ export function SteamAccount({ steam }) {
 
 /**
  * The foot of a Steam game's card in the library while it is not installed:
- * its size, and Install, or its download's progress.
+ * its size, and Install, or its download's progress -- with Cancel for one
+ * this browser runs.
  *
  * @param {Object} props
  * @param {StoreGame} props.game
  * @param {InstallJob | undefined} props.job
  * @param {() => void} props.onInstall
+ * @param {() => void} [props.onCancel]
  */
-export function SteamInstall({ game, job, onInstall }) {
+export function SteamInstall({ game, job, onInstall, onCancel }) {
   return (
     <Box sx={{ pt: 1, display: "flex", flexDirection: "column", gap: 0.5 }}>
       <Typography variant="caption" color="text.secondary">
@@ -261,11 +269,18 @@ export function SteamInstall({ game, job, onInstall }) {
           <LinearProgress
             variant={job.total > 0 && job.state === "downloading" ? "determinate" : "indeterminate"}
             value={job.total > 0 ? Math.min(100, (100 * job.done) / job.total) : 0} />
-          <Typography variant="caption" color="text.secondary" noWrap title={job.message}
-            sx={{ display: "block" }}>
-            {job.state === "downloading" && job.total > 0
-              ? `${job.done} / ${job.total} MB · ${job.message}` : job.message}
-          </Typography>
+          <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+            <Typography variant="caption" color="text.secondary" noWrap title={job.message}
+              sx={{ flex: 1, minWidth: 0 }}>
+              {job.state === "downloading" && job.total > 0
+                ? `${job.done} / ${job.total} MB · ${job.message}` : job.message}
+            </Typography>
+            {job.local && onCancel && (
+              <Button size="small" color="inherit" onClick={onCancel} sx={{ minWidth: 0, px: 1 }}>
+                Cancel
+              </Button>
+            )}
+          </Box>
         </Box>
       ) : (
         <>

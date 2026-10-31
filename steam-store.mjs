@@ -31,18 +31,10 @@ import { createHash } from "node:crypto";
 import { mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import {
-  FILE_FLAG_DIRECTORY, connectCm, contentServers, depotKey, library, logOn, logOnAnonymously,
-  manifest, manifestRequestCode, productInfo, signInWithQr,
+  FILE_FLAG_DIRECTORY, connectCm, contentServers, depotKey, depotOwners, library, logOn,
+  logOnAnonymously, manifest, manifestRequestCode, productInfo, sharedDepots, signInWithQr,
 } from "@bottlify/core/steam";
-import { checkInstallRequest, describeApp } from "./src/steam/install.js";
-
-/**
- * Steam's own art for an app, on its CDN. Kept in a bottle's manifest as it
- * is; a page is given it through this server (`art`), because the CDN sends
- * no Cross-Origin-Resource-Policy, which the launcher's cross-origin isolated
- * page needs of an image from elsewhere.
- */
-const ART = "https://shared.steamstatic.com/store_item_assets/steam/apps";
+import { STEAM_ART as ART, checkInstallRequest, describeApp, steamArt } from "./src/steam/install.js";
 /** The same picture, from this server. @param {number} appId @param {string} file */
 const artHere = (appId, file) => `/steam/art/${appId}/${file}`;
 
@@ -120,6 +112,7 @@ async function anonymousAppInfo(appIds){
  * @property {number} total  MiB to download, once known.
  * @property {string} message
  * @property {string} [bundle]  The bottle, once packed.
+ * @property {boolean} [local]  Installed in the browser that shows it, not by this server.
  */
 
 /**
@@ -174,7 +167,7 @@ export function createSteamStore({ cache, bundles, language = "english", appInfo
    * minutes: the game as the store shows it, or null for an app that is not a
    * game or that Steam does not describe to an anonymous logon.
    *
-   * @type {Map<number, { at: number, game: ReturnType<typeof storeGame> | null }>}
+   * @type {Map<number, { at: number, game: ReturnType<typeof storeGame> | null, info: any }>}
    */
   const publicApps = new Map();
   /** Art being fetched or kept, by file. @type {Map<string, Promise<string | null>>} */
@@ -295,7 +288,7 @@ export function createSteamStore({ cache, bundles, language = "english", appInfo
       const info = /** @type {any} */ (apps.get(id));
       const game = String(info?.common?.type ?? "").toLowerCase() === "game"
         ? storeGame(id, String(info.common.name ?? id), info) : null;
-      publicApps.set(id, { at: Date.now(), game });
+      publicApps.set(id, { at: Date.now(), game, info });
     }
   }
 
@@ -377,11 +370,7 @@ export function createSteamStore({ cache, bundles, language = "english", appInfo
         kind: "game",
         steam: { appId },
         ...game.launch?.arguments ? { commandLine: game.launch.arguments } : {},
-        // Steam's own addresses: a bottle carries them wherever it goes, and
-        // the launcher shows them through its own (`art`).
-        coverLarge: `${ART}/${appId}/library_600x900.jpg`,
-        coverSmall: `${ART}/${appId}/library_600x900.jpg`,
-        wallpaper: `${ART}/${appId}/library_hero.jpg`,
+        ...steamArt(appId),
       });
       await writeFile(path, `${JSON.stringify(kept, null, 4)}\n`);
       await rm(staging, { recursive: true, force: true });
@@ -471,7 +460,7 @@ export function createSteamStore({ cache, bundles, language = "english", appInfo
       const bottles = await installed();
       // The depots and the build are the server's to measure by, not the page's.
       // eslint-disable-next-line no-unused-vars
-      return cached.games.map(({ depots, shared, build, ...game }) => {
+      return cached.games.map(({ depots, shared, build, installscript, ...game }) => {
         const bottle = bottles.get(game.appId);
         const measured = sizes.get(game.appId);
         const bytes = bottle?.bytes || (measured?.build === build ? measured.bytes : null);
@@ -498,7 +487,7 @@ export function createSteamStore({ cache, bundles, language = "english", appInfo
         const kept = publicApps.get(id)?.game;
         if (!kept) return [];
         // eslint-disable-next-line no-unused-vars
-        const { depots, shared, build, ...game } = kept;
+        const { depots, shared, build, installscript, ...game } = kept;
         const bottle = bottles.get(id);
         return [{ ...game, bundle: bottle?.id ?? null, bytes: bottle?.bytes || game.bytes,
           exact: Boolean(bottle?.bytes) }];
@@ -583,18 +572,27 @@ export function createSteamStore({ cache, bundles, language = "english", appInfo
     /**
      * What an install of an app downloads, from what Steam tells anyone: the
      * depots whose keys and manifest request codes a bridged browser asks its
-     * bridge for (`installWithKeys`), and the redistributables' depots of other
-     * apps, which the download opens itself.
+     * bridge for, the redistributables' depots of other apps at their owners'
+     * manifests (the engine's `sharedDepots`), the app's install script and how
+     * it starts. A browser with the bridge installs from it itself.
      *
      * @param {number} appId
      * @returns {Promise<import("./src/steam/install.js").InstallPlan>}
      */
     async plan(appId){
       await readPublic([appId]);
-      const game = publicApps.get(appId)?.game;
+      const kept = publicApps.get(appId);
+      const game = kept?.game;
       if (!game) throw refused(`app ${appId} is not a game Steam describes`);
-      return { appId, depots: game.depots.map(({ id, gid }) => ({ depot: id, gid: String(gid) })),
-        shared: game.shared.map(({ id, app }) => ({ depot: id, app })) };
+      const owners = depotOwners(kept.info);
+      await readPublic(owners);
+      const shared = sharedDepots(kept.info,
+        new Map(owners.map((id) => [id, publicApps.get(id)?.info])), language);
+      return { appId, name: game.name,
+        depots: game.depots.map(({ id, gid }) => ({ depot: id, gid: String(gid) })),
+        shared: shared.map(({ id, app, gid }) => ({ depot: id, app, gid: String(gid) })),
+        ...game.installscript ? { installscript: game.installscript } : {},
+        launch: game.launch };
     },
 
     /**
