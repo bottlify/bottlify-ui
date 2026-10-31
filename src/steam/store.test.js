@@ -26,7 +26,9 @@ const game = (/** @type {string} */ name) => ({
     228986: { config: { oslist: "windows" }, depotfromapp: "228980" } },
 });
 const INFO = new Map([[70, game("Works")], [71, game("Fails")],
-  [72, { common: { type: "tool", name: "A tool" } }]]);
+  [72, { common: { type: "tool", name: "A tool" } }],
+  [228980, { common: { type: "config" },
+    depots: { 228986: { manifests: { public: { gid: "8782296191957114623" } } } } }]]);
 
 /** The download: keeps its argv and stdin, says its progress; app 71's code has expired. */
 const INSTALL = `
@@ -76,9 +78,10 @@ test("an install with the bridge's keys: checked against the plan, handed over o
         return new Map(ids.map((id) => [id, INFO.get(id)]));
       } });
 
-    assert.deepEqual(await store.plan(70), { appId: 70,
+    assert.deepEqual(await store.plan(70), { appId: 70, name: "Works",
       depots: [{ depot: 101, gid: "1111" }, { depot: 102, gid: "2222" }],
-      shared: [{ depot: 228986, app: 228980 }] });
+      shared: [{ depot: 228986, app: 228980, gid: "8782296191957114623" }],
+      launch: { executable: "game.exe", arguments: "" } }, "the redistributables at their owner's manifests");
     await assert.rejects(store.plan(72), { refused: true, message: /not a game/ });
 
     const wrong = { ...request(70), depots: request(70).depots.slice(0, 1) };
@@ -119,7 +122,7 @@ test("an install with the bridge's keys: checked against the plan, handed over o
     assert.equal(failing.state, "failed");
     assert.match(failing.message, /failed: depot 101's manifest was refused/);
     assert.doesNotMatch(messages.join("\n"), new RegExp(`${KEY}|${CODE}|c3c3|12345`));
-    assert.deepEqual(asked, [[70], [72], [71]], "Steam asked once an app in ten minutes");
+    assert.deepEqual(asked, [[70], [228980], [72], [71]], "Steam asked once an app in ten minutes");
   } finally {
     await rm(engine, { recursive: true, force: true });
   }

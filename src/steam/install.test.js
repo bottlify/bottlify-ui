@@ -6,11 +6,13 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { checkInstallRequest, describeApp, installRequest } from "./install.js";
+import { writeDepotAccess } from "@bottlify/core/steam";
+import { checkInstallRequest, depotOpenings, describeApp } from "./install.js";
 
 /** Product info in the shape PICS answers, trimmed to what an install reads. */
 const INFO = {
   common: { type: "Game", name: "A Game" },
+  extended: { installscript: "installscript.vdf" },
   config: { launch: {
     0: { executable: "mac/game.app", config: { oslist: "macos" } },
     1: { executable: "bin/game.exe", arguments: "-windowed", config: { oslist: "windows" } },
@@ -63,29 +65,43 @@ test("the plan is Windows', the language's and every language's depots, not a DL
   assert.deepEqual(described.shared, [{ id: 228986, app: 228980 }], "Windows' redistributables");
   assert.equal(described.build, "4242");
   assert.deepEqual(described.launch, { executable: "bin/game.exe", arguments: "-windowed" });
+  assert.equal(described.installscript, "installscript.vdf");
   assert.deepEqual(describeApp(INFO, "german").depots.map(({ id }) => id), [101, 102, 105]);
   assert.deepEqual(describeApp(null, "english"),
-    { bytes: 0, depots: [], shared: [], build: "", launch: null });
+    { bytes: 0, depots: [], shared: [], build: "", launch: null, installscript: "" });
 });
 
-test("the page asks the bridge for each planned depot's key and code, and the server takes it", async () => {
-  const { ask, asked } = fakeBridge();
-  const request = await installRequest(PLAN, ask);
-  assert.deepEqual(asked.filter(([op]) => op === "depotKey").map(([, args]) => args),
-    PLAN.depots.map(({ depot }) => ({ app: 70, depot })));
-  assert.deepEqual(asked.filter(([op]) => op === "manifestCode").map(([, args]) => args),
-    PLAN.depots.map(({ depot, gid }) => ({ app: 70, depot, gid })));
-  assert.equal(request.appId, 70);
-  assert.deepEqual(request.depots[0], { depot: 101, gid: "1111111111111111111",
-    key: hex(/** @type {Uint8Array} */ (KEYS.get(101))), code: "101111" });
-  // What crosses the network, as the server reads it.
-  const sent = JSON.parse(JSON.stringify(request));
-  assert.deepEqual(checkInstallRequest(sent, PLAN), request.depots);
-});
+/** A request with the bridge's keys and codes, as a page would hand it to the server. */
+async function request(/** @type {ReturnType<typeof fakeBridge>["ask"]} */ ask) {
+  return { appId: 70, depots: writeDepotAccess(await depotOpenings(PLAN, ask)) };
+}
+
+test("the page asks the bridge for each planned depot's key and code, a redistributable's under its owner",
+  async () => {
+    const { ask, asked } = fakeBridge();
+    const plan = { ...PLAN, shared: [{ depot: 228986, app: 228980, gid: "9999" },
+      { depot: 228987, app: 228980 }] };
+    KEYS.set(228986, new Uint8Array(32));
+    const openings = await depotOpenings(plan, ask);
+    assert.deepEqual(asked.filter(([op]) => op === "depotKey").map(([, args]) => args), [
+      ...PLAN.depots.map(({ depot }) => ({ app: 70, depot })), { app: 228980, depot: 228986 }],
+    "one with no manifest named is left out");
+    assert.deepEqual(asked.filter(([op]) => op === "manifestCode").map(([, args]) => args), [
+      ...PLAN.depots.map(({ depot, gid }) => ({ app: 70, depot, gid })),
+      { app: 228980, depot: 228986, gid: "9999" }]);
+    assert.deepEqual(openings[0], { depot: 101, gid: 1111111111111111111n, shared: false,
+      key: KEYS.get(101), code: 101111n });
+    assert.deepEqual(openings.map(({ shared }) => shared), [false, false, false, true]);
+    // What a page would hand the server, as the server reads it.
+    const sent = JSON.parse(JSON.stringify(await request(ask)));
+    assert.deepEqual(sent.depots[0], { depot: 101, gid: "1111111111111111111",
+      key: hex(/** @type {Uint8Array} */ (KEYS.get(101))), code: "101111" });
+    assert.deepEqual(checkInstallRequest(sent, PLAN), sent.depots);
+  });
 
 test("the server refuses a request that is not its plan, and says so without a key or code", async () => {
   const { ask } = fakeBridge();
-  const good = JSON.parse(JSON.stringify(await installRequest(PLAN, ask)));
+  const good = JSON.parse(JSON.stringify(await request(ask)));
   const secrets = new RegExp(good.depots.flatMap((/** @type {any} */ d) => [d.key, d.code]).join("|"));
   const other = { depot: 105, gid: "5555", key: "ab".repeat(32), code: "77" };
   const cases = [
