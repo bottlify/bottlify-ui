@@ -6,7 +6,7 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { viewLibrary, withSteamGames } from "./libraryView.js";
+import { viewLibrary, withStoreGames } from "./libraryView.js";
 
 const bottle = (title, kind, labels, year) => ({ id: title, title, kind, labels, year });
 const library = [
@@ -78,36 +78,45 @@ test("the list asked about is not reordered", () => {
   assert.deepEqual(library.map((one) => one.title), before);
 });
 
-test("a Steam game not installed is Steam's and not checked; the rest are Other", () => {
+test("a store's game not installed is the store's and not checked; the rest are Other", () => {
   const card = { id: "steam:400", title: "Portal", kind: "game", labels: [], status: null,
-    steam: { appId: 400 }, store: {} };
-  const mixed = [...library.slice(0, 2), card];
+    store: { provider: "steam", game: { id: "400" } } };
+  const installed = { ...library[1], title: "Half-Life 2", steam: { appId: 220 } };
+  const mixed = [library[0], installed, card];
   const from = (...filters) => viewLibrary(mixed, { ...all, filters }).map((one) => one.title);
-  assert.deepEqual(from("steam"), ["Portal"]);
-  assert.deepEqual(from("other"), ["3DMark03", "Quake III Arena"]);
-  assert.deepEqual(from("steam", "other"), ["3DMark03", "Portal", "Quake III Arena"]);
-  assert.deepEqual(from("unchecked"), ["3DMark03", "Portal", "Quake III Arena"]);
-  assert.deepEqual(from("steam", "unchecked", "game"), ["Portal"]);
+  assert.deepEqual(from("steam"), ["Half-Life 2", "Portal"], "a card and a bottle of the store's");
+  assert.deepEqual(from("other"), ["Quake III Arena"]);
+  assert.deepEqual(from("steam", "other"), ["Half-Life 2", "Portal", "Quake III Arena"]);
+  assert.deepEqual(from("steam", "unchecked", "game"), ["Half-Life 2", "Portal"]);
   assert.deepEqual(from("steam", "playable"), []);
 });
 
-test("a Steam game shows as a card only while it has a Windows build and no bottle", () => {
-  const launch = { executable: "game.exe", arguments: "" };
-  const game = (appId, name, more = {}) => ({ appId, name, capsule: "", launch, bundle: null, ...more });
-  const installed = { ...bottle("Half-Life", "game", []), steam: { appId: 70 } };
-  const merged = withSteamGames([installed], [
-    game(400, "Portal"),
-    game(500, "Mac only", { launch: null }),
-    game(600, "No option", { launch: undefined }),
-    game(70, "Half-Life"),
-    game(220, "Packed", { bundle: "hl2" }),
-  ]);
-  assert.deepEqual(merged.map((one) => one.id), ["Half-Life", "steam:400"]);
-  assert.deepEqual(merged[1].steam, { appId: 400 });
-  assert.equal(merged[1].store.name, "Portal");
-  // Without Steam, or with an account that does not own it, a Steam bottle is hidden.
-  assert.deepEqual(withSteamGames([installed, bottle("Quake", "game", [])], []).map((one) => one.id),
-    ["Quake"]);
-  assert.deepEqual(withSteamGames([installed], [game(400, "Portal")]).map((one) => one.id),
-    ["steam:400"]);
+/**
+ * A store of the provider's shape, its games by id: a bottle is its game by
+ * the manifest's `shop: { id }`.
+ */
+const shop = {
+  id: "shop", name: "Shop",
+  gameOf: (/** @type {any} */ one) => (one?.shop?.id ? String(one.shop.id) : null),
+  getCover: (/** @type {any} */ game, /** @type {string} */ kind) => `https://art.example/${game.id}/${kind}.jpg`,
+};
+
+test("a store's games show as cards only while installable and not yet a bottle", () => {
+  /** @param {string} id @param {string} name @param {boolean} [installable] */
+  const game = (id, name, installable = true) => ({ id, name, bytes: 0, exact: false, installable });
+  const installed = { ...bottle("Half-Life", "game", []), shop: { id: "70" } };
+  const stores = [{ provider: /** @type {any} */ (shop), games: [game("400", "Portal"),
+    game("500", "Mac only", false), game("70", "Half-Life")] }];
+  const merged = withStoreGames([installed], stores);
+  assert.deepEqual(merged.map((one) => one.id), ["Half-Life", "shop:400"]);
+  assert.deepEqual(merged[1].store, { provider: "shop", game: stores[0].games[0] });
+  assert.equal(merged[1].coverSmall, "https://art.example/400/capsule.jpg");
+  // Signed out, or an account that does not own it: the store's bottle is hidden.
+  const signedOut = [{ provider: /** @type {any} */ (shop), games: [] }];
+  assert.deepEqual(withStoreGames([installed, bottle("Quake", "game", [])], signedOut)
+    .map((one) => one.id), ["Quake"]);
+  assert.deepEqual(withStoreGames([installed], [{ ...stores[0], games: [game("400", "Portal")] }])
+    .map((one) => one.id), ["shop:400"]);
+  assert.deepEqual(withStoreGames([installed], []).map((one) => one.id), ["Half-Life"],
+    "a bottle of a store the launcher does not know is any bottle");
 });

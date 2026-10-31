@@ -9,10 +9,11 @@ import {
   Badge, Box, Button, ButtonBase, Checkbox, Chip, Divider, FormControlLabel, InputAdornment,
   MenuItem, Popover, TextField, Typography,
 } from "@mui/material";
-import { FILTER_GROUPS, FILTERS, SORTS, viewLibrary, withSteamGames } from "../api/libraryView.js";
+import { FILTER_GROUPS, FILTERS, SORTS, viewLibrary, withStoreGames } from "../api/libraryView.js";
 import { loadSettings, saveSettings } from "../settings.js";
 import { GameCard } from "./GameCard.jsx";
-import { SteamInstall } from "./SteamStore.jsx";
+import { StoreInstall } from "./Stores.jsx";
+import { providerOf } from "../stores/providers.js";
 
 const toggled = (held, value) => (held.includes(value)
   ? held.filter((one) => one !== value)
@@ -102,12 +103,12 @@ function FiltersPanel({ anchor, onClose, groups, checked, onToggle, onClear, sor
  * @param {boolean} props.blurred
  * @param {boolean} [props.tagged]  Kind and status are offered as filters; without
  *     them they narrow nothing, whatever was last checked.
- * @param {ReturnType<typeof import("./SteamStore.jsx").useSteam>} [props.steam]  The Steam
- *     account signed in in this browser: its games not installed are cards beside the
- *     bottles, each with its Install.
+ * @param {ReturnType<typeof import("./Stores.jsx").useStores>} [props.stores]  The game
+ *     stores' accounts signed in in this browser: their games not installed are cards
+ *     beside the bottles, each with its Install.
  */
 export function GameGrid({
-  bundles, onSelect, onSettings, onEdit, editable = false, blurred, tagged = false, steam,
+  bundles, onSelect, onSettings, onEdit, editable = false, blurred, tagged = false, stores,
 }) {
   // The search is for now; the filters and the order are kept, so the library
   // opens as it was left. A forgotten search would read as games gone missing.
@@ -116,13 +117,13 @@ export function GameGrid({
   const [sort, setSort] = useState(() => loadSettings().librarySort);
   const [open, setOpen] = useState(/** @type {HTMLElement | null} */ (null));
   const button = useRef(null);
-  const steamGames = steam?.games;
-  const everything = useMemo(() => withSteamGames(bundles, steamGames ?? []), [bundles, steamGames]);
-  // Where it comes from is asked only while something does come from Steam;
+  const known = stores?.stores;
+  const everything = useMemo(() => withStoreGames(bundles, known ?? []), [bundles, known]);
+  // Where it comes from is asked only while something does come from a store;
   // kind and status only where the configuration offers them. A value of a
   // group not offered is kept for when it is, and meanwhile narrows nothing.
-  const fromSteam = Boolean(steam?.account) || bundles.some((one) => one.steam?.appId);
-  const offered = FILTER_GROUPS.filter((group) => (group.key === "source" ? fromSteam : tagged));
+  const fromStores = Boolean(known?.some((one) => one.account)) || bundles.some((one) => providerOf(one));
+  const offered = FILTER_GROUPS.filter((group) => (group.key === "source" ? fromStores : tagged));
   const checked = filters.filter((value) => offered.some((group) =>
     group.options.some((one) => one.value === value)));
   const shown = viewLibrary(everything, { query, filters: checked, sort });
@@ -223,7 +224,9 @@ export function GameGrid({
       {[
         { key: "local", heading: "In this browser", items: shown.filter((one) => one.local) },
         { key: "server", heading: "On the server", items: shown.filter((one) => !one.local && !one.store) },
-        { key: "steam", heading: "On Steam, not installed", items: shown.filter((one) => one.store) },
+        ...(known ?? []).map(({ provider }) => ({ key: provider.id,
+          heading: `On ${provider.name}, not installed`,
+          items: shown.filter((one) => one.store?.provider === provider.id) })),
       ].filter((group) => group.items.length > 0).map((group, _index, groups) => (
         <Box key={group.key} sx={{ mb: 4 }}>
           {groups.length > 1 || group.key !== "server" ? (
@@ -244,9 +247,11 @@ export function GameGrid({
           >
             {group.items.map((bundle) => (bundle.store ? (
               <GameCard key={`${group.key}:${bundle.id}`} bundle={bundle}
-                footer={<SteamInstall game={bundle.store} job={steam?.jobs.get(bundle.store.appId)}
-                  onInstall={() => steam?.install(bundle.store.appId)}
-                  onCancel={() => steam?.cancel(bundle.store.appId)} />} />
+                footer={<StoreInstall game={bundle.store.game}
+                  job={known?.find((one) => one.provider.id === bundle.store.provider)
+                    ?.jobs.get(bundle.store.game.id)}
+                  onInstall={() => stores?.install(bundle.store.provider, bundle.store.game)}
+                  onCancel={() => stores?.cancel(bundle.store.provider, bundle.store.game)} />} />
             ) : (
               <GameCard key={`${group.key}:${bundle.id}`} bundle={bundle}
                 onSelect={() => onSelect(bundle)}

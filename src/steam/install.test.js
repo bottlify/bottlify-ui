@@ -6,8 +6,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { writeDepotAccess } from "@bottlify/core/steam";
-import { checkInstallRequest, depotOpenings, describeApp } from "./install.js";
+import { askPlan, depotOpenings, describeApp, installPlan, storeGame } from "./install.js";
 
 /** Product info in the shape PICS answers, trimmed to what an install reads. */
 const INFO = {
@@ -38,7 +37,6 @@ const PLAN = { appId: 70, depots: [{ depot: 101, gid: "1111111111111111111" },
   { depot: 102, gid: "2222" }, { depot: 104, gid: "4444" }] };
 const KEYS = new Map(PLAN.depots.map(({ depot }) =>
   [depot, Uint8Array.from({ length: 32 }, (_, i) => (depot + i) & 0xFF)]));
-const hex = (/** @type {Uint8Array} */ bytes) => Buffer.from(bytes).toString("hex");
 
 /**
  * The bridge as far as an install asks it: a key per depot, a code per
@@ -71,11 +69,6 @@ test("the plan is Windows', the language's and every language's depots, not a DL
     { bytes: 0, depots: [], shared: [], build: "", launch: null, installscript: "" });
 });
 
-/** A request with the bridge's keys and codes, as a page would hand it to the server. */
-async function request(/** @type {ReturnType<typeof fakeBridge>["ask"]} */ ask) {
-  return { appId: 70, depots: writeDepotAccess(await depotOpenings(PLAN, ask)) };
-}
-
 test("the page asks the bridge for each planned depot's key and code, a redistributable's under its owner",
   async () => {
     const { ask, asked } = fakeBridge();
@@ -92,34 +85,40 @@ test("the page asks the bridge for each planned depot's key and code, a redistri
     assert.deepEqual(openings[0], { depot: 101, gid: 1111111111111111111n, shared: false,
       key: KEYS.get(101), code: 101111n });
     assert.deepEqual(openings.map(({ shared }) => shared), [false, false, false, true]);
-    // What a page would hand the server, as the server reads it.
-    const sent = JSON.parse(JSON.stringify(await request(ask)));
-    assert.deepEqual(sent.depots[0], { depot: 101, gid: "1111111111111111111",
-      key: hex(/** @type {Uint8Array} */ (KEYS.get(101))), code: "101111" });
-    assert.deepEqual(checkInstallRequest(sent, PLAN), sent.depots);
   });
 
-test("the server refuses a request that is not its plan, and says so without a key or code", async () => {
-  const { ask } = fakeBridge();
-  const good = JSON.parse(JSON.stringify(await request(ask)));
-  const secrets = new RegExp(good.depots.flatMap((/** @type {any} */ d) => [d.key, d.code]).join("|"));
-  const other = { depot: 105, gid: "5555", key: "ab".repeat(32), code: "77" };
-  const cases = [
-    [null, /not for app 70/],
-    [{ ...good, appId: 71 }, /not for app 70/],
-    [{ ...good, appId: "70" }, /not for app 70/],
-    [{ appId: 70 }, /depot access/],
-    [{ ...good, depots: good.depots.slice(1) }, /takes depots 101, 102, 104/],
-    [{ ...good, depots: [...good.depots, other] }, /depot 105 is not one/],
-    [{ ...good, depots: [{ ...good.depots[0], gid: "1" }, ...good.depots.slice(1)] }, /changed on Steam/],
-    [{ ...good, depots: [{ ...good.depots[0], key: "00" }, ...good.depots.slice(1)] }, /depot access/],
-    [{ ...good, depots: [good.depots[0], good.depots[0], good.depots[1]] }, /depot access/],
-  ];
-  for (const [body, expected] of cases) {
-    assert.throws(() => checkInstallRequest(body, PLAN), (/** @type {Error} */ e) => {
-      assert.match(e.message, /** @type {RegExp} */ (expected));
-      assert.doesNotMatch(e.message, secrets);
-      return true;
-    });
-  }
+const OWNER = { common: { type: "Config" },
+  depots: { 228986: { manifests: { public: { gid: "8782296191957114623" } } } } };
+
+test("a game as the library shows it: its name, its depots added up, installable by its launch", () => {
+  const game = /** @type {any} */ (storeGame(70, INFO));
+  assert.deepEqual([game.id, game.appId, game.name, game.bytes, game.exact, game.installable],
+    ["70", 70, "A Game", 1060, false, true]);
+  assert.deepEqual(game.launch, { executable: "bin/game.exe", arguments: "-windowed" });
+  assert.equal(/** @type {any} */ (storeGame(71, { ...INFO, config: {} })).installable, false,
+    "no Windows launch option: nothing an install could start");
+  assert.equal(storeGame(228980, OWNER), null, "an app that is not a game is not shown");
+  assert.equal(storeGame(1, undefined), null);
 });
+
+test("an install's plan: the app's depots, the redistributables at their owner's manifest, how it starts",
+  async () => {
+    const expected = { appId: 70, name: "A Game",
+      depots: [{ depot: 101, gid: "1111111111111111111" }, { depot: 102, gid: "2222" },
+        { depot: 104, gid: "4444" }],
+      shared: [{ depot: 228986, app: 228980, gid: "8782296191957114623" }],
+      installscript: "installscript.vdf",
+      launch: { executable: "bin/game.exe", arguments: "-windowed" } };
+    assert.deepEqual(installPlan(70, INFO, new Map([[228980, OWNER]])), expected);
+    /** @type {Array<[string, any]>} */
+    const asked = [];
+    const ask = async (/** @type {string} */ op, /** @type {any} */ args) => {
+      asked.push([op, args]);
+      return Object.fromEntries(args.apps.flatMap((/** @type {number} */ id) =>
+        (id === 70 ? [[70, INFO]] : id === 228980 ? [[228980, OWNER]] : [])));
+    };
+    assert.deepEqual(await askPlan(70, ask), expected);
+    assert.deepEqual(asked, [["productInfo", { apps: [70] }], ["productInfo", { apps: [228980] }]],
+      "the app, then the apps that own its redistributables");
+    await assert.rejects(askPlan(71, ask), /does not describe app 71/);
+  });

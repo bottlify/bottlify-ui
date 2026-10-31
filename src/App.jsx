@@ -23,7 +23,7 @@ import { AddDialog } from "./components/AddDialog.jsx";
 import { AppHeader } from "./components/AppHeader.jsx";
 import { Footer } from "./components/Footer.jsx";
 import { InstallScreen } from "./components/InstallScreen.jsx";
-import { useSteam } from "./components/SteamStore.jsx";
+import { useStores } from "./components/Stores.jsx";
 import { Landing } from "./components/Landing.jsx";
 import { License } from "./components/License.jsx";
 import { BottleSettingsDialog, GameDetails } from "./components/GameDetails.jsx";
@@ -63,7 +63,7 @@ export default function App() {
     /** @type {{ bundle: any, mode: "machine" | "describe" } | null} */ (null));
   const chooser = useRef(null);
   const [adding, setAdding] = useState(false);
-  // Add's choice: a file, or Steam, which is signed in to under Game Accounts.
+  // Add's choice: a file, or a store's game, signed in to under Game Accounts.
   // The file being looked at and read, and the way to stop that.
   const [reading, setReading] = useState(null);
   const readingAbort = useRef(null);
@@ -101,8 +101,8 @@ export default function App() {
   // server's and this browser's alike -- without a reload.
   const [libraryRevision, setLibraryRevision] = useState(0);
   const libraryChanged = useCallback(() => setLibraryRevision((n) => n + 1), []);
-  // The Steam account signed in in this browser: its games are in the library.
-  const steam = useSteam(libraryChanged);
+  // The game stores' accounts signed in in this browser: their games are in the library.
+  const stores = useStores(libraryChanged);
   useEffect(() => {
     let cancelled = false;
     getAvailableBundles()
@@ -363,7 +363,7 @@ export default function App() {
             onEdit={(bundle) => setEditingBundle({ bundle, mode: "describe" })}
             editable={editable}
             tagged={config?.libraryTags === true}
-            steam={steam}
+            stores={stores}
           />
         )}
 
@@ -400,7 +400,7 @@ export default function App() {
           start={typeof settings === "string" ? settings : null}
           onClose={() => setSettings(false)}
           facts={[{ label: "Library", value: `${bundles.length} title${bundles.length === 1 ? "" : "s"}` }]}
-          steam={steam}
+          stores={stores}
         />
 
         <Footer />

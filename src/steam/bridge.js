@@ -46,21 +46,20 @@ export function ask(op, args = {}, { onEvent, signal } = {}) {
   });
 }
 
-/** @type {Promise<{ version: string } | null> | null} */
-let steamOn = null;
+/** @type {Promise<{ version: string, platforms: Record<string, boolean> } | null> | null} */
+let greeted = null;
 
 /**
- * The bridge, when it is here and the site has Steam switched on in it; null
- * otherwise, and the launcher's server talks to Steam instead. The extension
- * marks the root element before any of this page's scripts runs, so a page
- * without it does not wait for an answer.
+ * Whether the bridge is here and the site has a platform switched on in it;
+ * false otherwise, and there is no such platform in this browser. The
+ * extension marks the root element before any of this page's scripts runs, so
+ * a page without it does not wait for an answer.
  *
- * @returns {Promise<{ version: string } | null>}
+ * @param {string} platform  `steam`, as the bridge names its ops `steam.…`.
+ * @returns {Promise<boolean>}
  */
-export function steamBridge() {
-  if (document.documentElement.dataset.bottlifyBridge === undefined) return Promise.resolve(null);
-  steamOn ??= ask("hello")
-    .then((hello) => (hello?.platforms?.steam ? { version: hello.version } : null))
-    .catch(() => null);
-  return steamOn;
+export function platformOn(platform) {
+  if (document.documentElement.dataset.bottlifyBridge === undefined) return Promise.resolve(false);
+  greeted ??= ask("hello").catch(() => null);
+  return greeted.then((hello) => Boolean(hello?.platforms?.[platform]));
 }

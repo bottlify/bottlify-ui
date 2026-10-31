@@ -44,18 +44,19 @@ async function page({ marked = true, answer }) {
 }
 
 test("no mark on the page: no bridge, and nothing is asked", async () => {
-  const { steamBridge, posted } = await page({ marked: false, answer: () => assert.fail() });
-  assert.equal(await steamBridge(), null);
+  const { platformOn, posted } = await page({ marked: false, answer: () => assert.fail() });
+  assert.equal(await platformOn("steam"), false);
   assert.deepEqual(posted, []);
 });
 
-test("the bridge counts only while the site has Steam on in it", async () => {
+test("a platform counts only while the site has it on in the bridge", async () => {
   for (const steam of [true, false]) {
-    const { steamBridge } = await page({ answer: (request, reply) => {
+    const { platformOn } = await page({ answer: (request, reply) => {
       assert.equal(request.op, "hello");
       reply({ result: { version: "0.1.0", platforms: { steam } } });
     } });
-    assert.deepEqual(await steamBridge(), steam ? { version: "0.1.0" } : null);
+    assert.equal(await platformOn("steam"), steam);
+    assert.equal(await platformOn("gog"), false, "one it does not name is off");
   }
 });
 

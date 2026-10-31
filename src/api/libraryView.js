@@ -5,6 +5,7 @@
  */
 
 import { LABELS, STATUSES } from "./bundles.js";
+import { PROVIDERS, providerOf } from "../stores/providers.js";
 
 /**
  * What the library can be narrowed by, in groups: where a bottle comes from,
@@ -19,9 +20,10 @@ export const FILTER_GROUPS = [
   {
     key: "source",
     title: "Source",
-    options: [{ value: "steam", label: "Steam" }, { value: "other", label: "Other" }],
-    // A Steam game counts as Steam's whether installed or still only a card.
-    of: (bundle) => [bundle.steam?.appId ? "steam" : "other"],
+    options: [...PROVIDERS.map(({ id, name }) => ({ value: id, label: name })),
+      { value: "other", label: "Other" }],
+    // A store's game counts as the store's whether installed or still only a card.
+    of: (bundle) => [bundle.store?.provider ?? providerOf(bundle)?.id ?? "other"],
   },
   {
     key: "kind",
@@ -41,27 +43,38 @@ export const FILTER_GROUPS = [
 export const FILTERS = FILTER_GROUPS.flatMap((group) => group.options);
 
 /**
- * The library with the Steam account's games beside the bottles: a game not
- * installed is a card standing for its bottle until it is one; an installed
- * one is its bottle already. A game with no Windows launch option is left
- * out -- nothing here could ever start it, so a card for it is a promise
- * Install cannot keep.
+ * The library with every store's games beside the bottles: a game not
+ * installed is a card standing for its bottle until it is one (`store`: its
+ * provider and the game); an installed one is its bottle already. A game with
+ * no build an install here can start is left out -- a card for it is a
+ * promise Install cannot keep.
  *
  * @param {import("./bundles.js").BundleManifest[]} bundles
- * @param {import("../../steam-store.mjs").StoreGame[]} games
+ * @param {{ provider: import("../stores/providers.js").StoreProvider,
+ *     games: import("../stores/providers.js").StoreGame[] }[]} stores
  * @returns {any[]}
  */
-export function withSteamGames(bundles, games) {
-  // A bottle of a Steam game shows only while the account signed in owns it:
-  // without Steam it could not start, and another account's is not this one's.
-  const owned = new Set(games.map((game) => game.appId));
+export function withStoreGames(bundles, stores) {
+  const providers = stores.map((one) => one.provider);
+  /** @type {Map<string, Set<string>>} Each store's games the account owns. */
+  const owned = new Map(stores.map(({ provider, games }) =>
+    [provider.id, new Set(games.map((game) => game.id))]));
+  /** @param {any} bottle */
+  const ownedBottle = (bottle) => {
+    const provider = providerOf(bottle, providers);
+    return !provider || Boolean(owned.get(provider.id)?.has(/** @type {string} */ (provider.gameOf(bottle))));
+  };
+  // A store's bottle shows only while the account signed in owns it: without
+  // the store it could not start, and another account's is not this one's.
   return [
-    ...bundles.filter((one) => !one.steam?.appId || owned.has(one.steam.appId)),
-    ...games.filter((game) => game.launch && !game.bundle
-      && !bundles.some((one) => one.steam?.appId === game.appId)).map((game) => ({
-      id: `steam:${game.appId}`, title: game.name, version: "", labels: [], status: null,
-      kind: "game", coverSmall: game.capsule, steam: { appId: game.appId }, store: game,
-    })),
+    ...bundles.filter(ownedBottle),
+    ...stores.flatMap(({ provider, games }) => games.filter((game) => game.installable
+      && !bundles.some((one) => provider.gameOf(one) === game.id)).map((game) => ({
+      id: `${provider.id}:${game.id}`, title: game.name, version: "", labels: [], status: null,
+      kind: "game", coverSmall: provider.getCover(game, "capsule"),
+      coverFallback: provider.getCover(game, "header"),
+      store: { provider: provider.id, game },
+    }))),
   ];
 }
 

@@ -38,7 +38,7 @@ import { shownToThePerson } from "./boxes.js";
 import { keepEnding, reportParts } from "./journal.js";
 import { endRun, noteRun } from "./blackbox.js";
 import { isTouchScreen } from "./touch.js";
-import { steamAccount, steamRunData } from "../steam/client.js";
+import { providerOf } from "../stores/providers.js";
 import { phoneScreen, viewOf } from "../screen.js";
 import {
   CHANGED, GPU_JOURNAL, SHADER_CHOICES, bottleConfigFor, driverRulesFor, loadSettings,
@@ -773,12 +773,11 @@ async function run({ bundle, media, canvas, report: show, silentInstall = false,
   const patch = prefix ? null : await patchFor(bundle.id);
   const imagePath = prefix ? prefix.imagePath : started.imagePath;
 
-  // The Steam account signed in in this browser, for a bottle that is a Steam
-  // app; null when nobody is, and the program finds no Steam running.
-  const signedInSteam = bundle?.steam?.appId ? await steamAccount().catch(() => null) : null;
-  // And, through the bridge, the app's ownership ticket and Valve's client
-  // files its DRM checks the client against.
-  const steamRun = signedInSteam ? await steamRunData(bundle.steam.appId) : {};
+  // A store's game starts with what its store says a run needs: Steam's, the
+  // client running for the account signed in in this browser, the app's
+  // ownership ticket and Valve's client files its DRM checks the client against.
+  const storeRun = await providerOf(bundle)?.runData(/** @type {any} */ (bundle))
+    .catch(() => ({})) ?? {};
   /** @type {Record<string, any>} */
   const options = {
     // Where the engine runs: a worker of its own unless asked otherwise.
@@ -869,9 +868,7 @@ async function run({ bundle, media, canvas, report: show, silentInstall = false,
     // the page, and the bundle as the room -- two tabs playing the same title
     // are on one LAN, and a host outside it is reached only if the server was
     // started allowing it. Without it the program has no network.
-    // A Steam app is started with Steam running for the account signed in in
-    // this browser, the app's ownership answered from that account's licences.
-    ...(signedInSteam ? { win32: { steam: { ...signedInSteam, ...steamRun, appId: bundle?.steam?.appId } } } : {}),
+    ...storeRun,
     ...(networking ? { network: {
       module: new URL("/networking/client/index.js", window.location.href).href,
       url: `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host}/networking/relay`,
