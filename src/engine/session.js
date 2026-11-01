@@ -795,6 +795,9 @@ async function run({ bundle, media, canvas, report: show, silentInstall = false,
       // The deployment's own settings (`config.json`'s `graphics`), under
       // what the address asks for.
       ...graphicsConfig,
+      // `?vram=2048`: the megabytes of video memory the card reports, over
+      // what the bottle's graphics choice gives it.
+      ...(Number(query.get("vram")) > 0 ? { videoMemory: Number(query.get("vram")) } : {}),
       ...(query.get("guestCode") === "off" ? { guestCode: false } : {}),
       ...(query.get("guestTraps") ? { guestTraps: (query.get("guestTraps") ?? "").split(",") } : {}),
       // `?lendMemory=off`: what a Direct3D 8 or 9 program unlocks is copied
