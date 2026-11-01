@@ -14,3 +14,6 @@ dist/
 
 # What the server keeps of Steam: games' sizes and art, nothing of an account.
 /.steam/
+
+# GameHub's builds (npm run build:gamehub).
+/gamehub/dist/

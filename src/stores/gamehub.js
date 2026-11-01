@@ -6,9 +6,9 @@
 
 /**
  * GameHub, when this browser has it: the Bottlify extension
- * (`modules/gamehub` in the engine repository) that keeps the game stores'
+ * (`gamehub/` in this repository) that keeps the game stores'
  * accounts and speaks their protocols, the sessions kept in itself, out of the
- * page's reach. The page asks with store-neutral ops (`src/protocol.js` there),
+ * page's reach. The page asks with store-neutral ops (`gamehub/src/protocol.js`),
  * the store an argument, over `window.postMessage`: `hello` of the extension's
  * content script, on this page's origin; every other op of the store's
  * session frame, the extension's own page (`<origin>/<store>/session.html`)

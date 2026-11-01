@@ -16,7 +16,10 @@
     "build": "vite build",
     "preview": "vite preview",
     "lint": "eslint . --max-warnings 0",
-    "test": "node --test \"src/**/*.test.js\""
+    "test": "node --test \"src/**/*.test.js\" \"gamehub/src/**/*.test.js\" \"gamehub/scripts/**/*.test.js\" \"gamehub/tools/**/*.test.js\"",
+    "build:gamehub": "node gamehub/scripts/build.mjs",
+    "test:gamehub-integration": "node --test --test-timeout=300000 \"gamehub/src/**/*.itest.js\"",
+    "typecheck": "tsc -p gamehub/jsconfig.json"
   },
   "dependencies": {
     "@bottlify/core": "^1.1.0",
@@ -30,9 +33,12 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@types/node": "^22.20.5",
     "@vitejs/plugin-react": "^6.1.1",
+    "esbuild": "^0.28.2",
     "eslint": "^10.11.0",
     "eslint-plugin-react-hooks": "^7.1.1",
+    "typescript": "^5.7.2",
     "vite": "^8.2.2"
   }
 }

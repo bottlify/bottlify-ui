@@ -74,4 +74,21 @@ export default [
       "spaced-comment": ["error", "always"],
     },
   },
+  {
+    // GameHub came from the engine's repository and keeps the engine's
+    // layout: four-space indent, single quotes, no space before a block.
+    files: ["gamehub/**/*.{js,mjs}"],
+    rules: {
+      indent: ["error", 4, { SwitchCase: 1 }],
+      quotes: ["error", "single", { avoidEscape: true, allowTemplateLiterals: true }],
+      "comma-dangle": "off",
+      "react-hooks/rules-of-hooks": "off",
+      "react-hooks/exhaustive-deps": "off",
+      "space-before-function-paren": ["error", "never"],
+      "space-before-blocks": ["error", { functions: "never", keywords: "never", classes: "always" }],
+      "arrow-parens": ["error", "as-needed"],
+      "no-multi-spaces": ["error", { ignoreEOLComments: true }],
+      "max-len": ["error", 100, 8, { ignoreUrls: true, ignorePattern: "/.+/" }],
+    },
+  },
 ];
