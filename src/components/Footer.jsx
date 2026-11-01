@@ -39,6 +39,11 @@ export function Footer() {
             underline="hover" sx={{ color: "text.primary" }}>
             Bottlify Project
           </Link>
+          {" · "}
+          <Link href="https://github.com/bottlify/bottlify-ui" target="_blank" rel="noopener"
+            underline="hover" sx={{ color: "text.primary" }}>
+            Launcher source
+          </Link>
         </Typography>
       </Stack>
     </Box>
