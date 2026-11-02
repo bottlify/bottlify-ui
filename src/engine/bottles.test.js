@@ -6,7 +6,8 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { removeBottle, saveLocalManifest } from "./bottles.js";
+import { removeBottle, saveLocalManifest, withoutStoreClaim } from "./bottles.js";
+import { storeOf } from "../stores/providers.js";
 
 /** A directory of the origin's file system, in memory: what the bottle store calls. */
 function memoryDirectory() {
@@ -71,4 +72,18 @@ test("a bottle kept in this browser is renamed in its own manifest, the rest of 
   assert.deepEqual(JSON.parse(folder.entries.get("manifest.json")), expected, "and written back");
   await assert.rejects(saveLocalManifest("painkiller-demo", { title: "x" }, root),
     "a bottle that is not here is an error");
+});
+
+test("a bottle imported from a file is no store's game, whatever its description says", () => {
+  // Only a bottle GameHub installed here is given the account's run data: a
+  // file that said it was Steam's app of an id the account owns would hand
+  // the account's Steam ID, its apps and that app's ticket to its program.
+  for (const described of [
+    { title: "Game", entry: "game.exe", store: { id: "steam", game: "70" } },
+    { title: "Game", entry: "game.exe", steam: { appId: 70 } },
+  ]) {
+    const kept = withoutStoreClaim(described);
+    assert.equal(storeOf(kept), null);
+    assert.deepEqual(kept, { title: "Game", entry: "game.exe" }, "the rest of it kept");
+  }
 });

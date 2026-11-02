@@ -103,6 +103,22 @@ export async function bottleFile(id, name) {
 }
 
 /**
+ * A description a .btl carries, without what would make it a store's game: a
+ * store's game is one GameHub installed in this browser, and only that one is
+ * given the account's run data -- its Steam ID, its apps, an app's ownership
+ * ticket -- which the program it starts can read. A file from anywhere that
+ * said it was Steam's app of an id the account owns would otherwise have them.
+ * Both forms go: `store: { id, game }`, and the older `<store>: { appId }`.
+ *
+ * @param {Record<string, unknown>} described
+ * @returns {Record<string, unknown>}
+ */
+export function withoutStoreClaim(described) {
+  return Object.fromEntries(Object.entries(described).filter(([key, value]) => key !== "store"
+    && !(value !== null && typeof value === "object" && "appId" in value)));
+}
+
+/**
  * A .btl a person chose, kept here as a bottle: copied whole into its
  * directory, with the program it starts unpacked beside it. One exported from
  * a launcher carries its own description -- title, program, where it was
@@ -118,7 +134,7 @@ export async function bottleFile(id, name) {
 export async function importBottle(file, progress) {
   await navigator.storage.persist?.().catch(() => false);
   const bundle = await readBundle(blobRanges(file));
-  const described = bundle.manifest ?? {};
+  const described = withoutStoreClaim(bundle.manifest ?? {});
   const named = typeof described.entry === "string"
     ? bundle.files.find((one) => one.path.toLowerCase() === String(described.entry).toLowerCase())
     : null;
