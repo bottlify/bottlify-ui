@@ -77,7 +77,7 @@ function portPair(name, sender){
  * A browser of one extension: its worker's runtime, its tabs, and the tabs of
  * a store's site, each running the store's side when it is one the worker opened.
  */
-function browser({ idleMs = 300 } = {}){
+function browser({ idleMs = 300, windowsWithoutTabs = false } = {}){
     const steam = fakeSteam();
     const disk = { session: /** @type {any} */ (
         { accountName: 'someone', refreshToken: TOKEN, id: 'a' }) };
@@ -166,18 +166,22 @@ function browser({ idleMs = 300 } = {}){
                 }
             },
             onRemoved: { addListener: (/** @type {Function} */ f)=>removed.push(f) },
+            // A window's tab, by the window's id, which is its tab's id plus 1000 here.
+            query: async(/** @type {{ windowId: number }} */ { windowId })=>
+                (tabs.has(windowId - 1000) ? [{ id: windowId - 1000 }] : []),
         },
         windows: {
             create: async(/** @type {{ url: string }} */ { url })=>{
                 const id = ++nextTab;
                 tabs.set(id, { url, active: true, window: true });
                 setTimeout(()=>load(id, url), 0);
-                return { tabs: [{ id }] };
+                // Safari's answer leaves the tabs out.
+                return windowsWithoutTabs ? { id: id + 1000 } : { id: id + 1000, tabs: [{ id }] };
             },
             update: async()=>{},
         },
     };
-    const relay = startRelay({ chrome, idleMs, closeSignInMs: 0,
+    const relay = startRelay({ chrome, idleMs, closeSignInMs: 0, lostMs: 50,
         sites: { steam: SITE }, fetchable: /^https:\/\/api\.steampowered\.com\//,
         vaultOf: ()=>({ get: async()=>disk.session, set: async session=>{
             disk.session = session;
@@ -313,6 +317,35 @@ test('a sign-in window closed first is said; a tab not asked for a while is clos
         'and opened again');
     one.done();
 });
+
+test('a window answered without its tabs is one window, and its sign-in is told it went',
+    async()=>{
+        const one = browser({ windowsWithoutTabs: true });
+        one.disk.session = null;
+        const { ask } = one.page();
+        const signing = ask('signIn', { store: 'steam' });
+        for (let i = 0; i < 20; i++)
+        {
+            await tick();
+        }
+        const opened = [...one.tabs];
+        assert.equal(opened.length, 1, 'no second tab beside the window');
+        const [[id, shown]] = opened;
+        // The sign-in page said its nonce, then lost its port: the window closed
+        // without the browser saying the tab went, or the page left Steam's.
+        const port = one.connect('gamehub-tab', { id: 'gamehub', tab: { id }, url: shown.url });
+        port.postMessage({ hello: { nonce: new URL(shown.url).searchParams.get('bottlify-gamehub'),
+            store: 'steam', mode: 'signin' } });
+        for (let i = 0; i < 20; i++)
+        {
+            await tick();
+        }
+        port.disconnect();
+        const ended = await signing;
+        assert.match(ended.error, /sign-in window was closed or left Steam's page/);
+        assert.equal(one.tabs.has(id), false, 'and closed');
+        one.done();
+    });
 
 test('nobody signed in: answered without a tab of the site', async()=>{
     const one = browser();

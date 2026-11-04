@@ -38,6 +38,8 @@ const STORES = {
 
 /** Messages that keep the worker from being stopped while this tab waits on Steam or a person. */
 const PING_MS = 20_000;
+/** How long the worker is given to answer what this tab asks: a stall is said, not waited on. */
+const CALL_MS = 30_000;
 
 /**
  * @param {Object} options
@@ -108,7 +110,17 @@ export function runTab({ chrome, nonce, store, mode, onPort, make }){
     /** @param {Record<string, any>} body */
     const call = body=>new Promise((resolve, reject)=>{
         const id = ++next;
-        calls.set(id, { body, resolve, reject });
+        const timer = setTimeout(()=>{
+            calls.delete(id);
+            reject(new Error('GameHub did not answer its tab'));
+        }, CALL_MS);
+        calls.set(id, { body, resolve: (/** @type {any} */ value)=>{
+            clearTimeout(timer);
+            resolve(value);
+        }, reject: (/** @type {Error} */ e)=>{
+            clearTimeout(timer);
+            reject(e);
+        } });
         port?.postMessage({ ...body, call: id });
     });
 
@@ -149,14 +161,31 @@ export function runTab({ chrome, nonce, store, mode, onPort, make }){
     /**
      * The store's sign-in page over the site: its markup and styles in a
      * closed shadow root, styled by constructed sheets, which the site's
-     * content security policy does not govern.
+     * content security policy does not govern. The site under it is held
+     * still: it neither scrolls nor takes a touch while the sign-in is shown.
      *
      * @returns {Promise<ShadowRoot>}
      */
     function overlay(){
         const host = document.createElement('div');
         host.style.cssText = 'position:fixed;inset:0;z-index:2147483647;display:flex;'
-            + 'align-items:center;justify-content:center;background:rgba(0,0,0,.6)';
+            + 'align-items:center;justify-content:center;background:rgba(0,0,0,.6);'
+            + 'overflow:auto;overscroll-behavior:contain;touch-action:pan-y';
+        // A sheet of its own, not the elements' styles: the site's scripts rewrite those.
+        const still = new CSSStyleSheet();
+        still.replaceSync('html, body { overflow: hidden !important; '
+            + 'overscroll-behavior: none !important; }');
+        document.adoptedStyleSheets = [...document.adoptedStyleSheets, still];
+        // Wheel and touch over the overlay stay in it, the page under it unmoved.
+        for (const kind of ['wheel', 'touchmove'])
+        {
+            host.addEventListener(kind, event=>{
+                if (event.target === host)
+                {
+                    event.preventDefault();
+                }
+            }, { passive: false });
+        }
         const root = host.attachShadow({ mode: 'closed' });
         const sheet = document.createElement('div');
         sheet.className = 'sheet';

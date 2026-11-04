@@ -37,6 +37,14 @@ const NOTED = 'gamehub-tabs';
 const LOAD_MS = 30_000;
 /** How long the database is given to answer: a stall is said, not waited on. */
 const VAULT_MS = 15_000;
+/** How long a site's configuration is waited on before every store is taken as on. */
+const CONFIG_MS = 5_000;
+/**
+ * How long a sign-in's tab that lost its port is given to say its nonce
+ * again: a worker the browser restarted is back at once, a window closed or
+ * a page left (the nonce goes with its address) never is.
+ */
+const LOST_MS = 3_000;
 
 /** @param {Promise<any>} promise @param {number} ms @param {string} what */
 const within = (promise, ms, what)=>{
@@ -66,9 +74,10 @@ const within = (promise, ms, what)=>{
  *     [options.vaultOf]
  * @param {number} [options.idleMs]
  * @param {number} [options.closeSignInMs]  How long a sign-in's window shows it is done.
+ * @param {number} [options.lostMs]  How long a sign-in's tab that lost its port is waited on.
  */
 export function startRelay({ chrome, sites, fetchable, vaultOf = vaultFor, idleMs = 60_000,
-    closeSignInMs = 1500 })
+    closeSignInMs = 1500, lostMs = LOST_MS })
 {
     const area = chrome.storage.session ?? chrome.storage.local;
     /** By `<store>/<mode>`. @type {Map<string, Tab>} */
@@ -131,23 +140,30 @@ export function startRelay({ chrome, sites, fetchable, vaultOf = vaultFor, idleM
         tab.idle = setTimeout(()=>!pending(key) && close(key), idleMs);
     }
 
-    /** A window of its own for a sign-in, a person looking at it; a tab where there are none. */
+    /**
+     * A window of its own for a sign-in, a person looking at it; a tab where
+     * there are no windows (a phone). A window made is never followed by a
+     * tab: Safari answers a made window without its tabs, which are asked for.
+     */
     async function shown(/** @type {string} */ url){
+        /** @type {any} */
+        let made;
         try
         {
-            const made = await chrome.windows.create({ url, type: 'popup', focused: true,
+            made = await chrome.windows.create({ url, type: 'popup', focused: true,
                 width: 520, height: 760 });
-            const id = made?.tabs?.[0]?.id;
-            if (Number.isInteger(id))
-            {
-                return id;
-            }
         }
         catch
         {
-            // No windows here (a phone): a tab, made active, does it.
+            return (await chrome.tabs.create({ url, active: true })).id;
         }
-        return (await chrome.tabs.create({ url, active: true })).id;
+        const id = made?.tabs?.[0]?.id
+            ?? (await chrome.tabs.query({ windowId: made?.id }).catch(()=>[]))[0]?.id;
+        if (!Number.isInteger(id))
+        {
+            throw new Error('the sign-in window opened with no tab in it');
+        }
+        return id;
     }
 
     /**
@@ -267,8 +283,9 @@ export function startRelay({ chrome, sites, fetchable, vaultOf = vaultFor, idleM
     function page(port){
         const { sender } = port;
         const origin = sender?.origin ?? (sender?.url ? new URL(sender.url).origin : '');
-        port.enabled = configOf(origin).then(config=>switchRulesets(chrome, wantedBy(config)))
-            .catch(()=>[]);
+        // A site that does not answer leaves its stores on, as one with no configuration.
+        port.enabled = within(configOf(origin), CONFIG_MS, 'no configuration').catch(()=>({}))
+            .then(config=>switchRulesets(chrome, wantedBy(config))).catch(()=>[]);
         port.onMessage.addListener((/** @type {any} */ message)=>fromPage(port, message));
         port.onDisconnect.addListener(()=>{
             for (const [relayed, one] of asked)
@@ -383,11 +400,57 @@ export function startRelay({ chrome, sites, fetchable, vaultOf = vaultFor, idleM
             }
         });
         port.onDisconnect.addListener(()=>{
-            if (known && known.tab.port === port)
+            if (!known || known.tab.port !== port)
             {
-                known.tab.port = null;
+                return;
+            }
+            const { key, tab } = known;
+            tab.port = null;
+            if (key.endsWith('/signin'))
+            {
+                setTimeout(()=>{
+                    if (tabs.get(key) === tab && !tab.port)
+                    {
+                        gone(key, 'the sign-in window was closed or left Steam\'s page');
+                        chrome.tabs.remove(tab.tabId).catch(()=>{});
+                    }
+                }, lostMs);
             }
         });
+    }
+
+    /**
+     * A tab GameHub drove is gone: what waited on it is told, a sign-in too.
+     *
+     * @param {string} key @param {string} [why]  What a waiting sign-in is told.
+     */
+    function gone(key, why = 'the sign-in window was closed'){
+        const one = tabs.get(key);
+        if (!one)
+        {
+            return;
+        }
+        tabs.delete(key);
+        clearTimeout(one.idle);
+        note();
+        for (const ready of one.waiting.splice(0))
+        {
+            ready(null);
+        }
+        const [store, mode] = key.split('/');
+        if (mode === 'signin')
+        {
+            endSignIns(store, ({ port, id })=>port.postMessage({ id, error: why }));
+        }
+        for (const [relayed, waiting] of asked)
+        {
+            if (waiting.key === key)
+            {
+                asked.delete(relayed);
+                waiting.port.postMessage({ id: waiting.id,
+                    error: `${store}'s tab was closed before it answered` });
+            }
+        }
     }
 
     chrome.runtime.onConnect.addListener((/** @type {any} */ port)=>{
@@ -406,32 +469,11 @@ export function startRelay({ chrome, sites, fetchable, vaultOf = vaultFor, idleM
     });
 
     chrome.tabs.onRemoved.addListener((/** @type {number} */ tabId)=>{
-        for (const [key, one] of tabs)
+        for (const [key, one] of [...tabs])
         {
-            if (one.tabId !== tabId)
+            if (one.tabId === tabId)
             {
-                continue;
-            }
-            tabs.delete(key);
-            note();
-            for (const ready of one.waiting.splice(0))
-            {
-                ready(null);
-            }
-            const [store, mode] = key.split('/');
-            if (mode === 'signin')
-            {
-                endSignIns(store, ({ port, id })=>port.postMessage({ id,
-                    error: 'the sign-in window was closed' }));
-            }
-            for (const [relayed, waiting] of asked)
-            {
-                if (waiting.key === key)
-                {
-                    asked.delete(relayed);
-                    waiting.port.postMessage({ id: waiting.id,
-                        error: `${store}'s tab was closed before it answered` });
-                }
+                gone(key);
             }
         }
     });

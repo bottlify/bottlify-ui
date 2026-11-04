@@ -10,7 +10,7 @@ import {
 } from "@mui/material";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { NEEDS_GAMEHUB, knownProviders, loadProviders } from "../stores/providers.js";
-import { signedInName } from "../stores/gamehub.js";
+import { gamehub as greetGameHub, signedInName } from "../stores/gamehub.js";
 
 /** @typedef {import("../stores/providers.js").StoreProvider} StoreProvider */
 /** @typedef {import("../stores/providers.js").StoreGame} StoreGame */
@@ -197,6 +197,15 @@ export function StoreSignIn({ provider, onSignedIn, onClose }) {
   // Read when the window's sign-in ends: one window per dialog, whatever renders between.
   const signedIn = useRef(onSignedIn);
   signedIn.current = onSignedIn;
+  /** What GameHub said of itself, for a sign-in it cannot give here. */
+  const [said, setSaid] = useState("");
+  useEffect(() => {
+    if (page !== null) return;
+    greetGameHub().then((hello) => setSaid(hello
+      ? `GameHub ${hello.version} at ${hello.origin ?? "no origin"}, its stores run ${
+        hello.transport === "tab" ? "in a tab" : "in a frame"}`
+      : "GameHub is not on this page: the extension is off here, or not allowed on this site"));
+  }, [page]);
   useEffect(() => {
     let gone = false;
     provider.auth.signInWindow().then((opened) => {
@@ -232,7 +241,8 @@ export function StoreSignIn({ provider, onSignedIn, onClose }) {
         {page === undefined && inWindow === null
           && <Box sx={{ display: "flex", justifyContent: "center", py: 4 }}><CircularProgress /></Box>}
         {page === null && <Alert severity="warning" sx={{ m: 2 }}>
-          This version of the Bottlify GameHub extension cannot sign in here; update it.</Alert>}
+          This version of the Bottlify GameHub extension cannot sign in here; update it.
+          {said && <Typography variant="caption" component="p">{said}</Typography>}</Alert>}
         {page && <iframe src={page} title={`Sign in to ${provider.name}`}
           style={{ display: "block", width: "100%", height: 480, border: 0 }} />}
         <Typography variant="caption" color="text.secondary" component="p" sx={{ px: 2, py: 1 }}>

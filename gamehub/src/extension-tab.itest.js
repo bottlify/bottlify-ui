@@ -177,6 +177,10 @@ test('the Safari build runs Steam in a tab of its site, and the page downloads',
                     + '.filter(e => e.shadowRoot).length' },
             there)).result.value;
             assert.equal(reach, 0, 'no shadow root the site can open');
+            const held = (await browser.send('Runtime.evaluate', { returnByValue: true,
+                expression: '[getComputedStyle(document.documentElement).overflow,'
+                    + ' getComputedStyle(document.body).overflow]' }, there)).result.value;
+            assert.deepEqual(held, ['hidden', 'hidden'], 'the site under it does not scroll');
             await browser.send('Target.closeTarget', { targetId: shown.targetId });
             const ended = await page('signing');
             assert.match(ended.error, /sign-in window was closed/);
