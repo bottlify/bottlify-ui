@@ -238,6 +238,21 @@ export function soundWanted() {
  *
  * @returns {any}
  */
+/**
+ * What a bottle's store says a run of it needs (Steam's client running for the
+ * account, the ownership ticket, the client's files), or nothing for a bottle
+ * of no store. Asked before the press on a phone (PlayScreen): there GameHub
+ * reaches the store through a tab of its site, which takes the page out of
+ * the foreground, and a phone stops a page's sound while it is away.
+ *
+ * @param {any} bundle
+ * @returns {Promise<Record<string, any>>}
+ */
+export async function storeRunFor(bundle) {
+  return bundle ? await providerOf(bundle, await loadProviders())
+    ?.runData(/** @type {any} */ (bundle)).catch(() => ({})) ?? {} : {};
+}
+
 export function openRunSpeaker() {
   if (!soundWanted() || !engineLoaded?.openSpeaker) return null;
   return engineLoaded.openSpeaker({ worklet: WORKLET_URL });
@@ -469,6 +484,8 @@ function requestedLog(settings) {
  *     dialogs: for installs with no screen. The launcher has one, and leaves it off.
  * @param {any} [options.speaker]  The speaker `openRunSpeaker` opened inside the gesture
  *     that started the run; the run owns it from here and closes it.
+ * @param {Promise<Record<string, any>>} [options.storeRun]  What the bottle's store says
+ *     a run needs, asked before the press (`storeRunFor`); asked by the run otherwise.
  * @returns {Promise<SessionControls>}
  */
 export async function launch(options) {
@@ -524,7 +541,8 @@ function openBox(bundle) {
  * @param {Parameters<typeof launch>[0]} options
  * @param {ReturnType<typeof openBox>} box
  */
-async function run({ bundle, media, canvas, report: show, silentInstall = false, speaker = null }, box) {
+async function run({ bundle, media, canvas, report: show, silentInstall = false, speaker = null,
+  storeRun: prefetched = null }, box) {
   /** @param {SessionReport} patch */
   const report = (patch) => {
     if (patch.stage || patch.detail) {
@@ -779,8 +797,7 @@ async function run({ bundle, media, canvas, report: show, silentInstall = false,
   // A store's game starts with what its store says a run needs: Steam's, the
   // client running for the account signed in in this browser, the app's
   // ownership ticket and Valve's client files its DRM checks the client against.
-  const storeRun = bundle ? await providerOf(bundle, await loadProviders())
-    ?.runData(/** @type {any} */ (bundle)).catch(() => ({})) ?? {} : {};
+  const storeRun = prefetched ? await prefetched : await storeRunFor(bundle);
   /** @type {Record<string, any>} */
   const options = {
     // Where the engine runs: a worker of its own unless asked otherwise.
