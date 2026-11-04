@@ -708,6 +708,16 @@ async function run({ bundle, media, canvas, report: show, silentInstall = false,
     report({ off: "No video decoder: switched off in settings." });
   }
 
+  // A store's game starts with what its store says a run needs: Steam's, the
+  // client running for the account signed in in this browser, the app's
+  // ownership ticket and Valve's client files its DRM checks the client against.
+  // Asked before the sound is made ready: on a phone GameHub reaches the store
+  // through a tab of its site, which takes this page to the background, and the
+  // phone stops a page's sound while it is away -- the speaker's worklet is
+  // loaded and started once the page is back.
+  const storeRun = bundle ? await providerOf(bundle, await loadProviders())
+    ?.runData(/** @type {any} */ (bundle)).catch(() => ({})) ?? {} : {};
+
   // The speaker the gesture opened; one opened here, past every await, runs
   // only where the browser lets a page that was clicked once start sound
   // whenever it likes -- which is what `ready` says.
@@ -776,11 +786,6 @@ async function run({ bundle, media, canvas, report: show, silentInstall = false,
   const patch = prefix ? null : await patchFor(bundle.id);
   const imagePath = prefix ? prefix.imagePath : started.imagePath;
 
-  // A store's game starts with what its store says a run needs: Steam's, the
-  // client running for the account signed in in this browser, the app's
-  // ownership ticket and Valve's client files its DRM checks the client against.
-  const storeRun = bundle ? await providerOf(bundle, await loadProviders())
-    ?.runData(/** @type {any} */ (bundle)).catch(() => ({})) ?? {} : {};
   /** @type {Record<string, any>} */
   const options = {
     // Where the engine runs: a worker of its own unless asked otherwise.
