@@ -9,9 +9,7 @@ import {
   IconButton, LinearProgress, Snackbar, Stack, Tooltip, Typography,
 } from "@mui/material";
 import { useCallback, useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState } from "react";
-import {
-  engineNow, launch, loadEngine, openRunSpeaker, soundWanted, storeRunFor,
-} from "../engine/session.js";
+import { engineNow, launch, loadEngine, openRunSpeaker, soundWanted } from "../engine/session.js";
 import { describeCutOff, takeCutOffRun } from "../engine/blackbox.js";
 import { drawIcon, keptHead, servedHead, showGame } from "../engine/bookmark.js";
 import { loadSettings, saveSettings, touchLayoutFor } from "../settings.js";
@@ -118,11 +116,8 @@ export function PlayScreen({ bundle, media, title, onClose, onExited }) {
   // its browser wants the press itself for sound, as a phone's does, which the
   // run finds out and then waits for the press too. A browser that cannot say
   // is taken at its word that sound may start.
-  // A touch screen waits for the press however the game was reached: a phone
-  // stops a page's sound while another tab is in front, and the store's tab
-  // GameHub opens there for the run's data (`storeRun`) comes and goes first.
   const [pressed, setPressed] = useState(
-    () => !touch && (/** @type {any} */ (navigator).userActivation?.hasBeenActive ?? true));
+    () => /** @type {any} */ (navigator).userActivation?.hasBeenActive ?? true);
   // The speaker, opened inside the press that starts a run (`openRunSpeaker`)
   // and handed to that run, which owns it from then on.
   const speakerRef = useRef(/** @type {any} */ (null));
@@ -216,20 +211,10 @@ export function PlayScreen({ bundle, media, title, onClose, onExited }) {
   // list, and restarting for the second object started a second engine beside
   // the first while the first was still going down.
   const bundleId = bundle?.id ?? null;
-  // What the bottle's store says a run needs, asked as the screen opens on a
-  // touch screen, before the press: the store's tab has come and gone by the
-  // time the press opens the sound, and the run asks the store nothing.
-  const storeRun = useRef(/** @type {Promise<Record<string, any>> | null} */ (null));
-  useEffect(() => {
-    storeRun.current = touch && bundle ? storeRunFor(bundle) : null;
-    // Keyed by the bottle's id, as the run is.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bundleId, touch]);
   const startRun = useEffectEvent(() => {
     const speaker = speakerRef.current;
     speakerRef.current = null;
-    return launch({ bundle, media, canvas: canvasRef.current, report, speaker,
-      ...storeRun.current ? { storeRun: storeRun.current } : {} });
+    return launch({ bundle, media, canvas: canvasRef.current, report, speaker });
   });
 
   useEffect(() => {
