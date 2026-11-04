@@ -40,6 +40,7 @@ export const EResult = Object.freeze({
     Busy: 10,
     AccessDenied: 15,
     ServiceUnavailable: 20,
+    Revoked: 26,
     Expired: 27,
     TryAnotherCM: 48,
     InvalidLoginAuthCode: 65,

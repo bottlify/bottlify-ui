@@ -34,7 +34,7 @@ import {
  * The account as the frame tells it without its token: `id` is new with each
  * sign-in, so a logon made with another session is told from the one kept.
  *
- * @typedef {{ accountName: string, id?: string }} Account
+ * @typedef {{ accountName: string, id?: string, expires?: number }} Account
  */
 /** @typedef {import('../../hub.js').Store} Store */
 
@@ -124,10 +124,35 @@ export function steamStore({ vault, socket, fetch: get = fetch,
                 const { steamId } = await steam.logOnAnonymously(link);
                 return { connection: link, steamId, session: null, licenses: [] };
             }
-            const { steamId, licenses } = await steam.logOn(link,
-                { accountName: kept.accountName, refreshToken: kept.refreshToken });
-            return { connection: link, steamId, licenses,
-                session: { accountName: kept.accountName, id: kept.id } };
+            const expires = session.tokenExpiry(kept.refreshToken);
+            /** @type {{ steamId: bigint, licenses: Array<Record<string, any>> } | null} */
+            let answer = null;
+            if (expires === null || expires > Date.now())
+            {
+                try
+                {
+                    answer = await steam.logOn(link,
+                        { accountName: kept.accountName, refreshToken: kept.refreshToken });
+                }
+                catch (e){
+                    // A connection that failed keeps the session; a session Steam
+                    // says is gone is forgotten, so the page asks for a sign-in
+                    // rather than failing every op on it.
+                    if (!session.DEAD_SESSION.has(/** @type {any} */ (e)?.eresult))
+                    {
+                        throw e;
+                    }
+                }
+            }
+            if (!answer)
+            {
+                await vault.signOut();
+                link.close();
+                return logOn(true);
+            }
+            return { connection: link, steamId: answer.steamId, licenses: answer.licenses,
+                session: { accountName: kept.accountName, id: kept.id,
+                    ...expires ? { expires } : {} } };
         }
         catch (e){
             link.close();
@@ -202,6 +227,7 @@ export function steamStore({ vault, socket, fetch: get = fetch,
             library = { at: Date.now(), apps: await steam.ownedApps(now.connection, now.licenses) };
         }
         return { steamId: String(now.steamId), accountName: now.session.accountName,
+            ...now.session.expires ? { expires: now.session.expires } : {},
             apps: library.apps, licenses: now.licenses.length };
     }
 
@@ -248,7 +274,8 @@ export function steamStore({ vault, socket, fetch: get = fetch,
             // Nobody signed in is an answer, not a failure, and needs no logon to give.
             account: async({ fresh })=>{
                 const now = await account(fresh);
-                return now ? { name: now.accountName } : null;
+                return now ? { name: now.accountName,
+                    ...now.expires ? { expires: new Date(now.expires).toISOString() } : {} } : null;
             },
 
             signOut: async()=>{
@@ -322,7 +349,10 @@ export function steamStore({ vault, socket, fetch: get = fetch,
                     steam.appOwnershipTicket((await loggedOn()).connection, appId).catch(()=>null),
                     steam.fetchClientFiles({ fetch: get }).catch(()=>null),
                 ]);
-                return { win32: { steam: { ...now, appId,
+                // When the session ends is the page's to know, not the program's.
+                const signedIn = { ...now };
+                delete signedIn.expires;
+                return { win32: { steam: { ...signedIn, appId,
                     ...ticket ? { ownershipTickets: { [appId]: ticket } } : {},
                     ...files ? { clientFiles: files.files } : {} } } };
             },

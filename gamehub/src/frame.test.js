@@ -162,6 +162,55 @@ test('a sign-in elsewhere: the next op logs on with the new session', async()=>{
     frame.close();
 });
 
+/** A refresh token issued to the fixture's account that says when it ends. @param {number} exp */
+const tokenUntil = exp=>`eyJhbGciOiJFZERTQSJ9.${btoa(JSON.stringify({ sub: String(STEAM_ID), exp }))
+    .replace(/=+$/, '')}.${SECRET}`;
+
+test('a session Steam says is gone is forgotten; one it cannot take now is kept', async()=>{
+    const cases = [[5, true], [15, true], [26, true], [27, true], [20, false], [84, false]];
+    for (const [eresult, gone] of cases)
+    {
+        const steam = fakeSteam();
+        steam.logOn = async()=>{
+            throw Object.assign(new Error(`steam: the logon was refused (EResult ${eresult})`),
+                { eresult });
+        };
+        const { disk, ask, frame } = rig(steam);
+        const answer = await ask('account', { store: 'steam' });
+        if (gone)
+        {
+            assert.equal(answer.result, null, `EResult ${eresult}: signed out`);
+            assert.equal(disk.session, null, `EResult ${eresult}: the session forgotten`);
+        }
+        else
+        {
+            assert.match(answer.error, new RegExp(`EResult ${eresult}`));
+            assert.ok(disk.session, `EResult ${eresult}: the session kept`);
+        }
+        frame.close();
+    }
+});
+
+test('a session ends when its token says: told to the page, not logged on with after', async()=>{
+    const ends = Math.floor(Date.now() / 1000) + 86_400;
+    const live = fakeSteam();
+    const one = rig(live);
+    one.disk.session = { accountName: 'someone', refreshToken: tokenUntil(ends), id: 'a' };
+    assert.deepEqual((await one.ask('account', { store: 'steam' })).result,
+        { name: 'someone', expires: new Date(ends * 1000).toISOString() });
+    const run = (await one.ask('runData', { store: 'steam', game: '400' })).result.win32.steam;
+    assert.equal(run.expires, undefined, 'the engine is not handed it');
+    one.frame.close();
+    const dead = fakeSteam();
+    const two = rig(dead);
+    two.disk.session = { accountName: 'someone', id: 'a',
+        refreshToken: tokenUntil(ends - 2 * 86_400) };
+    assert.equal((await two.ask('account', { store: 'steam' })).result, null);
+    assert.equal(two.disk.session, null);
+    assert.equal(dead.asked.filter(asked=>asked.startsWith('logOn')).length, 0, 'Steam not asked');
+    two.frame.close();
+});
+
 test('what the frame refuses, and a store switched off', async()=>{
     const { ask, frame } = rig();
     assert.match((await ask('signIn', { store: 'steam' })).error, /no op signIn/);

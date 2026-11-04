@@ -25,7 +25,9 @@
  *   extension's, where a store's sign-in page is: `<origin>/<store>/signin.html`,
  *   which the page shows in a frame, and which posts the page
  *   `{ from: 'bottlify-signin', store, signedIn: { name } }` once signed in.
- * - `account { store, fresh? }` -> `{ name }`, or null for nobody signed in;
+ * - `account { store, fresh? }` -> `{ name, expires? }`, or null for nobody signed in;
+ *   `expires` when the session ends (ISO 8601, as its token says), and a
+ *   session Steam refuses as gone is forgotten and answered null;
  *   `fresh` logs on again and reads the account's licences anew.
  * - `signOut { store }` -> `{}`.
  * - `list { store, fresh? }` -> `[{ id, name, bytes, exact, installable, covers }]`,

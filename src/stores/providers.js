@@ -45,7 +45,7 @@ export const NEEDS_GAMEHUB = "Game stores need the Bottlify GameHub extension in
  * @property {() => Promise<boolean>} available  Whether it can be used in this browser now.
  * @property {string} unavailable  What the page says while it cannot.
  * @property {{
- *   account: () => Promise<{ name: string } | null>,
+ *   account: (options?: { fresh?: boolean }) => Promise<{ name: string, expires?: string } | null>,
  *   signInPage: () => Promise<string | null>,
  *   signOut: () => Promise<void>,
  * }} auth  The account: a sign-in is GameHub's page for the store, shown in a frame.
@@ -101,7 +101,7 @@ export function storeProvider({ id, name }) {
     available: async () => Boolean((await gamehub())?.stores.some((one) => one.id === id && one.on)),
     unavailable: NEEDS_GAMEHUB,
     auth: {
-      account: () => ask("account", { store: id }),
+      account: ({ fresh = false } = {}) => ask("account", { store: id, ...fresh ? { fresh } : {} }),
       signInPage: () => signInPage(id),
       signOut: async () => {
         await ask("signOut", { store: id });

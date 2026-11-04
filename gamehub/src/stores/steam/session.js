@@ -26,22 +26,54 @@ import { parseBinary, parseText } from '@bottlify/core/steam/keyvalues';
 /** @typedef {import('./connection.js').CmConnection} CmConnection */
 /** @typedef {import('@bottlify/core/steam/keyvalues').KeyValues} KeyValues */
 
-/**
- * The Steam ID a refresh token was issued to: the subject of the JWT.
- *
- * @param {string} token
- * @returns {bigint}
- */
-export function steamIdOfToken(token){
+/** A refresh token's claims: it is a JWT. @param {string} token @returns {Record<string, any>} */
+function claimsOf(token){
     const part = token.split('.')[1];
     if (!part)
     {
         throw new Error('steam: the refresh token is not a JWT');
     }
     const base64 = part.replace(/-/g, '+').replace(/_/g, '/');
-    const json = new TextDecoder().decode(Uint8Array.from(atob(base64), c=>c.charCodeAt(0)));
-    return BigInt(JSON.parse(json).sub);
+    return JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(base64), c=>c.charCodeAt(0))));
 }
+
+/**
+ * The Steam ID a refresh token was issued to: the subject of the JWT.
+ *
+ * @param {string} token
+ * @returns {bigint}
+ */
+export const steamIdOfToken = token=>BigInt(claimsOf(token).sub);
+
+/**
+ * When a refresh token stops being one, in milliseconds since the epoch: its
+ * `exp`, which Steam sets at the sign-in. Null for a token that says none or
+ * cannot be read.
+ *
+ * @param {string} token
+ * @returns {number | null}
+ */
+export function tokenExpiry(token){
+    try
+    {
+        const exp = Number(claimsOf(token).exp);
+        return exp > 0 ? exp * 1000 : null;
+    }
+    catch
+    {
+        return null;
+    }
+}
+
+/**
+ * The answers to a logon that say its session is gone - revoked, expired or
+ * not one Steam issued - rather than that Steam could not take it now.
+ */
+export const DEAD_SESSION = Object.freeze(new Set([EResult.InvalidPassword,
+    EResult.AccessDenied, EResult.Revoked, EResult.Expired]));
+
+/** A refused logon, its EResult kept. @param {string} message @param {number} eresult */
+const refused = (message, eresult)=>Object.assign(new Error(message), { eresult });
 
 /** What every logon says of this client. */
 const CLIENT = {
@@ -78,12 +110,12 @@ async function logOnAs(connection, steamId, fields){
     connection.send(EMsg.ClientLogon, ClientLogon, { ...CLIENT, ...fields });
     const answer = await Promise.race([response, loggedOff.then(message=>{
         const { eresult } = decode(ClientLoggedOff, message.body);
-        throw new Error(`steam: logged off during the logon (EResult ${eresult})`);
+        throw refused(`steam: logged off during the logon (EResult ${eresult})`, eresult);
     })]);
     const body = decode(ClientLogonResponse, answer.body);
     if (body.eresult !== EResult.OK)
     {
-        throw new Error(`steam: the logon was refused (EResult ${body.eresult})`);
+        throw refused(`steam: the logon was refused (EResult ${body.eresult})`, body.eresult);
     }
     connection.setSession(answer.header.steamid, answer.header.client_sessionid);
     connection.startHeartbeat(body.heartbeat_seconds ?? 9);

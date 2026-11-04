@@ -114,14 +114,16 @@ export function useStores(onInstalled, load = loadProviders) {
     update(provider.id, () => ({ syncing: true }));
     try {
       const available = await provider.available().catch(() => false);
-      const account = available ? await provider.auth.account().catch(() => null) : null;
+      // A Sync logs on anew here, so a session Steam no longer takes is found and
+      // forgotten by GameHub before the list is asked of it.
+      const account = available ? await provider.auth.account(options).catch(() => null) : null;
       update(provider.id, () => ({ available, account: account?.name ?? null,
         ...account ? {} : { games: [] } }));
       if (!account) {
         keep(provider, null);
         return;
       }
-      const games = await provider.getList(options);
+      const games = await provider.getList();
       update(provider.id, () => ({ games, error: "" }));
       keep(provider, { account: account.name ?? null, games });
     } catch (e) {
