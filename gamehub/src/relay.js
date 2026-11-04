@@ -20,7 +20,8 @@
  * content script (`gamehub-page`) asks, the store's tab (`gamehub-tab`)
  * answers. A tab is the driven one only if it says the nonce its address was
  * opened with; any other is closed, as a link to the site carrying a made-up
- * one would be. A tab not asked anything for a while is closed. A sign-in is
+ * one would be. A tab is closed once it has answered everything it was asked
+ * (a few seconds later, so that a sync's ops in a row share it). A sign-in is
  * a tab of its own, shown in a window, which ends once the session is kept.
  */
 
@@ -80,12 +81,12 @@ const within = (promise, ms, what)=>{
  *     store's directory and client files, which the site's CORS would refuse it.
  * @param {(store: string) => { get(): Promise<any>, set(session: any): Promise<void> }}
  *     [options.vaultOf]
- * @param {number} [options.idleMs]
+ * @param {number} [options.idleMs]  How long a tab with nothing left to answer is kept.
  * @param {number} [options.closeSignInMs]  How long a sign-in's window shows it is done.
  * @param {number} [options.lostMs]  How long a sign-in's tab that lost its port is waited on.
  */
 export function startRelay({ chrome, sites, fetchable,
-    vaultOf = store=>areaVaultFor(store, chrome.storage.local), idleMs = 60_000,
+    vaultOf = store=>areaVaultFor(store, chrome.storage.local), idleMs = 3_000,
     closeSignInMs = 1500, lostMs = LOST_MS })
 {
     const area = chrome.storage.session ?? chrome.storage.local;

@@ -136,6 +136,16 @@ test('the Safari build runs Steam in a tab of its site, and the page downloads',
             assert.equal(read.chunk, true);
         });
 
+        await t.test('the tab closes once its ops are answered', async()=>{
+            let open = true;
+            for (let tries = 0; tries < 50 && open; tries++)
+            {
+                await pause(200);
+                open = (await steamTabs()).length > 0;
+            }
+            assert.equal(open, false, 'no steamcommunity.com tab left behind');
+        });
+
         await t.test('a steamcommunity.com tab carrying a made-up nonce is closed', async()=>{
             await browser.send('Target.createTarget',
                 { url: 'https://steamcommunity.com/?bottlify-gamehub=made-up&store=steam&mode=session' });
@@ -146,7 +156,7 @@ test('the Safari build runs Steam in a tab of its site, and the page downloads',
                 left = (await steamTabs()).some((/** @type {any} */ one)=>one.url.includes('made-up'));
             }
             assert.equal(left, false);
-            assert.equal((await steamTabs()).length, 1, 'the driven tab stays');
+            assert.ok((await steamTabs()).every((/** @type {any} */ one)=>!one.url.includes('made-up')));
         });
 
         await t.test('a sign-in shows Steam\'s QR over its site, out of its reach', async()=>{
