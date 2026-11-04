@@ -34,20 +34,35 @@ let lastId = 0;
  * @param {string} origin
  * @param {string} op
  * @param {Record<string, unknown>} args
+ * @param {{ onEvent?: (event: string, data: any) => void, ms?: number }} [how]
+ *     What the op tells before its answer, and how long it is waited on.
  * @returns {Promise<any>}
  */
-function askOf(target, origin, op, args) {
+function askOf(target, origin, op, args, { onEvent, ms } = {}) {
   return new Promise((resolve, reject) => {
     const id = ++lastId;
+    /** @type {ReturnType<typeof setTimeout> | undefined} */
+    let timer;
     const heard = (/** @type {MessageEvent} */ event) => {
       const data = event.data;
       if (event.origin !== origin || event.source !== target || data?.from !== PEER
-        || data.id !== id || data.event) return;
+        || data.id !== id) return;
+      if (data.event) {
+        onEvent?.(data.event, data.data);
+        return;
+      }
       removeEventListener("message", heard);
+      clearTimeout(timer);
       if ("error" in data) reject(new Error(data.error));
       else resolve(data.result);
     };
     addEventListener("message", heard);
+    if (ms) {
+      timer = setTimeout(() => {
+        removeEventListener("message", heard);
+        reject(new Error(`GameHub did not answer ${op} in ${ms / 1000} s`));
+      }, ms);
+    }
     target.postMessage({ to: PEER, id, op, args }, origin);
   });
 }
@@ -121,16 +136,57 @@ export async function ask(op, args = {}) {
 /** @type {Promise<Hello | null> | null} */
 let greeted = null;
 
+/** How long a page waits for GameHub's mark on its root element once its document is read. */
+const MARK_MS = 1000;
+
+/**
+ * The extension's mark on the root element, or none: Chrome sets it before
+ * any of this page's scripts runs, Safari at times only after the first of
+ * them has (a library reloaded asked before it and showed Steam's art as
+ * though there were no GameHub). Waited for while the document is read, and
+ * a moment after; a page without GameHub learns so in that time.
+ *
+ * @returns {Promise<boolean>}
+ */
+function marked() {
+  const root = document.documentElement;
+  if (root.dataset.bottlifyGamehub !== undefined) return Promise.resolve(true);
+  return new Promise((resolve) => {
+    const watch = new MutationObserver(() => {
+      if (root.dataset.bottlifyGamehub === undefined) return;
+      watch.disconnect();
+      resolve(true);
+    });
+    watch.observe(root, { attributes: true, attributeFilter: ["data-bottlify-gamehub"] });
+    const give = () => setTimeout(() => {
+      watch.disconnect();
+      resolve(root.dataset.bottlifyGamehub !== undefined);
+    }, MARK_MS);
+    if (document.readyState === "loading") {
+      addEventListener("DOMContentLoaded", give, { once: true });
+    } else give();
+  });
+}
+
+/** Whether this page has waited for the mark and none came: asked again only if one does. */
+let unmarked = false;
+
 /**
  * GameHub, when this browser has it: its version and the stores it has, each
  * said on or off for this site; null without it. The extension marks the root
- * element before any of this page's scripts runs, so a page without it does
- * not wait for an answer.
+ * element, so a page without it waits for no answer, only a moment for the
+ * mark (`marked`).
  *
  * @returns {Promise<Hello | null>}
  */
 export function gamehub() {
-  if (document.documentElement.dataset.bottlifyGamehub === undefined) return Promise.resolve(null);
+  if (document.documentElement.dataset.bottlifyGamehub === undefined) {
+    if (unmarked) return Promise.resolve(null);
+    return marked().then((there) => {
+      unmarked = !there;
+      return there ? gamehub() : null;
+    });
+  }
   greeted ??= ask("hello").then((hello) => (Array.isArray(hello?.stores) ? hello : null))
     .catch(() => null);
   return greeted;
@@ -191,9 +247,20 @@ export function signedInName(event, page, store) {
  */
 export async function storeFetch(url) {
   if ((await gamehub())?.transport !== "tab") return fetch(url);
-  const { status, body } = await ask("fetch", { url });
-  return new Response(status === 204 || status === 304 ? null : body, { status });
+  /** @type {Uint8Array[]} */
+  const parts = [];
+  const answer = await askOf(window, location.origin, "fetch", { url }, {
+    onEvent: (event, data) => event === "part" && parts.push(data.body), ms: FETCH_MS });
+  if (answer.parts !== undefined && parts.length !== answer.parts) {
+    throw new Error(`GameHub handed ${parts.length} of ${answer.parts} parts of ${url}`);
+  }
+  const body = answer.parts === undefined ? answer.body : new Blob(parts);
+  return new Response(answer.status === 204 || answer.status === 304 ? null : body,
+    { status: answer.status });
 }
+
+/** How long a fetch through GameHub is waited on: a stall is said, not waited on. */
+const FETCH_MS = 180_000;
 
 /** Art read through GameHub, as the page's own URLs, by its address. @type {Map<string, Promise<string>>} */
 const arts = new Map();

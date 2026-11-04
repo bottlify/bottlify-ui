@@ -24,7 +24,11 @@ import { gamehub, storeFetch } from "../stores/gamehub.js";
 export async function withClientFiles(data) {
   const steam = data?.win32?.steam;
   if (!steam || steam.clientFiles || (await gamehub())?.transport !== "tab") return data;
-  const read = await fetchClientFiles({ fetch: cachedClientFetch(storeFetch) }).catch(() => null);
+  const read = await fetchClientFiles({ fetch: cachedClientFetch(storeFetch) }).catch((e) => {
+    // The run goes on without them: a DRM wrapper that checks them says so itself.
+    console.warn("Steam's client files were not read:", e);
+    return null;
+  });
   return read ? { ...data, win32: { ...data.win32, steam: { ...steam, clientFiles: read.files } } }
     : data;
 }

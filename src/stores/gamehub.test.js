@@ -43,6 +43,8 @@ async function page({ marked = true, answer, frameAnswer = () => {} }) {
     },
   };
   const document = {
+    // Read, and no mark comes later: a page without GameHub learns so in a moment.
+    readyState: "complete",
     documentElement: { dataset: marked ? { bottlifyGamehub: "0.1.0" } : {} },
     createElement: () => {
       const frameWindow = {
@@ -61,6 +63,7 @@ async function page({ marked = true, answer, frameAnswer = () => {} }) {
       dispatch({ from: PEER, ready: true }, EXTENSION, frame.contentWindow)) },
   };
   Object.assign(globalThis, {
+    MutationObserver: class { observe() {} disconnect() {} },
     window: win,
     location: { origin: ORIGIN },
     document,

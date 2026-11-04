@@ -126,10 +126,9 @@ test('the Safari build runs Steam in a tab of its site, and the page downloads',
             const read = await page(`(async () => {
                 const { manifest, downloadChunk } = await import('/core/steam/depot.js');
                 const asked = [];
-                const get = async url => {
+                const get = url => {
                     asked.push(url);
-                    const { status, body } = await ask('fetch', { url });
-                    return new Response(body, { status });
+                    return hubFetch(url);
                 };
                 const answer = await ask('download', { store: 'steam', game: '${APP}' });
                 const [server] = answer.servers;
@@ -155,6 +154,41 @@ test('the Safari build runs Steam in a tab of its site, and the page downloads',
             assert.ok(art.bytes > 1000);
             const refused = await page('outcome(ask("fetch", { url: "https://example.com/" }))');
             assert.match(refused.error, /is not fetched by GameHub/);
+        });
+
+        await t.test('a body of tens of megabytes comes in parts (the client package)', async()=>{
+            // What a Steam game's run reads in Safari; one message of it is
+            // delivered there to nobody.
+            const read = await page(`(async () => {
+                const CDN = 'https://client-update.akamai.steamstatic.com';
+                const listed = new TextDecoder().decode((await ask('fetch',
+                    { url: CDN + '/steam_client_win32' })).body);
+                const file = /"bins_win32"\\s*\\{\\s*"file"\\s*"([^"]+)"/.exec(listed)[1];
+                const sha = /"bins_win32"[\\s\\S]*?"sha2"\\s*"([0-9a-f]+)"/.exec(listed)[1];
+                const parts = [];
+                const answer = await new Promise((resolve, reject) => {
+                    const id = 9001;
+                    addEventListener('message', function heard(e) {
+                        if (e.data?.from !== 'bottlify-gamehub' || e.data.id !== id) return;
+                        if (e.data.event === 'part') { parts.push(e.data.data.body); return; }
+                        removeEventListener('message', heard);
+                        if ('error' in e.data) reject(new Error(e.data.error));
+                        else resolve(e.data.result);
+                    });
+                    postMessage({ to: 'bottlify-gamehub', id, op: 'fetch',
+                        args: { url: CDN + '/' + file } }, location.origin);
+                });
+                const bytes = new Uint8Array(await new Blob(parts).arrayBuffer());
+                const digest = [...new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))]
+                    .map(b => b.toString(16).padStart(2, '0')).join('');
+                return { status: answer.status, parts: parts.length, said: answer.parts,
+                    size: answer.size, length: bytes.length, same: digest === sha };
+            })()`);
+            assert.equal(read.status, 200);
+            assert.ok(read.parts > 10, `${read.parts} parts`);
+            assert.equal(read.parts, read.said);
+            assert.equal(read.length, read.size);
+            assert.equal(read.same, true, 'the package the manifest names, whole');
         });
 
         await t.test('the tab closes once its ops are answered', async()=>{

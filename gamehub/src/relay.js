@@ -38,6 +38,13 @@ export const TAB_PORT = 'gamehub-tab';
 const NOTED = 'gamehub-tabs';
 /** How long a tab is given to load the store's site and say its nonce. */
 const LOAD_MS = 30_000;
+/**
+ * The most of a fetched body one message carries: a larger one goes as parts
+ * of this size, then its status. Safari delivers a port's message of tens of
+ * megabytes to nobody, and says nothing (a Steam client package, 20 MB); a
+ * content server's chunk, a megabyte or so, it delivers.
+ */
+const PART_BYTES = 1 << 20;
 /** How long a store's tab is given to answer an op: a stall is said, not waited on. */
 const ANSWER_MS = 120_000;
 /** How long the database is given to answer: a stall is said, not waited on. */
@@ -243,7 +250,8 @@ export function startRelay({ chrome, sites, fetchable, readable = /^$/,
         }
         if (message.op === 'fetch')
         {
-            fetched(readable, String(message.args?.url ?? '')).then(
+            fetched(readable, String(message.args?.url ?? ''),
+                part=>port.postMessage({ id, event: 'part', data: { body: toWire(part) } })).then(
                 result=>port.postMessage({ id, result }),
                 e=>port.postMessage({ id, error: String(e?.message ?? e) }));
             return;
@@ -393,11 +401,14 @@ export function startRelay({ chrome, sites, fetchable, readable = /^$/,
 
     /**
      * An address fetched with the extension's reach, if it is one of those
-     * allowed: its status and its bytes, as a port carries them.
+     * allowed: its status and its bytes, as a port carries them -- or, given
+     * where to send them, a body past PART_BYTES as parts in order, and its
+     * status with how many there were.
      *
      * @param {RegExp} allowed @param {string} address
+     * @param {(part: Uint8Array) => void} [inParts]
      */
-    async function fetched(allowed, address){
+    async function fetched(allowed, address, inParts){
         const url = new URL(address);
         if (url.protocol !== 'https:' || !allowed.test(url.href))
         {
@@ -405,7 +416,16 @@ export function startRelay({ chrome, sites, fetchable, readable = /^$/,
         }
         const answer = await fetch(url.href, { credentials: 'omit' });
         const bytes = new Uint8Array(await answer.arrayBuffer());
-        return { status: answer.status, body: toWire(bytes) };
+        if (!inParts || bytes.length <= PART_BYTES)
+        {
+            return { status: answer.status, body: toWire(bytes) };
+        }
+        let parts = 0;
+        for (let at = 0; at < bytes.length; at += PART_BYTES, parts++)
+        {
+            inParts(bytes.subarray(at, at + PART_BYTES));
+        }
+        return { status: answer.status, parts, size: bytes.length };
     }
 
     /** @param {any} port */

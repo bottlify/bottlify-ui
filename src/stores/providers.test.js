@@ -96,10 +96,13 @@ async function page({ gamehub = true } = {}) {
   const win = { postMessage: (/** @type {any} */ data) => answer(data, ORIGIN, win) };
   Object.defineProperty(globalThis, "navigator", { value: { hardwareConcurrency: 4 }, configurable: true });
   Object.assign(globalThis, {
+    MutationObserver: class { observe() {} disconnect() {} },
     Worker: FakeWorker,
     location: { origin: ORIGIN },
     window: win,
     document: {
+      // Read, and no mark comes later: a page without GameHub learns so in a moment.
+      readyState: "complete",
       documentElement: { dataset: gamehub ? { bottlifyGamehub: "0.2.0" } : {} },
       createElement: () => {
         const frameWindow = { postMessage: (/** @type {any} */ data) => answer(data, EXTENSION, frameWindow) };

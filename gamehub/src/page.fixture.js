@@ -53,4 +53,25 @@ window.ask = async (op, args) => {
     const { target, origin } = await frameOf(args.store);
     return askOf(target, origin, op, args);
 };
+// GameHub's fetch as the launcher reads it (storeFetch): a body past a
+// mebibyte in its parts, then the status, as a Response.
+window.hubFetch = url => new Promise((resolve, reject) => {
+    const id = ++n;
+    const parts = [];
+    const heard = e => {
+        if (e.origin !== location.origin || e.data?.from !== 'bottlify-gamehub'
+            || e.data.id !== id) return;
+        if (e.data.event === 'part') { parts.push(e.data.data.body); return; }
+        removeEventListener('message', heard);
+        if ('error' in e.data) { reject(new Error(e.data.error)); return; }
+        const { status, body, parts: said } = e.data.result;
+        if (said !== undefined && said !== parts.length) {
+            reject(new Error(parts.length + ' of ' + said + ' parts'));
+            return;
+        }
+        resolve(new Response(said === undefined ? body : new Blob(parts), { status }));
+    };
+    addEventListener('message', heard);
+    postMessage({ to: 'bottlify-gamehub', id, op: 'fetch', args: { url } }, location.origin);
+});
 `;

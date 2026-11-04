@@ -44,7 +44,9 @@
  * - `fetch { url }` -> `{ status, body }`, where the stores run in a tab
  *   (`hello`'s `transport: 'tab'`, Safari): a store's content server or art
  *   fetched by GameHub's worker, which the browser lets read them where the
- *   page may not; answered by the worker, no tab opened for it.
+ *   page may not; answered by the worker, no tab opened for it. A body past a
+ *   mebibyte comes as `part` events, `{ body }` each in order, and the answer
+ *   is then `{ status, parts, size }`.
  *
  * Neither the session's token nor a password crosses to the page: a sign-in
  * is the store's sign-in page's, a logon its session frame's.
