@@ -179,3 +179,44 @@ export function signedInName(event, page, store) {
   return event.origin === origin && data?.from === "bottlify-signin"
     && data.store === store && typeof data.signedIn?.name === "string" ? data.signedIn.name : null;
 }
+
+/**
+ * A store's content server or art as this page may read it: through GameHub
+ * where it runs the stores in a tab (Safari lets the extension read them, and
+ * applies no ruleset's response headers to an isolated page), the page's own
+ * fetch elsewhere, where GameHub's rules open them to it.
+ *
+ * @param {string} url
+ * @returns {Promise<Response>}
+ */
+export async function storeFetch(url) {
+  if ((await gamehub())?.transport !== "tab") return fetch(url);
+  const { status, body } = await ask("fetch", { url });
+  return new Response(status === 204 || status === 304 ? null : body, { status });
+}
+
+/** Art read through GameHub, as the page's own URLs, by its address. @type {Map<string, Promise<string>>} */
+const arts = new Map();
+
+/**
+ * Where this page shows a picture from a store: its own address, or where
+ * GameHub runs the stores in a tab, a URL of this page's for the bytes GameHub
+ * read -- an isolated page in Safari may show no other. A picture GameHub
+ * cannot read is its address, which shows as the browser shows it.
+ *
+ * @param {string} url
+ * @returns {Promise<string>}
+ */
+export async function artUrl(url) {
+  if (!/^https:\/\//.test(url ?? "") || (await gamehub())?.transport !== "tab") return url;
+  let made = arts.get(url);
+  if (!made) {
+    made = storeFetch(url).then(async (answer) => {
+      if (!answer.ok) throw new Error(`${url} answered ${answer.status}`);
+      return URL.createObjectURL(await answer.blob());
+    });
+    made.catch(() => arts.delete(url));
+    arts.set(url, made);
+  }
+  return made.catch(() => url);
+}

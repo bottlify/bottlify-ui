@@ -79,13 +79,16 @@ const within = (promise, ms, what)=>{
  * @param {Record<string, string>} options.sites  Each store's site: `https://steamcommunity.com/`.
  * @param {RegExp} options.fetchable  The addresses a tab may have fetched for it: its
  *     store's directory and client files, which the site's CORS would refuse it.
+ * @param {RegExp} [options.readable]  The addresses a page may have fetched for it (op
+ *     `fetch`): a store's content servers and art, which Safari lets the extension read
+ *     and an isolated page not -- no response header a ruleset sets reaches the page.
  * @param {(store: string) => { get(): Promise<any>, set(session: any): Promise<void> }}
  *     [options.vaultOf]
  * @param {number} [options.idleMs]  How long a tab with nothing left to answer is kept.
  * @param {number} [options.closeSignInMs]  How long a sign-in's window shows it is done.
  * @param {number} [options.lostMs]  How long a sign-in's tab that lost its port is waited on.
  */
-export function startRelay({ chrome, sites, fetchable,
+export function startRelay({ chrome, sites, fetchable, readable = /^$/,
     vaultOf = store=>areaVaultFor(store, chrome.storage.local), idleMs = 3_000,
     closeSignInMs = 1500, lostMs = LOST_MS })
 {
@@ -230,6 +233,13 @@ export function startRelay({ chrome, sites, fetchable,
         {
             return;
         }
+        if (message.op === 'fetch')
+        {
+            fetched(readable, String(message.args?.url ?? '')).then(
+                result=>port.postMessage({ id, result }),
+                e=>port.postMessage({ id, error: String(e?.message ?? e) }));
+            return;
+        }
         const store = String(message.args?.store);
         if (!Object.hasOwn(sites, store))
         {
@@ -350,14 +360,7 @@ export function startRelay({ chrome, sites, fetchable,
         }
         if (typeof message.fetch === 'string')
         {
-            const url = new URL(message.fetch);
-            if (url.protocol !== 'https:' || !fetchable.test(url.href))
-            {
-                throw new Error(`${url.origin} is not fetched for a store's tab`);
-            }
-            const answer = await fetch(url.href, { credentials: 'omit' });
-            const bytes = new Uint8Array(await answer.arrayBuffer());
-            return { status: answer.status, body: toWire(bytes) };
+            return fetched(fetchable, message.fetch);
         }
         if (message.inflate)
         {
@@ -370,6 +373,23 @@ export function startRelay({ chrome, sites, fetchable,
             return toWire(await nativeInflate(bytes, message.format));
         }
         throw new Error('a tab asked for nothing the worker gives');
+    }
+
+    /**
+     * An address fetched with the extension's reach, if it is one of those
+     * allowed: its status and its bytes, as a port carries them.
+     *
+     * @param {RegExp} allowed @param {string} address
+     */
+    async function fetched(allowed, address){
+        const url = new URL(address);
+        if (url.protocol !== 'https:' || !allowed.test(url.href))
+        {
+            throw new Error(`${url.origin} is not fetched by GameHub`);
+        }
+        const answer = await fetch(url.href, { credentials: 'omit' });
+        const bytes = new Uint8Array(await answer.arrayBuffer());
+        return { status: answer.status, body: toWire(bytes) };
     }
 
     /** @param {any} port */

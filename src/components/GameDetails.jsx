@@ -12,6 +12,7 @@ import {
 import { useEffect, useState } from "react";
 import { LabelBadges, VersionBadge } from "./VersionBadge.jsx";
 import { FilesDialog } from "./FilesDialog.jsx";
+import { useArt } from "./useArt.js";
 import { bottleFiles } from "../engine/volumes.js";
 import { residency } from "../engine/btl.js";
 import { mayNotFit, siteSpace, sizeText } from "../engine/stored.js";
@@ -52,7 +53,8 @@ function ArtPicker({ label, current, file, onPick, disabled, ratio }) {
     setPreview(url);
     return () => URL.revokeObjectURL(url);
   }, [file]);
-  const shown = preview || current;
+  const art = useArt(current);
+  const shown = preview || art;
   return (
     <Box sx={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 1 }}>
       <Typography variant="caption" color="text.secondary">{label}</Typography>
@@ -463,6 +465,7 @@ export function GameDetails({
   bundle, onClose, onPlay, editable = false, upload = null, onChanged, onDeleted,
   editableTypes = EDITABLE_TYPES,
 }) {
+  const cover = useArt(bundle.coverLarge);
   const [editing, setEditing] = useState(false);
   const [configuring, setConfiguring] = useState(false);
   const [browsing, setBrowsing] = useState(/** @type {import("../engine/volumes.js").VolumeFiles | null} */ (null));
@@ -578,10 +581,10 @@ export function GameDetails({
         }}>
           {/* big cover, or the same box with a placeholder when the manifest
               names none -- never an empty <img src=""> */}
-          {bundle.coverLarge ? (
+          {cover ? (
             <Box
               component="img"
-              src={bundle.coverLarge}
+              src={cover}
               alt={bundle.title}
               sx={{
                 ...COVER,

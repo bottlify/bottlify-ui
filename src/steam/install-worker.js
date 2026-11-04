@@ -29,11 +29,38 @@ import { bottlesFolder } from "../engine/bottles.js";
 
 /** @typedef {import("@bottlify/core/steam/install").DepotOpening} DepotOpening */
 
-/** @param {MessagePort} port */
-function serve(port) {
+/**
+ * How a content server is asked from this worker: the platform's fetch, or
+ * where the page reads Steam through GameHub (Safari), a port to the page that
+ * asks GameHub for each address and hands back its status and bytes.
+ *
+ * @param {MessagePort | null | undefined} port
+ * @returns {((url: string) => Promise<Response>) | undefined}
+ */
+function fetchThrough(port) {
+  if (!port) return undefined;
+  let lastId = 0;
+  /** @type {Map<number, { resolve: (answer: Response) => void, reject: (e: Error) => void }>} */
+  const waiting = new Map();
+  port.onmessage = ({ data }) => {
+    const asked = waiting.get(data.id);
+    waiting.delete(data.id);
+    if (data.error !== undefined) asked?.reject(new Error(data.error));
+    else asked?.resolve(new Response(data.buffer, { status: data.status }));
+  };
+  return (url) => new Promise((resolve, reject) => {
+    const id = ++lastId;
+    waiting.set(id, { resolve, reject });
+    port.postMessage({ id, url });
+  });
+}
+
+/** @param {MessagePort} port @param {MessagePort | null} [through]  `fetchThrough`'s. */
+function serve(port, through) {
+  const get = fetchThrough(through);
   port.onmessage = async ({ data: { id, server, depot, chunk, key } }) => {
     try {
-      const bytes = await downloadChunk(server, depot, chunk, key);
+      const bytes = await downloadChunk(server, depot, chunk, key, get);
       port.postMessage({ id, buffer: bytes.buffer, offset: bytes.byteOffset, length: bytes.length },
         [bytes.buffer]);
     } catch (e) {
@@ -97,7 +124,8 @@ const base64 = (bytes) => btoa(String.fromCharCode(...bytes));
  * @param {MessagePort[]} task.ports
  * @param {AbortSignal} signal
  */
-async function install({ id, depots, servers, installscript, executable, manifest, ports }, signal) {
+async function install({ id, depots, servers, installscript, executable, manifest, ports, through },
+  signal) {
   const folder = await (await bottlesFolder()).getDirectoryHandle(id, { create: true });
   /** @type {import("@bottlify/core/steam/install").InstallProgress | null} */
   let resume = null;
@@ -117,7 +145,7 @@ async function install({ id, depots, servers, installscript, executable, manifes
   let shown = 0;
   try {
     const { bundle, entry } = await installBundle({ handle, depots, servers, installscript,
-      executable, resume, signal, decode: decoders(ports),
+      executable, resume, signal, decode: decoders(ports), fetch: fetchThrough(through),
       onSave: (progress) => put(folder, "install.json", new TextEncoder().encode(
         JSON.stringify({ stamp: progress.stamp, done: base64(progress.done) }))),
       onProgress: (progress) => {
@@ -140,12 +168,13 @@ async function install({ id, depots, servers, installscript, executable, manifes
 const stop = new AbortController();
 onmessage = async ({ data }) => {
   if (data.serve) {
-    serve(data.serve);
+    serve(data.serve, data.through);
   } else if (data.cancel) {
     stop.abort(new DOMException("the install was stopped", "AbortError"));
   } else if (data.install) {
     try {
-      postMessage({ done: await install({ ...data.install, ports: data.ports }, stop.signal) });
+      postMessage({ done: await install({ ...data.install, ports: data.ports,
+        through: data.through }, stop.signal) });
     } catch (e) {
       postMessage({ error: String(/** @type {Error} */ (e)?.message ?? e),
         stopped: stop.signal.aborted });

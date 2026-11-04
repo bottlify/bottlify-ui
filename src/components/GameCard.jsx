@@ -6,6 +6,7 @@
 
 import { Box, Card, CardContent, CardMedia, Chip, Typography } from "@mui/material";
 import { LabelBadges, VersionBadge } from "./VersionBadge.jsx";
+import { useArt } from "./useArt.js";
 
 /**
  * One game in the library grid: cover (small) + title + version.
@@ -26,6 +27,8 @@ import { LabelBadges, VersionBadge } from "./VersionBadge.jsx";
  *     store's game not installed yet: its Install.
  */
 export function GameCard({ bundle, onSelect, onSettings, onEdit, footer }) {
+  const small = useArt(bundle.coverSmall);
+  const fallback = useArt(bundle.coverFallback);
   /**
    * A round button in one of the card's top corners, which does its own thing
    * and does not open the card.
@@ -68,16 +71,16 @@ export function GameCard({ bundle, onSelect, onSettings, onEdit, footer }) {
     >
       {onSettings && corner("left", "bottle settings", "glyphicon-cog", onSettings)}
       {onEdit && corner("right", "edit bottle", "glyphicon-pencil", onEdit)}
-      {bundle.coverSmall ? (
+      {small ? (
         <CardMedia
           component="img"
-          image={bundle.coverSmall}
+          image={small}
           alt={bundle.title}
           // A store's game without a cover of its own shows the picture its
           // store has of it instead (a Steam app's store header).
           onError={(event) => {
             const img = event.currentTarget;
-            if (bundle.coverFallback && img.src !== bundle.coverFallback) img.src = bundle.coverFallback;
+            if (fallback && img.src !== fallback) img.src = fallback;
           }}
           sx={{
             // The art on disk is 3:4, so this crops nothing; it is declared so a

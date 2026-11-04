@@ -31,7 +31,11 @@ if (TRANSPORT === 'tab')
         // What a store's tab is refused by its site's CORS: Steam's directory and Valve's
         // client files, which the session frame fetches itself.
         fetchable: new RegExp(String.raw`^https://(api\.steampowered\.com/ISteamDirectory/`
-            + String.raw`|client-update\.akamai\.steamstatic\.com/)`) });
+            + String.raw`|client-update\.akamai\.steamstatic\.com/)`),
+        // What a page is refused by Safari, which applies no ruleset's response headers
+        // to it: Steam's content servers and its art (rules/steam.json, rules 2 and 3).
+        readable: new RegExp(String.raw`^https://([a-z0-9-]+\.)*`
+            + String.raw`(steamcontent\.com|steampipe\.akamaized\.net|steamstatic\.com)/`) });
 }
 
 chrome.runtime.onMessage.addListener((/** @type {any} */ message, /** @type {any} */ sender)=>{

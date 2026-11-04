@@ -39,6 +39,11 @@
  * - `runData { store, game }` -> what a run hands the engine's emulation of the
  *   store's client (Steam's: `{ win32: { steam } }`), `{}` signed out.
  *
+ * - `fetch { url }` -> `{ status, body }`, where the stores run in a tab
+ *   (`hello`'s `transport: 'tab'`, Safari): a store's content server or art
+ *   fetched by GameHub's worker, which the browser lets read them where the
+ *   page may not; answered by the worker, no tab opened for it.
+ *
  * Neither the session's token nor a password crosses to the page: a sign-in
  * is the store's sign-in page's, a logon its session frame's.
  */

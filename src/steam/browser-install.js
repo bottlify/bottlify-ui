@@ -16,6 +16,8 @@
  * starts.
  */
 
+import { gamehub, storeFetch } from "../stores/gamehub.js";
+
 /** @typedef {import("../stores/providers.js").InstallProgress} InstallProgress */
 
 /** @param {number} bytes */
@@ -38,6 +40,29 @@ const spawn = (name) => new Worker(new URL("./install-worker.js", import.meta.ur
  * that the network, not the decoding, is what an install waits on.
  */
 const decoderCount = () => Math.max(1, Math.min(4, (navigator.hardwareConcurrency || 2) - 1));
+
+/**
+ * A port a worker asks Steam's content servers through, where this page reads
+ * them through GameHub (Safari): each address asked of GameHub here, its status
+ * and bytes handed back. Null where the worker's own fetch reaches them.
+ *
+ * @param {boolean} viaHub
+ * @returns {MessagePort | null}
+ */
+function throughHub(viaHub) {
+  if (!viaHub) return null;
+  const channel = new MessageChannel();
+  channel.port1.onmessage = async ({ data: { id, url } }) => {
+    try {
+      const answer = await storeFetch(url);
+      const buffer = await answer.arrayBuffer();
+      channel.port1.postMessage({ id, status: answer.status, buffer }, [buffer]);
+    } catch (e) {
+      channel.port1.postMessage({ id, error: String(/** @type {Error} */ (e)?.message ?? e) });
+    }
+  };
+  return channel.port2;
+}
 
 /**
  * Installs an app of the account's in this browser.
@@ -65,6 +90,7 @@ export async function installSteamGame({ store, game, download: plan, onProgress
   // a game of gigabytes gone with the origin's storage is downloaded again.
   await navigator.storage?.persist?.().catch(() => false);
 
+  const viaHub = (await gamehub())?.transport === "tab";
   const installer = spawn("steam-install");
   /** @type {Worker[]} */
   const workers = [installer];
@@ -74,7 +100,9 @@ export async function installSteamGame({ store, game, download: plan, onProgress
     const decoder = spawn("steam-decode");
     workers.push(decoder);
     const channel = new MessageChannel();
-    decoder.postMessage({ serve: channel.port1 }, [channel.port1]);
+    const through = throughHub(viaHub);
+    decoder.postMessage({ serve: channel.port1, through }, through ? [channel.port1, through]
+      : [channel.port1]);
     ports.push(channel.port2);
   }
   onProgress({ state: "downloading", done: 0, total: 0, message: "Reading the depots…" });
@@ -84,6 +112,7 @@ export async function installSteamGame({ store, game, download: plan, onProgress
   const executable = plan.launch.executable.replace(/\//g, "\\");
   const art = plan.art;
   const cancel = () => installer.postMessage({ cancel: true });
+  const installerThrough = throughHub(viaHub);
   signal?.addEventListener("abort", cancel, { once: true });
   try {
     return await new Promise((resolve, reject) => {
@@ -124,7 +153,8 @@ export async function installSteamGame({ store, game, download: plan, onProgress
           coverSmall: art.cover,
           coverFallback: art.header,
           wallpaper: art.hero,
-        } }, ports }, ports);
+        } }, ports, through: installerThrough },
+      installerThrough ? [...ports, installerThrough] : ports);
       // A stop asked while the workers were being started.
       if (signal?.aborted) cancel();
     });

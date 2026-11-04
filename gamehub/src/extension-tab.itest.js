@@ -24,6 +24,7 @@ import { fileURLToPath } from 'node:url';
 import { build } from '../scripts/build.mjs';
 import { chrome } from './chrome.fixture.js';
 import { PAGE_CLIENT } from './page.fixture.js';
+import { STEAM_ART } from './stores/steam/apps.js';
 
 const CORE = fileURLToPath(new URL('../../node_modules/@bottlify/core/src/', import.meta.url));
 /** Steamworks Common Redistributables: a depot whose key Steam gives anyone. */
@@ -119,21 +120,41 @@ test('the Safari build runs Steam in a tab of its site, and the page downloads',
             assert.match(tabs[0].url, /\?bottlify-gamehub=[0-9a-f-]{36}&store=steam&mode=session$/);
         });
 
-        await t.test('the page reads a manifest and a chunk from the content servers', async()=>{
+        await t.test('the page reads a manifest and a chunk through GameHub\'s fetch', async()=>{
+            // As the launcher does in Safari, whose isolated page may not read
+            // the content servers itself: every request asked of GameHub.
             const read = await page(`(async () => {
                 const { manifest, downloadChunk } = await import('/core/steam/depot.js');
+                const asked = [];
+                const get = async url => {
+                    asked.push(url);
+                    const { status, body } = await ask('fetch', { url });
+                    return new Response(body, { status });
+                };
                 const answer = await ask('download', { store: 'steam', game: '${APP}' });
                 const [server] = answer.servers;
                 const one = answer.depots.find(d => d.depot === ${DEPOT});
                 const listed = await manifest(server,
                     { depot: ${DEPOT}, gid: BigInt(one.gid), code: BigInt(one.code),
-                        key: one.key });
+                        key: one.key }, get);
                 const chunk = listed.files.find(file => file.chunks.length).chunks[0];
-                const bytes = await downloadChunk(server, ${DEPOT}, chunk, one.key);
-                return { files: listed.files.length, chunk: bytes.length === chunk.size };
+                const bytes = await downloadChunk(server, ${DEPOT}, chunk, one.key, get);
+                return { files: listed.files.length, chunk: bytes.length === chunk.size,
+                    asked: asked.length };
             })()`);
             assert.ok(read.files > 0);
             assert.equal(read.chunk, true);
+            assert.equal(read.asked, 2, 'the manifest and the chunk, through GameHub');
+        });
+
+        await t.test('a store\'s art read through GameHub, and no other address', async()=>{
+            const art = await page(`ask('fetch', { url: ${JSON.stringify(`${STEAM_ART}/440/header.jpg`)} })
+                .then(({ status, body }) => ({ status, bytes: body.length,
+                    jpeg: body[0] === 0xff && body[1] === 0xd8 }))`);
+            assert.deepEqual([art.status, art.jpeg], [200, true]);
+            assert.ok(art.bytes > 1000);
+            const refused = await page('outcome(ask("fetch", { url: "https://example.com/" }))');
+            assert.match(refused.error, /is not fetched by GameHub/);
         });
 
         await t.test('the tab closes once its ops are answered', async()=>{
