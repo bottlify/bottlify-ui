@@ -50,6 +50,15 @@ import {
 /** The Steam ID a logon starts from: an individual account, not yet known. */
 export const ANONYMOUS_INDIVIDUAL = 0x0110000100000000n;
 
+/**
+ * What a call waiting on a connection that closed is rejected with: `closed`
+ * set, so one that may be asked again is asked again on a new connection.
+ *
+ * @param {string} reason
+ */
+const closedBy = reason=>Object.assign(new Error(`steam: the connection closed (${reason})`),
+    { closed: true });
+
 /** No job: the value the header's job ids default to. */
 const NO_JOB = 0xFFFFFFFFFFFFFFFFn;
 
@@ -197,7 +206,7 @@ export function connectCm({ endpoint, socket, timeout = 30000 }){
         for (const job of jobs.values())
         {
             clearTimeout(job.timer);
-            job.reject(new Error(`steam: the connection closed (${reason})`));
+            job.reject(closedBy(reason));
         }
         jobs.clear();
         for (const closer of closers)
@@ -351,7 +360,7 @@ export function connectCm({ endpoint, socket, timeout = 30000 }){
             return new Promise((resolve, reject)=>{
                 const stopClose = connection.onClose(reason=>{
                     stop();
-                    reject(new Error(`steam: the connection closed (${reason})`));
+                    reject(closedBy(reason));
                 });
                 const stop = connection.on(emsg, message=>{
                     stop();

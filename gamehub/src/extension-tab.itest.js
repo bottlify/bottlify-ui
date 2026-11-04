@@ -172,6 +172,8 @@ test('the Safari build runs Steam in a tab of its site, and the page downloads',
                 said = await text();
             }
             assert.match(said, /Scan with the Steam app/, 'Steam gave the overlay a QR code');
+            assert.match(said, /connected[\s\S]*QR: session begun/, 'its log says the steps');
+            assert.doesNotMatch(said, /s\.team\/q/, 'and not the code that signs in');
             const reach = (await browser.send('Runtime.evaluate', { returnByValue: true,
                 expression: '[...document.querySelectorAll("*")]'
                     + '.filter(e => e.shadowRoot).length' },

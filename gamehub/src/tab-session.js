@@ -154,8 +154,26 @@ export function runTab({ chrome, nonce, store, mode, onPort, make }){
     const frame = startFrame({ store, kept, version: chrome.runtime.getManifest().version,
         make: vault=>made.make(vault, relayedFetch),
         enabled: ()=>call({ enabled: true }),
-        toPage: answer=>port?.postMessage({ answer: toWire(answer) }) });
-    heard = request=>frame.request(request);
+        toPage: answer=>{
+            // The tab is not seen: what it was asked and what failed, in its console.
+            if ('error' in answer)
+            {
+                console.warn('Bottlify GameHub:', asked.get(answer.id) ?? 'an op', 'failed:',
+                    answer.error);
+            }
+            if (!('event' in answer))
+            {
+                asked.delete(answer.id);
+            }
+            port?.postMessage({ answer: toWire(answer) });
+        } });
+    /** Ops asked and not answered, by id, for the console. @type {Map<number, string>} */
+    const asked = new Map();
+    heard = request=>{
+        asked.set(request?.id, String(request?.op));
+        console.info('Bottlify GameHub: asked', request?.op);
+        frame.request(request);
+    };
     globalThis.addEventListener?.('pagehide', ()=>frame.close());
     return { stop: ()=>{
         clearInterval(pinging);

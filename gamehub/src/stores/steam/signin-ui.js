@@ -38,6 +38,20 @@ export function mountSignIn(root, { vault, fetch: get = globalThis.fetch, tellDo
     const passwordForm = /** @type {HTMLFormElement} */ ($('password'));
     const guardForm = /** @type {HTMLFormElement} */ ($('guard'));
 
+    const lines = $('log-lines');
+    /**
+     * A step of the sign-in, in the page's log and the console: what was asked
+     * and answered, never a code, a token or an address that signs in.
+     *
+     * @param {string} line
+     */
+    const log = line=>{
+        const at = new Date().toISOString().slice(11, 19);
+        lines.textContent += `${at} ${line}\n`;
+        lines.scrollTop = lines.scrollHeight;
+        console.info('Bottlify GameHub sign-in:', line);
+    };
+
     /** @param {string} text @param {boolean} [error] */
     const say = (text, error = false)=>{
         status.textContent = text;
@@ -53,6 +67,8 @@ export function mountSignIn(root, { vault, fetch: get = globalThis.fetch, tellDo
 
     /** @param {Record<string, any>} message */
     function heard(message){
+        log(message.event ? `Steam: ${message.event}` : message.done ? 'signed in, the session kept'
+            : message.error ? `failed: ${message.error}` : 'a step');
         if (message.event === 'challenge')
         {
             qrCode.innerHTML = qrToSvg(encodeQr(message.url), 5);
@@ -133,15 +149,23 @@ export function mountSignIn(root, { vault, fetch: get = globalThis.fetch, tellDo
             return link;
         }
         let failure = 'none is listed';
-        for (const endpoint of (await steamManagers(get)).slice(0, 8))
+        log('asking Steam for its connection managers');
+        const managers = (await steamManagers(get)).slice(0, 8);
+        log(`${managers.length} managers listed`);
+        for (const endpoint of managers)
         {
             try
             {
-                link = await connectCm({ endpoint });
-                return link;
+                log(`connecting to ${endpoint}`);
+                const made = await connectCm({ endpoint });
+                link = made;
+                made.onClose((/** @type {string} */ reason)=>log(`${endpoint}: connection closed (${reason})`));
+                log(`${endpoint}: connected`);
+                return made;
             }
             catch (e){
                 failure = String(/** @type {Error} */ (e)?.message ?? e);
+                log(`${endpoint}: ${failure}`);
             }
         }
         throw new Error(`steam: no connection manager answered (${failure})`);
@@ -149,8 +173,8 @@ export function mountSignIn(root, { vault, fetch: get = globalThis.fetch, tellDo
     const api = connect;
     const flow = createSignIn({ send: heard, kept: {
         vault,
-        qr: options=>signInWithQr(api, options),
-        credentials: options=>signInWithCredentials(api, options),
+        qr: options=>signInWithQr(api, { ...options, trace: log }),
+        credentials: options=>signInWithCredentials(api, { ...options, trace: log }),
     } });
     addEventListener('pagehide', ()=>{
         flow.stop();

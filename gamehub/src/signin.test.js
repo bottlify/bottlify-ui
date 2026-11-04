@@ -139,6 +139,25 @@ test('a sign-in stops when its page goes, and says nothing after', async()=>{
     assert.deepEqual(heard, []);
 });
 
+test('a poll lost with its connection is asked again on a new one', async()=>{
+    const steam = await fakeSteamAuth();
+    let polls = 0;
+    // The first two polls go out on a connection the manager closes under them.
+    const api = async()=>/** @type {any} */ ({ call: (/** @type {string} */ method,
+        /** @type {any[]} */ ...rest)=>{
+        if (method.startsWith('Authentication.PollAuthSessionStatus') && ++polls <= 2)
+        {
+            return Promise.reject(Object.assign(
+                new Error('steam: the connection closed (closed by the server, code 1000)'),
+                { closed: true }));
+        }
+        return /** @type {any} */ (steam.service).call(method, ...rest);
+    } });
+    const signedIn = await signInWithQr(api, { onChallenge: ()=>{}, signal: undefined });
+    assert.equal(signedIn.accountName, 'scanned');
+    assert.ok(polls > 2);
+});
+
 test('a Steam that stops answering fails the sign-in, which says so', async()=>{
     /** @type {Record<string, any>[]} */
     const heard = [];

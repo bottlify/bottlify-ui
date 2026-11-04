@@ -72,10 +72,12 @@ const pause = (ms, signal)=>new Promise((resolve, reject)=>{
  * @param {string} [options.deviceName]  What the app shows the person as the
  *        device asking.
  * @param {AbortSignal} [options.signal]
+ * @param {(line: string) => void} [options.trace]  Each step, said: no code, token or URL.
  * @returns {Promise<SignedIn>}
  */
 export async function signInWithQr(connect, options){
-    const { onChallenge, onScanned, deviceName = 'Bottlify', signal } = options;
+    const { onChallenge, onScanned, deviceName = 'Bottlify', signal, trace = ()=>{} } = options;
+    trace('QR: asking Steam for a sign-in session');
     const begun = await (await connect()).call('Authentication.BeginAuthSessionViaQR#1',
         Authentication.BeginAuthSessionViaQRRequest, {
             // The device alone, as a desktop client describes itself; a
@@ -92,10 +94,40 @@ export async function signInWithQr(connect, options){
     {
         throw new Error(`steam: a QR sign-in could not begin (EResult ${begun.eresult})`);
     }
+    trace(`QR: session begun, polled every ${begun.body.interval ?? 5} s`);
     onChallenge(begun.body.challenge_url);
     return pollSession(connect, { clientId: /** @type {bigint} */ (begun.body.client_id),
         requestId: /** @type {Uint8Array} */ (begun.body.request_id),
-        interval: begun.body.interval, signal, onScanned, onChallenge });
+        interval: begun.body.interval, signal, onScanned, onChallenge, trace });
+}
+
+/** A poll's connection closing under it: asked again on as many new ones. */
+const CLOSES_TAKEN = 3;
+
+/**
+ * A call that may be asked again, asked again on a new connection when the
+ * one it went on closed under it: a manager closes one that has not logged on
+ * after a minute or so, and a poll sent as it does is lost with it, while the
+ * sign-in it polls goes on at Steam.
+ *
+ * @template T @param {() => Promise<T>} ask @param {(line: string) => void} trace
+ * @returns {Promise<T>}
+ */
+async function askedAgainOnClose(ask, trace){
+    for (let closes = 0; ; closes++)
+    {
+        try
+        {
+            return await ask();
+        }
+        catch (e){
+            if (!/** @type {any} */ (e)?.closed || closes >= CLOSES_TAKEN)
+            {
+                throw e;
+            }
+            trace(`lost with its connection (${/** @type {Error} */ (e).message}); asked again`);
+        }
+    }
 }
 
 /**
@@ -108,11 +140,13 @@ export async function signInWithQr(connect, options){
  * @param {AbortSignal} [session.signal]
  * @param {() => void} [session.onScanned]
  * @param {(challengeUrl: string) => void} [session.onChallenge]
+ * @param {(line: string) => void} [session.trace]
  * @returns {Promise<SignedIn>}
  */
 async function pollSession(connect, { clientId, requestId, interval, signal, onScanned,
-    onChallenge })
+    onChallenge, trace = ()=>{} })
 {
+    let polls = 0;
     // Every client id the session has had, the newest last. The service
     // replaces the code every twenty seconds or so, a scan included: a code
     // scanned just before it was replaced is approved under the id it had,
@@ -123,10 +157,13 @@ async function pollSession(connect, { clientId, requestId, interval, signal, onS
     {
         await pause(every, signal);
         const current = clientIds[clientIds.length - 1];
-        const polled = await (await connect()).call('Authentication.PollAuthSessionStatus#1',
-            Authentication.PollAuthSessionStatusRequest,
+        const poll = ++polls;
+        const polled = await askedAgainOnClose(async()=>(await connect()).call(
+            'Authentication.PollAuthSessionStatus#1', Authentication.PollAuthSessionStatusRequest,
             { client_id: current, request_id: requestId },
-            Authentication.PollAuthSessionStatusResponse);
+            Authentication.PollAuthSessionStatusResponse), line=>trace(`poll ${poll}: ${line}`));
+        trace(`poll ${poll}: EResult ${polled.eresult}${polled.body?.had_remote_interaction
+            ? ', scanned' : ''}${polled.body?.refresh_token ? ', approved' : ''}`);
         if (polled.eresult === EResult.FileNotFound && clientIds.length > 1)
         {
             clientIds.pop();
@@ -232,11 +269,12 @@ export function encryptPassword(password, modulusHex, exponentHex){
  * @param {(eresult: number) => void} [options.onWrongCode]  Steam refused a code; another is taken.
  * @param {string} [options.deviceName]
  * @param {AbortSignal} [options.signal]
+ * @param {(line: string) => void} [options.trace]  Each step, said: no password or token.
  * @returns {Promise<SignedIn>}
  */
 export async function signInWithCredentials(connect, options){
     const { accountName, password, onGuard, takeCode, onWrongCode, deviceName = 'Bottlify',
-        signal } = options;
+        signal, trace = ()=>{} } = options;
     const service = await connect();
     const key = await service.call('Authentication.GetPasswordRSAPublicKey#1',
         Authentication.GetPasswordRSAPublicKeyRequest, { account_name: accountName },
@@ -310,7 +348,7 @@ export async function signInWithCredentials(connect, options){
     try
     {
         return await Promise.race([
-            pollSession(connect, { clientId, requestId, interval, signal: both }),
+            pollSession(connect, { clientId, requestId, interval, signal: both, trace }),
             codes().then(()=>new Promise(()=>{})),
         ]);
     }
