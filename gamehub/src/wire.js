@@ -7,7 +7,9 @@
 /**
  * A value as an extension's port carries it: ports send JSON, so bytes (a
  * depot's key, Valve's client files) and big integers are written as tagged
- * objects on one side and read back on the other, the rest as it is.
+ * objects on one side and read back on the other, the rest as it is. Read
+ * back by the page (the launcher), which may be handed real bytes as well,
+ * by a frame: those are left as they are.
  */
 
 /** @param {Uint8Array} bytes */
@@ -49,6 +51,10 @@ export function toWire(value){
  * @returns {any}
  */
 export function fromWire(value){
+    if (ArrayBuffer.isView(value) || value instanceof ArrayBuffer)
+    {
+        return value;
+    }
     if (Array.isArray(value))
     {
         return value.map(fromWire);

@@ -13,8 +13,9 @@
  * speaks the store's protocol and that the page asks every other op of, and
  * `<store>/signin.html`. It waits on nothing of the worker's and holds no
  * session. Where the stores run in a tab of their sites (TRANSPORT `tab`), it
- * passes every other op to the worker and its answers back, and only then
- * loads a module (wire.js). Chrome loads a content script as a classic script.
+ * passes every other op to the worker and its answers back as the worker's
+ * port carried them (wire.js), and loads no module there either. Chrome loads
+ * a content script as a classic script.
  */
 
 (()=>{
@@ -58,21 +59,21 @@
     /** @type {any} */
     let port = null;
     const unanswered = new Set();
-    /** @type {Promise<typeof import('./wire.js')> | null} */
-    let wire = null;
+    // Answers go to the page as the port carried them, bytes as tagged base64
+    // (wire.js), which the page reads back: a module loaded here is loaded by
+    // the cross-origin isolated page's loader in Safari, which may refuse it.
     /** @param {Record<string, any>} data */
     const relay = data=>{
-        wire ??= import(chrome.runtime.getURL('gamehub/src/wire.js'));
         if (!port)
         {
             port = chrome.runtime.connect({ name: 'gamehub-page' });
-            port.onMessage.addListener((/** @type {any} */ answer)=>wire?.then(({ fromWire })=>{
+            port.onMessage.addListener((/** @type {any} */ answer)=>{
                 if (!('event' in answer))
                 {
                     unanswered.delete(answer.id);
                 }
-                reply(fromWire(answer));
-            }));
+                reply(answer);
+            });
             port.onDisconnect.addListener(()=>{
                 port = null;
                 for (const id of unanswered)

@@ -23,6 +23,8 @@
  * the store's site the extension opens, `signIn` answering once it is done.
  */
 
+import { fromWire } from "../../gamehub/src/wire.js";
+
 const PEER = "bottlify-gamehub";
 let lastId = 0;
 
@@ -47,14 +49,15 @@ function askOf(target, origin, op, args, { onEvent, ms } = {}) {
       const data = event.data;
       if (event.origin !== origin || event.source !== target || data?.from !== PEER
         || data.id !== id) return;
+      // What crossed an extension's port carries its bytes as base64 (wire.js).
       if (data.event) {
-        onEvent?.(data.event, data.data);
+        onEvent?.(data.event, fromWire(data.data));
         return;
       }
       removeEventListener("message", heard);
       clearTimeout(timer);
       if ("error" in data) reject(new Error(data.error));
-      else resolve(data.result);
+      else resolve(fromWire(data.result));
     };
     addEventListener("message", heard);
     if (ms) {

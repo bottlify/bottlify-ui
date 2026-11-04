@@ -37,14 +37,12 @@ test('each build is whole, and the page may load a store\'s pages alone', async(
             }
             const content = readFileSync(join(dir, manifest.content_scripts[0].js[0]), 'utf8')
                 .replace(/\/\*[\s\S]*?\*\//g, '');
-            assert.deepEqual([...content.matchAll(/\bimport\b[^;]*/g)].map(([found])=>found),
-                ["import(chrome.runtime.getURL('gamehub/src/wire.js'))"],
-                'the page\'s content script loads no store\'s protocol: wire.js alone, relaying');
+            assert.doesNotMatch(content, /\bimport\b|getURL\('[^']*\.js'\)/,
+                'the page\'s content script loads no module: an isolated page may refuse it');
             const [forPages] = manifest.web_accessible_resources;
-            assert.deepEqual(forPages.resources, [
-                ...STORE_PAGES.map(([id, page])=>`${id}/${page}.html`),
-                ...inTab ? ['gamehub/src/wire.js'] : []],
-            'the page may load a store\'s pages, as frames, and no module but the relay\'s wire');
+            assert.deepEqual(forPages.resources,
+                STORE_PAGES.map(([id, page])=>`${id}/${page}.html`),
+                'the page may load a store\'s pages, as frames, and no module');
             const frameLine = 'const TRANSPORT = /** @type {\'frame\' | \'tab\'} */ (\'frame\');';
             for (const path of TRANSPORT_WRITTEN)
             {

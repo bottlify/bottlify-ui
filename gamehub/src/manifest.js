@@ -137,12 +137,10 @@ export function manifestFor(build, version){
             ...sites.length
                 ? [{ matches: sites, js: ['gamehub/src/tab.js'], run_at: 'document_idle' }] : []],
         // A store's pages alone, as frames: no module is the page's to load -
-        // but where the stores run in a tab, the content scripts' modules, which
-        // a content script loads by address: wire.js on a page, the store's side
-        // and its sign-in page's markup on its site.
+        // but where the stores run in a tab, the content script's on the store's
+        // site loads the store's side by address, and its sign-in page's markup.
         web_accessible_resources: [{
-            resources: [...STORE_PAGES.map(([id, page])=>`${id}/${page}.html`),
-                ...sites.length ? ['gamehub/src/wire.js'] : []],
+            resources: STORE_PAGES.map(([id, page])=>`${id}/${page}.html`),
             matches: [...FRAMED_BY[build]] },
         ...sites.length ? [{ resources: ['gamehub/*', 'core/*',
             ...STORE_PAGES.map(([id, page])=>`${id}/${page}.html`)], matches: sites }] : []],

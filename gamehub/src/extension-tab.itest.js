@@ -170,7 +170,10 @@ test('the Safari build runs Steam in a tab of its site, and the page downloads',
                     const id = 9001;
                     addEventListener('message', function heard(e) {
                         if (e.data?.from !== 'bottlify-gamehub' || e.data.id !== id) return;
-                        if (e.data.event === 'part') { parts.push(e.data.data.body); return; }
+                        if (e.data.event === 'part') {
+                            parts.push(fromWire(e.data.data.body));
+                            return;
+                        }
                         removeEventListener('message', heard);
                         if ('error' in e.data) reject(new Error(e.data.error));
                         else resolve(e.data.result);

@@ -16,13 +16,26 @@
 
 export const PAGE_CLIENT = `
 let n = 0;
+// wire.js's fromWire, as the launcher reads an answer that crossed a port.
+const fromWire = value => {
+    if (ArrayBuffer.isView(value) || value instanceof ArrayBuffer) return value;
+    if (Array.isArray(value)) return value.map(fromWire);
+    if (value && typeof value === 'object') {
+        if (typeof value.$bytes === 'string') {
+            return Uint8Array.from(atob(value.$bytes), c => c.charCodeAt(0));
+        }
+        if (typeof value.$bigint === 'string') return BigInt(value.$bigint);
+        return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, fromWire(v)]));
+    }
+    return value;
+};
 const askOf = (target, origin, op, args) => new Promise((resolve, reject) => {
     const id = ++n;
     const heard = e => {
         if (e.origin !== origin || e.source !== target || e.data?.from !== 'bottlify-gamehub'
             || e.data.id !== id || e.data.event) return;
         removeEventListener('message', heard);
-        'error' in e.data ? reject(new Error(e.data.error)) : resolve(e.data.result);
+        'error' in e.data ? reject(new Error(e.data.error)) : resolve(fromWire(e.data.result));
     };
     addEventListener('message', heard);
     target.postMessage({ to: 'bottlify-gamehub', id, op, args }, origin);
@@ -61,10 +74,10 @@ window.hubFetch = url => new Promise((resolve, reject) => {
     const heard = e => {
         if (e.origin !== location.origin || e.data?.from !== 'bottlify-gamehub'
             || e.data.id !== id) return;
-        if (e.data.event === 'part') { parts.push(e.data.data.body); return; }
+        if (e.data.event === 'part') { parts.push(fromWire(e.data.data.body)); return; }
         removeEventListener('message', heard);
         if ('error' in e.data) { reject(new Error(e.data.error)); return; }
-        const { status, body, parts: said } = e.data.result;
+        const { status, body, parts: said } = fromWire(e.data.result);
         if (said !== undefined && said !== parts.length) {
             reject(new Error(parts.length + ' of ' + said + ' parts'));
             return;
