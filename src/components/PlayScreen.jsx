@@ -310,7 +310,7 @@ export function PlayScreen({ bundle, media, title, onClose, onExited }) {
   const outcome = state.error ?? (stage === "exited"
     ? {
       reason: state.exitCode === 0 ? "Game exited" : `Game exited with code ${state.exitCode}`,
-      message: "The program ended on its own. Press play to run it again.",
+      message: state.memoryNote ?? "The program ended on its own. Press play to run it again.",
       trace: state.trace ?? "",
     }
     : null);

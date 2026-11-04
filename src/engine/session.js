@@ -39,6 +39,7 @@ import { keepEnding, reportParts } from "./journal.js";
 import { endRun, noteRun } from "./blackbox.js";
 import { isTouchScreen } from "./touch.js";
 import { loadProviders, providerOf } from "../stores/providers.js";
+import { outOfMemoryNote, refusedMemory } from "./out-of-memory.js";
 import { phoneScreen, viewOf } from "../screen.js";
 import {
   CHANGED, GPU_JOURNAL, SHADER_CHOICES, bottleConfigFor, driverRulesFor, loadSettings,
@@ -385,6 +386,8 @@ function cursorStyle(cursor, picture) {
  *             buttons: { id: number, label: string }[], defaultButton: number,
  *             icon: string | null, trace: string | null } | null} [messageBox]
  * @property {number} [exitCode]
+ * @property {string} [memoryNote]  For a run that ended after an allocation was refused:
+ *                                  the machine's memory it ran out of (out-of-memory.js).
  * @property {string} [trace]    The journal's tail, for a run that ended on its own.
  * @property {{ count: number }} [system]  How many files the DirectX runtime mounted.
  * @property {string} [hooks]  What the bundle's sidecar hooks bound and refused, for
@@ -1018,6 +1021,13 @@ async function run({ bundle, media, canvas, report: show, silentInstall = false,
   // The running engine, for a person at the console or a script driving the
   // page: `app.debug.read(address, length)` reads what a program waits on.
   globalThis.app = app;
+  // An allocation the engine refused: a run that ends after one is told it ran
+  // out of the machine's memory, which is a setting, not left at an exit code.
+  let memoryRefused = false;
+  app.on("divergence", (/** @type {any} */ said) => {
+    if (refusedMemory(said)) memoryRefused = true;
+  });
+  const memoryNote = () => outOfMemoryNote(memoryRefused, options.memorySize);
 
   // What the game writes into a file the patch holds is the patch's from then
   // on: the patch is laid over the session at every start, so one that kept
@@ -1295,7 +1305,8 @@ async function run({ bundle, media, canvas, report: show, silentInstall = false,
       // The journal's tail goes with it: an exit has no backtrace, and what the
       // engine said on the way out is the closest thing to one.
       keepEnding(await reportParts(app, GPU_JOURNAL.capacity));
-      report({ stage: "exited", exitCode: code, detail: "", trace: await journalTail(app) });
+      report({ stage: "exited", exitCode: code, detail: "", trace: await journalTail(app),
+        ...memoryNote() ? { memoryNote: memoryNote() } : {} });
     })
     .catch(async (e) => {
       box.end();
@@ -1307,7 +1318,7 @@ async function run({ bundle, media, canvas, report: show, silentInstall = false,
         stage: "failed",
         error: {
           reason: e.reason ?? "the run stopped",
-          message: e.message ?? String(e),
+          message: [memoryNote(), e.message ?? String(e)].filter(Boolean).join("\n\n"),
           // Both: where the guest stood, and where the host code threw -- a
           // failure of the host's own (a storage call) shows only in the second.
           trace: [e.traceText, e.stack && `host stack:\n${e.stack}`].filter(Boolean).join("\n\n"),
