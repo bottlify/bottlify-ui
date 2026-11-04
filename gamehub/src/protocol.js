@@ -37,7 +37,9 @@
  * - `download { store, game }` -> what an install needs; the store's own shape
  *   (Steam's: `{ name, launch, installscript, art, servers, depots }`).
  * - `runData { store, game }` -> what a run hands the engine's emulation of the
- *   store's client (Steam's: `{ win32: { steam } }`), `{}` signed out.
+ *   store's client (Steam's: `{ win32: { steam } }`), `{}` signed out. Where the stores
+ *   run in a tab, Steam's leaves out Valve's client files, which are public: the
+ *   page reads them through `fetch`.
  *
  * - `fetch { url }` -> `{ status, body }`, where the stores run in a tab
  *   (`hello`'s `transport: 'tab'`, Safari): a store's content server or art

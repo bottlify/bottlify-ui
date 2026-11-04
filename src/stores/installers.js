@@ -12,6 +12,7 @@
  */
 
 import { installSteamGame } from "../steam/browser-install.js";
+import { withClientFiles } from "../steam/client-files.js";
 
 /**
  * @typedef {(task: { store: string, game: string, download: any,
@@ -21,3 +22,11 @@ import { installSteamGame } from "../steam/browser-install.js";
 
 /** @type {Record<string, Installer>} */
 export const INSTALLERS = { steam: installSteamGame };
+
+/**
+ * What the page adds to a store's run data, by the store's name, where GameHub
+ * leaves a public part of it to the page: Steam's client files in Safari.
+ *
+ * @type {Record<string, (data: Record<string, any>) => Promise<Record<string, any>>>}
+ */
+export const RUN_DATA = { steam: withClientFiles };

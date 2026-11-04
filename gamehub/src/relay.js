@@ -38,6 +38,8 @@ export const TAB_PORT = 'gamehub-tab';
 const NOTED = 'gamehub-tabs';
 /** How long a tab is given to load the store's site and say its nonce. */
 const LOAD_MS = 30_000;
+/** How long a store's tab is given to answer an op: a stall is said, not waited on. */
+const ANSWER_MS = 120_000;
 /** How long the database is given to answer: a stall is said, not waited on. */
 const VAULT_MS = 15_000;
 /**
@@ -119,7 +121,13 @@ export function startRelay({ chrome, sites, fetchable, readable = /^$/,
     };
 
     /** Requests relayed and not answered, by the id the tab is asked under. */
-    const asked = /** @type {Map<number, { port: any, id: number, key: string }>} */ (new Map());
+    const asked = /** @type {Map<number, { port: any, id: number, key: string, timer?: any }>} */ (
+        new Map());
+    /** A relayed request answered or given up: its deadline goes with it. @param {number} relayed */
+    const forget = relayed=>{
+        clearTimeout(asked.get(relayed)?.timer);
+        return asked.delete(relayed);
+    };
     let next = 0;
     /** Sign-ins a page waits on, by store. */
     const signIns = /** @type {Map<string, Array<{ port: any, id: number }>>} */ (new Map());
@@ -263,18 +271,26 @@ export function startRelay({ chrome, sites, fetchable, readable = /^$/,
         }
         const key = `${store}/session`;
         const relayed = ++next;
-        asked.set(relayed, { port, id, key });
+        asked.set(relayed, { port, id, key, timer: setTimeout(()=>{
+            if (asked.get(relayed)?.port === port)
+            {
+                forget(relayed);
+                rest(key);
+                port.postMessage({ id, error: `${store}'s tab did not answer ${message.op} in ${
+                    ANSWER_MS / 1000} s` });
+            }
+        }, ANSWER_MS) });
         signedOut(store, message.op, port.enabled).then(answer=>{
             if (answer)
             {
-                asked.delete(relayed);
+                forget(relayed);
                 port.postMessage({ id, result: answer.result });
                 return null;
             }
             return tabOf(store, 'session').then(tab=>tab.postMessage(
                 { request: { to: TO, id: relayed, op: message.op, args: message.args } }));
         }).catch(e=>{
-            if (asked.delete(relayed))
+            if (forget(relayed))
             {
                 port.postMessage({ id, error: String(e?.message ?? e) });
             }
@@ -312,7 +328,7 @@ export function startRelay({ chrome, sites, fetchable, readable = /^$/,
             {
                 if (one.port === port)
                 {
-                    asked.delete(relayed);
+                    forget(relayed);
                     rest(one.key);
                 }
             }
@@ -426,7 +442,7 @@ export function startRelay({ chrome, sites, fetchable, readable = /^$/,
                 }
                 if (!('event' in message.answer))
                 {
-                    asked.delete(message.answer.id);
+                    forget(message.answer.id);
                     rest(one.key);
                 }
                 one.port.postMessage({ ...message.answer, id: one.id });
@@ -486,7 +502,7 @@ export function startRelay({ chrome, sites, fetchable, readable = /^$/,
         {
             if (waiting.key === key)
             {
-                asked.delete(relayed);
+                forget(relayed);
                 waiting.port.postMessage({ id: waiting.id,
                     error: `${store}'s tab was closed before it answered` });
             }

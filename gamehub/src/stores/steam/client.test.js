@@ -8,7 +8,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { deflateRawSync } from 'node:zlib';
-import { CLIENT_CDN, fetchClientFiles, zipEntries } from './client.js';
+import { CLIENT_CDN, cachedClientFetch, fetchClientFiles, zipEntries } from './client.js';
 
 /**
  * A zip as the client's packages are laid out: local headers whose sizes are
@@ -81,4 +81,28 @@ test('the client\'s files come from the binaries package the manifest names, che
     assert.deepEqual(files['steamclient.dll'], client32);
     await assert.rejects(fetchClientFiles({ fetch: cdn('00'.repeat(32)) }),
         /not the package the manifest names/);
+});
+
+test('a client package is read once and kept; anything else is fetched each time', async()=>{
+    /** @type {Map<string, Response>} */
+    const kept = new Map();
+    const caches = /** @type {any} */ ({ open: async()=>({
+        match: async(/** @type {string} */ url)=>kept.get(url)?.clone(),
+        put: async(/** @type {string} */ url, /** @type {Response} */ answer)=>{
+            kept.set(url, answer);
+        },
+    }) });
+    /** @type {string[]} */
+    const asked = [];
+    const get = cachedClientFetch(async url=>{
+        asked.push(url);
+        return new Response('bytes');
+    }, caches);
+    const pack = 'https://cdn.example/bins_win32.zip.abc';
+    const manifest = 'https://cdn.example/steam_client_win32';
+    for (const url of [`${pack}.zip`, `${pack}.zip`, manifest, manifest])
+    {
+        assert.equal(await (await get(url)).text(), 'bytes');
+    }
+    assert.deepEqual(asked, [`${pack}.zip`, manifest, manifest]);
 });

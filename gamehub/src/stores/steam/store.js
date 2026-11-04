@@ -81,11 +81,14 @@ export const STEAM = Object.freeze({
  * @param {(url: string) => import('./connection.js').CmSocket} [options.socket]  A CM
  *     socket; a WebSocket by default.
  * @param {typeof fetch} [options.fetch]  Steam's directory and Valve's client files.
+ * @param {boolean} [options.clientFiles]  Whether run data carries Valve's client files:
+ *     not where the store runs in a tab, whose answers cross the extension's ports,
+ *     and the page reads the public files itself (`fetch`, launcher steam/client-files.js).
  * @param {() => Promise<string[]>} [options.managers]
  * @param {Record<string, any>} [options.steam]  Steam's protocol (`STEAM`).
  * @returns {Store}
  */
-export function steamStore({ vault, socket, fetch: get = fetch,
+export function steamStore({ vault, socket, fetch: get = fetch, clientFiles = true,
     managers = ()=>steamManagers(get), steam = STEAM })
 {
     /** @type {Promise<Held> | null} */
@@ -347,7 +350,7 @@ export function steamStore({ vault, socket, fetch: get = fetch,
                 }
                 const [ticket, files] = await Promise.all([
                     steam.appOwnershipTicket((await loggedOn()).connection, appId).catch(()=>null),
-                    steam.fetchClientFiles({ fetch: get }).catch(()=>null),
+                    clientFiles ? steam.fetchClientFiles({ fetch: get }).catch(()=>null) : null,
                 ]);
                 // When the session ends is the page's to know, not the program's.
                 const signedIn = { ...now };

@@ -127,3 +127,33 @@ export async function fetchClientFiles({ fetch: get = globalThis.fetch, cdn = CL
     }
     return { version: String(manifest.version ?? ''), files: await zipEntries(zip, CLIENT_FILES) };
 }
+
+/**
+ * A fetch that keeps Valve's client packages in a cache of this origin's: a
+ * package's name carries its hash, so a kept one is the one the manifest
+ * names, and the tens of megabytes are read once. Anything else is fetched.
+ *
+ * @param {(url: string) => Promise<Response>} get
+ * @param {CacheStorage | undefined} [caches]
+ * @returns {(url: string) => Promise<Response>}
+ */
+export function cachedClientFetch(get, caches = globalThis.caches){
+    return async url=>{
+        if (!String(url).endsWith('.zip') || !caches)
+        {
+            return get(url);
+        }
+        const cache = await caches.open('steam-client');
+        const kept = await cache.match(url);
+        if (kept)
+        {
+            return kept;
+        }
+        const fresh = await get(url);
+        if (fresh.ok)
+        {
+            await cache.put(url, fresh.clone());
+        }
+        return fresh;
+    };
+}

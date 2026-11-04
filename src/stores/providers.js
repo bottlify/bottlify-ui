@@ -15,7 +15,7 @@
  */
 
 import { ask, gamehub, signInPage, signInWindow } from "./gamehub.js";
-import { INSTALLERS } from "./installers.js";
+import { INSTALLERS, RUN_DATA } from "./installers.js";
 
 /** What the page says of stores without GameHub. */
 export const NEEDS_GAMEHUB = "Game stores need the Bottlify GameHub extension in this browser.";
@@ -123,7 +123,9 @@ export function storeProvider({ id, name }) {
     gameOf,
     runData: async (bottle) => {
       const game = gameOf(bottle);
-      return game ? ask("runData", { store: id, game }) : {};
+      if (!game) return {};
+      const data = await ask("runData", { store: id, game });
+      return RUN_DATA[id] ? RUN_DATA[id](data) : data;
     },
   };
 }

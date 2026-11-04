@@ -34,7 +34,10 @@ import { mountSignIn } from './stores/steam/signin-ui.js';
  *   signIn: typeof mountSignIn }>}
  */
 const STORES = {
-    steam: { make: (vault, fetch)=>steamStore({ vault, fetch }), signIn: mountSignIn },
+    // Valve's client files left to the page, which reads them through the worker
+    // once: tens of megabytes through the tab and back would cross the ports thrice.
+    steam: { make: (vault, fetch)=>steamStore({ vault, fetch, clientFiles: false }),
+        signIn: mountSignIn },
 };
 
 /** Messages that keep the worker from being stopped while this tab waits on Steam or a person. */
