@@ -246,7 +246,7 @@ test('a page\'s ops run in an inactive tab of the store\'s site, the token kept 
         const { ask, answers } = one.page();
         assert.deepEqual((await ask('account', { store: 'steam' })).result, { name: 'someone' });
         const [opened] = [...one.tabs.values()];
-        assert.equal(opened.active, true, 'in front: Safari stops a tab in the background');
+        assert.equal(opened.window, true, 'a window of its own: Safari stops a background tab');
         assert.match(opened.url, /^https:\/\/steamcommunity\.com\/\?bottlify-gamehub=[0-9a-f-]{36}&store=steam&mode=session$/);
         const download = (await ask('download', { store: 'steam', game: '70' })).result;
         assert.equal(download.depots.length, 2);

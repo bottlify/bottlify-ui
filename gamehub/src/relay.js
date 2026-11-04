@@ -175,18 +175,44 @@ export function startRelay({ chrome, sites, fetchable, readable = /^$/,
     }
 
     /**
-     * A tab of the store's site for its session, made active: Safari leaves a
-     * tab in the background stopped, an op of its half done (a library's sync
-     * hung there until the tab was closed). Opened beside the page that asked,
-     * which is made active again once the tab closes.
+     * A tab of the store's site for its session, the active one of a small
+     * window of its own, not focused: Safari leaves a tab in the background
+     * stopped, an op of its half done (a library's sync hung there until the
+     * tab was closed), and the page that asked stays the active tab of its own
+     * window, running too. Where there are no windows (a phone) the tab is
+     * opened active beside the page, which is made active again once it closes.
      *
      * @param {string} url @param {number | undefined} back
      * @returns {Promise<number>}
      */
     async function inFront(url, back){
+        const own = await windowed(url, false).catch(()=>null);
+        if (own !== null)
+        {
+            return own;
+        }
         const made = back === undefined ? null
             : await chrome.tabs.create({ url, active: true, openerTabId: back }).catch(()=>null);
         return (made ?? await chrome.tabs.create({ url, active: true })).id;
+    }
+
+    /**
+     * A window of its own for a tab of the store's site, and the tab's id.
+     * Safari answers a made window without its tabs, which are asked for.
+     *
+     * @param {string} url @param {boolean} focused  A sign-in's is: a person uses it.
+     * @returns {Promise<number>}
+     */
+    async function windowed(url, focused){
+        const made = await chrome.windows.create({ url, type: 'popup', focused,
+            ...focused ? { width: 520, height: 760 } : { width: 420, height: 320 } });
+        const id = made?.tabs?.[0]?.id
+            ?? (await chrome.tabs.query({ windowId: made?.id }).catch(()=>[]))[0]?.id;
+        if (!Number.isInteger(id))
+        {
+            throw new Error('the store\'s window opened with no tab in it');
+        }
+        return id;
     }
 
     /** @param {string} key */
@@ -206,24 +232,11 @@ export function startRelay({ chrome, sites, fetchable, readable = /^$/,
      * tab: Safari answers a made window without its tabs, which are asked for.
      */
     async function shown(/** @type {string} */ url){
-        /** @type {any} */
-        let made;
-        try
-        {
-            made = await chrome.windows.create({ url, type: 'popup', focused: true,
-                width: 520, height: 760 });
-        }
-        catch
+        if (!chrome.windows?.create)
         {
             return (await chrome.tabs.create({ url, active: true })).id;
         }
-        const id = made?.tabs?.[0]?.id
-            ?? (await chrome.tabs.query({ windowId: made?.id }).catch(()=>[]))[0]?.id;
-        if (!Number.isInteger(id))
-        {
-            throw new Error('the sign-in window opened with no tab in it');
-        }
-        return id;
+        return windowed(url, true);
     }
 
     /**
