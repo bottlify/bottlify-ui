@@ -78,7 +78,8 @@ function portPair(name, sender){
  * A browser of one extension: its worker's runtime, its tabs, and the tabs of
  * a store's site, each running the store's side when it is one the worker opened.
  */
-function browser({ idleMs = 300, windowsWithoutTabs = false } = {}){
+function browser({ idleMs = 300, windowsWithoutTabs = false, answerMs = 60_000,
+    stuck = false } = {}){
     const steam = fakeSteam();
     const disk = { session: /** @type {any} */ (
         { accountName: 'someone', refreshToken: TOKEN, id: 'a' }) };
@@ -92,6 +93,8 @@ function browser({ idleMs = 300, windowsWithoutTabs = false } = {}){
     const kept = /** @type {Record<string, any>} */ ({});
     /** Everything any tab port carried, both ways. */
     const carried = /** @type {string[]} */ ([]);
+    /** What tabs.update was asked, in order. @type {any[]} */
+    const updated = [];
     /** Each tab's side that ran, closed or not. @type {any[]} */
     const ran = [];
 
@@ -159,7 +162,10 @@ function browser({ idleMs = 300, windowsWithoutTabs = false } = {}){
                 }
                 return { id, windowId: 1 };
             },
-            update: async()=>{},
+            /** @param {number} id @param {any} props */
+            update: async(id, props)=>{
+                updated.push([id, props]);
+            },
             remove: async(/** @type {number} */ id)=>{
                 if (tabs.delete(id))
                 {
@@ -182,7 +188,18 @@ function browser({ idleMs = 300, windowsWithoutTabs = false } = {}){
             update: async()=>{},
         },
     };
-    const relay = startRelay({ chrome, idleMs, closeSignInMs: 0, lostMs: 50,
+    if (stuck)
+    {
+        // The first tab's: stopped part way, as Safari leaves a tab in the background.
+        const answered = steam.ownedApps;
+        let first = true;
+        steam.ownedApps = ()=>{
+            const now = first;
+            first = false;
+            return now ? new Promise(()=>{}) : answered();
+        };
+    }
+    const relay = startRelay({ chrome, idleMs, closeSignInMs: 0, lostMs: 50, answerMs,
         sites: { steam: SITE }, fetchable: /^https:\/\/api\.steampowered\.com\//,
         vaultOf: ()=>({ get: async()=>disk.session, set: async session=>{
             disk.session = session;
@@ -220,7 +237,7 @@ function browser({ idleMs = 300, windowsWithoutTabs = false } = {}){
             one?.stop();
         }
     };
-    return { chrome, relay, steam, disk, tabs, carried, connect, page, inTab, done };
+    return { chrome, relay, steam, disk, tabs, carried, connect, page, inTab, done, updated };
 }
 
 test('a page\'s ops run in an inactive tab of the store\'s site, the token kept from the page',
@@ -229,7 +246,7 @@ test('a page\'s ops run in an inactive tab of the store\'s site, the token kept 
         const { ask, answers } = one.page();
         assert.deepEqual((await ask('account', { store: 'steam' })).result, { name: 'someone' });
         const [opened] = [...one.tabs.values()];
-        assert.equal(opened.active, false, 'the person\'s own tab stays in front');
+        assert.equal(opened.active, true, 'in front: Safari stops a tab in the background');
         assert.match(opened.url, /^https:\/\/steamcommunity\.com\/\?bottlify-gamehub=[0-9a-f-]{36}&store=steam&mode=session$/);
         const download = (await ask('download', { store: 'steam', game: '70' })).result;
         assert.equal(download.depots.length, 2);
@@ -314,6 +331,7 @@ test('a sign-in window closed first is said; a tab not asked for a while is clos
     assert.equal(one.tabs.size, 1);
     await new Promise(done=>setTimeout(done, 80));
     assert.equal(one.tabs.size, 0, 'the idle tab closed');
+    assert.deepEqual(one.updated.at(-1), [1, { active: true }], 'the page\'s tab in front again');
     assert.deepEqual((await ask('account', { store: 'steam' })).result, { name: 'someone' },
         'and opened again');
     one.done();
@@ -399,4 +417,18 @@ test('bytes and big integers cross a port and come back as they were', ()=>{
         list: [Uint8Array.of(7)], text: 'x', none: null };
     const back = fromWire(JSON.parse(JSON.stringify(toWire(value))));
     assert.deepEqual(back, value);
+});
+
+test('a tab stuck on an op is answered for and closed, and the next op is a new tab\'s', async()=>{
+    const one = browser({ answerMs: 1000, stuck: true });
+    const { ask } = one.page();
+    assert.match((await ask('list', { store: 'steam' })).error, /did not answer list in 1 s/);
+    for (let i = 0; i < 20 && one.tabs.size > 0; i++)
+    {
+        await tick();
+    }
+    assert.equal(one.tabs.size, 0, 'the stuck tab closed');
+    assert.deepEqual((await ask('account', { store: 'steam' })).result, { name: 'someone' },
+        'a new tab answers');
+    one.done();
 });

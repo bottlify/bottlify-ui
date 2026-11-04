@@ -9,7 +9,7 @@
  * Safari applies no ruleset to a request an extension makes itself (WebKit bug
  * 253696), so the CM socket of an extension page goes out under the
  * extension's Origin and Steam closes it. There the store runs in a tab of
- * the store's own site, which GameHub opens and drives (tab-session.js): a
+ * the store's own site, which GameHub opens in front and drives (tab-session.js): a
  * socket that page opens has the site's Origin and needs no rule. Everything
  * else is as in the session frame (frame.js): the same protocol, the same
  * store, and the session kept in the extension's storage area, which this
@@ -45,8 +45,12 @@ const LOAD_MS = 30_000;
  * content server's chunk, a megabyte or so, it delivers.
  */
 const PART_BYTES = 1 << 20;
-/** How long a store's tab is given to answer an op: a stall is said, not waited on. */
-const ANSWER_MS = 120_000;
+/**
+ * How long a store's tab is given to answer an op: a stall is said, not waited
+ * on, and the tab is closed, so the next op is a new tab's -- Safari may leave
+ * a tab in the background stopped with an op of its half done.
+ */
+const ANSWER_MS = 60_000;
 /** How long the database is given to answer: a stall is said, not waited on. */
 const VAULT_MS = 15_000;
 /**
@@ -80,6 +84,7 @@ const within = (promise, ms, what)=>{
  * @property {any} port  Null until the tab has said its nonce, and after it went.
  * @property {Array<(port: any) => void>} waiting  Given its port, or null once it is closed.
  * @property {any} [idle]
+ * @property {number} [back]  The page's tab that asked first, made active again once it closes.
  */
 
 /**
@@ -96,12 +101,20 @@ const within = (promise, ms, what)=>{
  * @param {number} [options.idleMs]  How long a tab with nothing left to answer is kept.
  * @param {number} [options.closeSignInMs]  How long a sign-in's window shows it is done.
  * @param {number} [options.lostMs]  How long a sign-in's tab that lost its port is waited on.
+ * @param {number} [options.answerMs]  How long a store's tab is given to answer an op.
  */
 export function startRelay({ chrome, sites, fetchable, readable = /^$/,
     vaultOf = store=>areaVaultFor(store, chrome.storage.local), idleMs = 3_000,
-    closeSignInMs = 1500, lostMs = LOST_MS })
+    closeSignInMs = 1500, lostMs = LOST_MS, answerMs = ANSWER_MS })
 {
     const area = chrome.storage.session ?? chrome.storage.local;
+    /**
+     * A step of the relay, in the worker's console: which tab opened and said
+     * its nonce, which op went to it and came back, what timed out or went.
+     *
+     * @param {string} line
+     */
+    const say = line=>console.info('Bottlify GameHub relay:', line);
     /** By `<store>/<mode>`. @type {Map<string, Tab>} */
     const tabs = new Map();
     const restored = Promise.resolve(area.get(NOTED)).then((/** @type {any} */ kept)=>{
@@ -128,8 +141,8 @@ export function startRelay({ chrome, sites, fetchable, readable = /^$/,
     };
 
     /** Requests relayed and not answered, by the id the tab is asked under. */
-    const asked = /** @type {Map<number, { port: any, id: number, key: string, timer?: any }>} */ (
-        new Map());
+    const asked = /** @type {Map<number, { port: any, id: number, key: string, op?: string,
+        timer?: any }>} */ (new Map());
     /** A relayed request answered or given up: its deadline goes with it. @param {number} relayed */
     const forget = relayed=>{
         clearTimeout(asked.get(relayed)?.timer);
@@ -155,6 +168,25 @@ export function startRelay({ chrome, sites, fetchable, readable = /^$/,
         clearTimeout(tab.idle);
         await note();
         await chrome.tabs.remove(tab.tabId).catch(()=>{});
+        if (tab.back !== undefined)
+        {
+            await chrome.tabs.update(tab.back, { active: true }).catch(()=>{});
+        }
+    }
+
+    /**
+     * A tab of the store's site for its session, made active: Safari leaves a
+     * tab in the background stopped, an op of its half done (a library's sync
+     * hung there until the tab was closed). Opened beside the page that asked,
+     * which is made active again once the tab closes.
+     *
+     * @param {string} url @param {number | undefined} back
+     * @returns {Promise<number>}
+     */
+    async function inFront(url, back){
+        const made = back === undefined ? null
+            : await chrome.tabs.create({ url, active: true, openerTabId: back }).catch(()=>null);
+        return (made ?? await chrome.tabs.create({ url, active: true })).id;
     }
 
     /** @param {string} key */
@@ -198,9 +230,10 @@ export function startRelay({ chrome, sites, fetchable, readable = /^$/,
      * The store's tab in a mode, open and having said its nonce.
      *
      * @param {string} store @param {'session' | 'signin'} mode
+     * @param {number} [back]  The page's tab that asks.
      * @returns {Promise<any>}  Its port.
      */
-    async function tabOf(store, mode){
+    async function tabOf(store, mode, back){
         await restored;
         const key = `${store}/${mode}`;
         let tab = tabs.get(key);
@@ -214,8 +247,9 @@ export function startRelay({ chrome, sites, fetchable, readable = /^$/,
             const nonce = crypto.randomUUID();
             const url = `${sites[store]}?bottlify-gamehub=${nonce}&store=${store}&mode=${mode}`;
             const tabId = mode === 'signin' ? await shown(url)
-                : (await chrome.tabs.create({ url, active: false })).id;
-            tab = { tabId, nonce, port: null, waiting: [] };
+                : await inFront(url, back);
+            say(`${key}: tab ${tabId} opened`);
+            tab = { tabId, nonce, port: null, waiting: [], ...back !== undefined ? { back } : {} };
             tabs.set(key, tab);
             await note();
         }
@@ -279,15 +313,22 @@ export function startRelay({ chrome, sites, fetchable, readable = /^$/,
         }
         const key = `${store}/session`;
         const relayed = ++next;
-        asked.set(relayed, { port, id, key, timer: setTimeout(()=>{
+        say(`${key}: ${message.op} asked (${relayed})`);
+        asked.set(relayed, { port, id, key, op: message.op, timer: setTimeout(()=>{
             if (asked.get(relayed)?.port === port)
             {
+                const why = `${store}'s tab did not answer ${message.op} in ${answerMs / 1000} s`;
+                say(`${key}: ${message.op} (${relayed}) timed out; the tab is closed`);
                 forget(relayed);
-                rest(key);
-                port.postMessage({ id, error: `${store}'s tab did not answer ${message.op} in ${
-                    ANSWER_MS / 1000} s` });
+                port.postMessage({ id, error: why });
+                const stuck = tabs.get(key);
+                gone(key, why);
+                if (stuck)
+                {
+                    chrome.tabs.remove(stuck.tabId).catch(()=>{});
+                }
             }
-        }, ANSWER_MS) });
+        }, answerMs) });
         signedOut(store, message.op, port.enabled).then(answer=>{
             if (answer)
             {
@@ -295,8 +336,11 @@ export function startRelay({ chrome, sites, fetchable, readable = /^$/,
                 port.postMessage({ id, result: answer.result });
                 return null;
             }
-            return tabOf(store, 'session').then(tab=>tab.postMessage(
-                { request: { to: TO, id: relayed, op: message.op, args: message.args } }));
+            return tabOf(store, 'session', port.sender?.tab?.id).then(tab=>{
+                say(`${key}: ${message.op} (${relayed}) sent to the tab`);
+                tab.postMessage({ request: { to: TO, id: relayed, op: message.op,
+                    args: message.args } });
+            });
         }).catch(e=>{
             if (forget(relayed))
             {
@@ -447,6 +491,7 @@ export function startRelay({ chrome, sites, fetchable, readable = /^$/,
                 }
                 known = { key, store: said.store, mode: said.mode, tab: found };
                 found.port = port;
+                say(`${key}: tab ${found.tabId} said its nonce`);
                 for (const ready of found.waiting.splice(0))
                 {
                     ready(port);
@@ -465,6 +510,11 @@ export function startRelay({ chrome, sites, fetchable, readable = /^$/,
                     forget(message.answer.id);
                     rest(one.key);
                 }
+                if (!('event' in message.answer))
+                {
+                    say(`${one.key}: ${one.op} (${message.answer.id}) answered${
+                        'error' in message.answer ? `: ${message.answer.error}` : ''}`);
+                }
                 one.port.postMessage({ ...message.answer, id: one.id });
             }
             else if (Number.isSafeInteger(message.call))
@@ -482,6 +532,7 @@ export function startRelay({ chrome, sites, fetchable, readable = /^$/,
             }
             const { key, tab } = known;
             tab.port = null;
+            say(`${key}: tab ${tab.tabId} lost its port`);
             if (key.endsWith('/signin'))
             {
                 setTimeout(()=>{
