@@ -24,6 +24,7 @@ import { AppHeader } from "./components/AppHeader.jsx";
 import { Footer } from "./components/Footer.jsx";
 import { InstallScreen } from "./components/InstallScreen.jsx";
 import { useStores } from "./components/Stores.jsx";
+import { storeOf } from "./stores/providers.js";
 import { Landing } from "./components/Landing.jsx";
 import { License } from "./components/License.jsx";
 import { BottleSettingsDialog, GameDetails } from "./components/GameDetails.jsx";
@@ -101,8 +102,6 @@ export default function App() {
   // server's and this browser's alike -- without a reload.
   const [libraryRevision, setLibraryRevision] = useState(0);
   const libraryChanged = useCallback(() => setLibraryRevision((n) => n + 1), []);
-  // The game stores' accounts signed in in this browser: their games are in the library.
-  const stores = useStores(libraryChanged);
   useEffect(() => {
     let cancelled = false;
     getAvailableBundles()
@@ -139,6 +138,12 @@ export default function App() {
   }, [playId]);
   const playBundle = playId === null ? null : bundles.find((one) => one.id === playId)
     ?? (unlisted?.id === playId ? unlisted.bundle : null);
+  // The game stores' accounts signed in in this browser: their games are in the
+  // library. Synced where they are of use -- the library, and a store's game
+  // being played -- not under a bottle of no store, where in Safari it opened
+  // the store's window for nothing.
+  const stores = useStores(libraryChanged, undefined,
+    !playing || (playBundle !== null && storeOf(playBundle) !== null));
   /** @param {any} bundle @param {boolean} [preload] */
   const play = (bundle, preload = false) => {
     const to = `/play/${encodeURIComponent(bundle.id)}${preload ? "?preload=1" : ""}`;

@@ -82,8 +82,9 @@ const fresh = (provider) => ({ provider, available: false, ...lastKnown(provider
  *
  * @param {() => void} onInstalled  A bottle was added: the library lists it.
  * @param {() => Promise<StoreProvider[]>} [load]  The stores, asked of GameHub.
+ * @param {boolean} [active]  Whether the accounts are read now: where they are of use.
  */
-export function useStores(onInstalled, load = loadProviders) {
+export function useStores(onInstalled, load = loadProviders, active = true) {
   const [providers, setProviders] = useState(knownProviders);
   const [gamehub, setGamehub] = useState(/** @type {boolean | null} */ (null));
   const [stores, setStores] = useState(() => providers.map(fresh));
@@ -133,9 +134,10 @@ export function useStores(onInstalled, load = loadProviders) {
     }
   }, [update]);
 
+  // Read where the stores are of use (`active`), and again each time they are.
   useEffect(() => {
-    if (gamehub) for (const provider of providers) read(provider);
-  }, [gamehub, providers, read]);
+    if (gamehub && active) for (const provider of providers) read(provider);
+  }, [gamehub, providers, read, active]);
 
   const byId = useCallback((/** @type {string} */ id) =>
     /** @type {StoreProvider} */ (providers.find((one) => one.id === id)), [providers]);
