@@ -12,8 +12,9 @@
  * the store's own site, which GameHub opens and drives (tab-session.js): a
  * socket that page opens has the site's Origin and needs no rule. Everything
  * else is as in the session frame (frame.js): the same protocol, the same
- * store and the session kept in the extension's database, which this worker
- * reads for the tab.
+ * store, and the session kept in the extension's storage area, which this
+ * worker reads for the tab (areaVaultFor: Safari's worker may never answer from
+ * IndexedDB).
  *
  * The service worker relays between the two over ports: a launcher page's
  * content script (`gamehub-page`) asks, the store's tab (`gamehub-tab`)
@@ -23,7 +24,7 @@
  * a tab of its own, shown in a window, which ends once the session is kept.
  */
 
-import { vaultFor } from './vault.js';
+import { areaVaultFor } from './vault.js';
 import { configOf, switchRulesets, wantedBy } from './rulesets.js';
 import { fromWire, toWire } from './wire.js';
 import { nativeInflate } from './inflate.js';
@@ -83,7 +84,8 @@ const within = (promise, ms, what)=>{
  * @param {number} [options.closeSignInMs]  How long a sign-in's window shows it is done.
  * @param {number} [options.lostMs]  How long a sign-in's tab that lost its port is waited on.
  */
-export function startRelay({ chrome, sites, fetchable, vaultOf = vaultFor, idleMs = 60_000,
+export function startRelay({ chrome, sites, fetchable,
+    vaultOf = store=>areaVaultFor(store, chrome.storage.local), idleMs = 60_000,
     closeSignInMs = 1500, lostMs = LOST_MS })
 {
     const area = chrome.storage.session ?? chrome.storage.local;
@@ -99,7 +101,7 @@ export function startRelay({ chrome, sites, fetchable, vaultOf = vaultFor, idleM
     const note = ()=>area.set({ [NOTED]: Object.fromEntries([...tabs]
         .map(([key, { tabId, nonce }])=>[key, { tabId, nonce }])) });
 
-    /** @type {Map<string, ReturnType<typeof vaultFor>>} */
+    /** @type {Map<string, { get(): Promise<any>, set(session: any): Promise<void> }>} */
     const vaults = new Map();
     /** @param {string} store */
     const vault = store=>{

@@ -172,7 +172,11 @@ export function mountSignIn(root, { vault, fetch: get = globalThis.fetch, tellDo
     };
     const api = connect;
     const flow = createSignIn({ send: heard, kept: {
-        vault,
+        vault: { set: async(/** @type {any} */ session)=>{
+            log('keeping the session in GameHub');
+            await vault.set(session);
+            log('the session is kept');
+        } },
         qr: options=>signInWithQr(api, { ...options, trace: log }),
         credentials: options=>signInWithCredentials(api, { ...options, trace: log }),
     } });

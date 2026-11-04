@@ -149,3 +149,33 @@ export function vaultFor(store, { indexedDB = globalThis.indexedDB,
         },
     };
 }
+
+/**
+ * A store's session kept in the extension's storage area, for Safari's
+ * worker, where IndexedDB may never answer (it stalled a sign-in at the
+ * moment its token was kept, as it had the Safari proof of concept's). The
+ * area is the extension's own: no page and no site's script reads it, only
+ * the extension's contexts -- its worker, its pages, its content scripts.
+ * Not sealed: a key kept beside the token in the same area would hide it from
+ * nobody who can read the area.
+ *
+ * @param {string} store
+ * @param {{ get(key: string): Promise<Record<string, any>>, set(items: Record<string, any>):
+ *     Promise<void>, remove(key: string): Promise<void> }} area  `chrome.storage.local`.
+ */
+export function areaVaultFor(store, area){
+    const key = `gamehub-session-${store}`;
+    return {
+        /** @returns {Promise<Session | null>} */
+        async get(){
+            const kept = (await area.get(key))?.[key];
+            return typeof kept?.refreshToken === 'string' ? kept : null;
+        },
+        /** @param {Session | null} session  Null forgets it. */
+        async set(session){
+            await (session ? area.set({ [key]: { accountName: session.accountName,
+                ...session.id ? { id: session.id } : {}, refreshToken: session.refreshToken } })
+                : area.remove(key));
+        },
+    };
+}

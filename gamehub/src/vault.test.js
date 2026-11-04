@@ -8,7 +8,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { newKey, seal, unseal } from './vault.js';
+import { areaVaultFor, newKey, seal, unseal } from './vault.js';
 
 const TOKEN = 'eyJhbGciOiJFZERTQSJ9.eyJzdWIiOiI3NjU2MTE5Nzk2MDI2NTcyOSJ9.secret-signature';
 
@@ -26,4 +26,26 @@ test('a sealed session holds no token and opens with its unreadable key alone', 
     await assert.rejects(unseal(await newKey(), sealed), 'another key opens nothing');
     const again = await seal(key, session);
     assert.notDeepEqual(again.iv, sealed.iv, 'a new nonce each time');
+});
+
+test('a session in the storage area: kept, read back, forgotten, by store', async()=>{
+    /** @type {Record<string, any>} */
+    const items = {};
+    const area = {
+        get: async(/** @type {string} */ key)=>({ [key]: items[key] }),
+        set: async(/** @type {Record<string, any>} */ more)=>{
+            Object.assign(items, JSON.parse(JSON.stringify(more)));
+        },
+        remove: async(/** @type {string} */ key)=>{
+            delete items[key];
+        },
+    };
+    const steam = areaVaultFor('steam', area);
+    assert.equal(await steam.get(), null);
+    await steam.set({ accountName: 'someone', id: 'a', refreshToken: 'token' });
+    assert.deepEqual(await steam.get(), { accountName: 'someone', id: 'a', refreshToken: 'token' });
+    assert.equal(await areaVaultFor('gog', area).get(), null);
+    await steam.set(null);
+    assert.equal(await steam.get(), null);
+    assert.deepEqual(items, {});
 });
