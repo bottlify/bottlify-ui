@@ -11,8 +11,10 @@
  * answers `hello` -- the stores, which the site has on, and the extension's
  * origin, where each store's pages are: `<store>/session.html`, the frame that
  * speaks the store's protocol and that the page asks every other op of, and
- * `<store>/signin.html`. It waits on nothing of the worker's, loads no module
- * and holds no session. Chrome loads a content script as a classic script.
+ * `<store>/signin.html`. It waits on nothing of the worker's and holds no
+ * session. Where the stores run in a tab of their sites (TRANSPORT `tab`), it
+ * passes every other op to the worker and its answers back, and only then
+ * loads a module (wire.js). Chrome loads a content script as a classic script.
  */
 
 (()=>{
@@ -23,6 +25,10 @@
     {
         return;
     }
+    // Where a store's protocol runs: `frame`, the store's session frame the
+    // page embeds; `tab`, a tab of the store's site the worker drives
+    // (relay.js), every op but `hello` passed to it from here. The build writes it.
+    const TRANSPORT = /** @type {'frame' | 'tab'} */ ('frame');
     const { chrome } = /** @type {any} */ (globalThis);
     const version = chrome.runtime.getManifest().version;
     // Before any of the page's scripts runs: a page that does not find it
@@ -48,6 +54,38 @@
     /** @param {Record<string, any>} answer */
     const reply = answer=>window.postMessage({ from: PEER, ...answer }, location.origin);
 
+    /** The worker's port, made on the first op it relays, and the ops it has not answered. */
+    /** @type {any} */
+    let port = null;
+    const unanswered = new Set();
+    /** @type {Promise<typeof import('./wire.js')> | null} */
+    let wire = null;
+    /** @param {Record<string, any>} data */
+    const relay = data=>{
+        wire ??= import(chrome.runtime.getURL('gamehub/src/wire.js'));
+        if (!port)
+        {
+            port = chrome.runtime.connect({ name: 'gamehub-page' });
+            port.onMessage.addListener((/** @type {any} */ answer)=>wire?.then(({ fromWire })=>{
+                if (!('event' in answer))
+                {
+                    unanswered.delete(answer.id);
+                }
+                reply(fromWire(answer));
+            }));
+            port.onDisconnect.addListener(()=>{
+                port = null;
+                for (const id of unanswered)
+                {
+                    reply({ id, error: 'GameHub was restarted before it answered; ask again' });
+                }
+                unanswered.clear();
+            });
+        }
+        unanswered.add(data.id);
+        port.postMessage({ id: data.id, op: data.op, args: data.args });
+    };
+
     window.addEventListener('message', async event=>{
         const data = event.data;
         if (event.source !== window || event.origin !== location.origin
@@ -58,11 +96,19 @@
         }
         if (data.op !== 'hello')
         {
-            reply({ id: data.id, error: `${String(data.op)} is asked of a store's frame` });
+            if (TRANSPORT === 'tab')
+            {
+                relay(data);
+            }
+            else
+            {
+                reply({ id: data.id, error: `${String(data.op)} is asked of a store's frame` });
+            }
             return;
         }
         const switches = await wanted;
-        reply({ id: data.id, result: { version, origin, stores: Object.entries(STORES)
-            .map(([id, name])=>({ id, name, on: switches[id] !== false })) } });
+        reply({ id: data.id, result: { version, origin, transport: TRANSPORT,
+            stores: Object.entries(STORES)
+                .map(([id, name])=>({ id, name, on: switches[id] !== false })) } });
     });
 })();

@@ -10,14 +10,15 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Sign in to Steam</title>
 <style>
-  :root { color-scheme: light dark; --fg: #1b1b1f; --muted: #5f6368; --line: #c8c8d0;
+  /* :host and .sheet: the same page shown over Steam's site, in a shadow root (tab-session.js). */
+  :root, :host { color-scheme: light dark; --fg: #1b1b1f; --muted: #5f6368; --line: #c8c8d0;
     --accent: #1a73e8; --error: #c5221f; --bg: #fff; }
   @media (prefers-color-scheme: dark) {
-    :root { --fg: #e8e8ec; --muted: #a0a4ab; --line: #44464f; --accent: #8ab4f8;
+    :root, :host { --fg: #e8e8ec; --muted: #a0a4ab; --line: #44464f; --accent: #8ab4f8;
       --error: #f28b82; --bg: #1e1f24; }
   }
   * { box-sizing: border-box; }
-  body { margin: 0; padding: 16px; font: 14px/1.45 system-ui, sans-serif; color: var(--fg);
+  body, .sheet { margin: 0; padding: 16px; font: 14px/1.45 system-ui, sans-serif; color: var(--fg);
     background: var(--bg); }
   nav { display: flex; gap: 8px; margin-bottom: 16px; }
   nav button { flex: 1; }
@@ -32,6 +33,7 @@
   .qr svg { background: #fff; padding: 8px; border-radius: 6px; }
   .status { color: var(--muted); text-align: center; margin: 12px 0 0; min-height: 1.45em; }
   .error { color: var(--error); }
+  .sheet { width: min(440px, calc(100vw - 32px)); border-radius: 12px; }
   [hidden] { display: none !important; }
 </style>
 </head>

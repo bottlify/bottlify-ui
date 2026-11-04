@@ -9,8 +9,9 @@
  * integration tests and its bench: a script defining `ask(op, args)`, which
  * asks `hello` of the content script and every other op of the store's
  * session frame, embedded on first use, between the page's origin and the
- * extension's alone. `window.frameStyle` sets the frame's CSS; by default a
- * pixel, shown but not seen.
+ * extension's alone - or, where GameHub runs the stores in a tab of their
+ * sites (`transport: 'tab'`), of the content script too. `window.frameStyle`
+ * sets the frame's CSS; by default a pixel, shown but not seen.
  */
 
 export const PAGE_CLIENT = `
@@ -44,8 +45,11 @@ const frameOf = store => frames[store] ??= (async () => {
     });
     return { target: frame.contentWindow, origin };
 })();
+let greeted = null;
 window.ask = async (op, args) => {
     if (op === 'hello') return askOf(window, location.origin, op, args);
+    greeted ??= askOf(window, location.origin, 'hello');
+    if ((await greeted).transport === 'tab') return askOf(window, location.origin, op, args);
     const { target, origin } = await frameOf(args.store);
     return askOf(target, origin, op, args);
 };

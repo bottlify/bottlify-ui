@@ -5,8 +5,9 @@
  */
 
 /**
- * The extension's manifest, one source for its two builds: `public` runs on
- * Bottlify's own sites alone, `dev` on any page, a local launcher's too.
+ * The extension's manifest, one source for its builds: `public` runs on
+ * Bottlify's own sites alone, `dev` on any page, a local launcher's too, and
+ * `safari` as `dev` with each store run in a tab of its site (`TRANSPORTS`).
  *
  * A host permission is the page's as well as the platform's: Chrome applies a
  * ruleset's header changes only to a request whose URL and whose initiator
@@ -21,7 +22,22 @@ export const PAGES = Object.freeze({
     // address on its network, and a match pattern takes no wildcard inside an
     // address. The dev build is loaded by hand, never published.
     dev: Object.freeze(['<all_urls>']),
+    safari: Object.freeze(['<all_urls>']),
 });
+
+/**
+ * Where each build runs a store's protocol: `frame`, the store's session
+ * frame, an extension page the launcher embeds, its socket given the store's
+ * Origin by the store's ruleset; `tab`, a tab of the store's own site the
+ * worker drives (relay.js), for a browser that applies no ruleset to an
+ * extension's own request - Safari (WebKit bug 253696).
+ */
+export const TRANSPORTS = Object.freeze(/** @type {const} */ ({
+    public: 'frame', dev: 'frame', safari: 'tab' }));
+
+const DEV_HOSTS = [String.raw`localhost|.+\.localhost`, String.raw`127\.\d+\.\d+\.\d+`,
+    String.raw`192\.168\.\d+\.\d+`, String.raw`(play\.)?bottlify\.app`]
+    .map(host=>`^(${host})$`).join('|');
 
 /**
  * The hosts a build's GameHub answers on, by name, where its match patterns
@@ -31,9 +47,8 @@ export const PAGES = Object.freeze({
  */
 export const HOSTS = Object.freeze({
     public: null,
-    dev: [String.raw`localhost|.+\.localhost`, String.raw`127\.\d+\.\d+\.\d+`,
-        String.raw`192\.168\.\d+\.\d+`, String.raw`(play\.)?bottlify\.app`]
-        .map(host=>`^(${host})$`).join('|'),
+    dev: DEV_HOSTS,
+    safari: DEV_HOSTS,
 });
 
 /**
@@ -45,6 +60,8 @@ export const HOSTS = Object.freeze({
 export const PLATFORMS = Object.freeze({
     steam: Object.freeze({
         rules: 'rules/steam.json',
+        // Where its tab is opened, in a build that runs it in one.
+        site: 'https://steamcommunity.com/',
         pages: Object.freeze({
             session: Object.freeze({ html: 'src/stores/steam/session.html',
                 script: 'gamehub/src/stores/steam/session-page.js' }),
@@ -77,7 +94,11 @@ export const STORE_PAGES = Object.freeze(Object.entries(PLATFORMS).flatMap(([id,
  * each store's pages' scripts.
  */
 export const ENTRIES = Object.freeze(['gamehub/src/worker.js', 'gamehub/src/content.js',
+    'gamehub/src/tab.js', 'gamehub/src/tab-session.js', 'gamehub/src/wire.js',
     ...STORE_PAGES.map(([, , files])=>files.script)]);
+
+/** The scripts the build writes its transport into (`TRANSPORTS`). */
+export const TRANSPORT_WRITTEN = Object.freeze(['gamehub/src/content.js', 'gamehub/src/worker.js']);
 
 /**
  * The scripts that check the page they serve, by its host, where the build's
@@ -100,20 +121,31 @@ export const FRAMED_BY = PAGES;
  */
 export function manifestFor(build, version){
     const pages = [...PAGES[build]];
+    const sites = TRANSPORTS[build] === 'tab'
+        ? Object.values(PLATFORMS).map(platform=>`${platform.site}*`) : [];
     return {
         manifest_version: 3,
-        name: build === 'dev' ? 'Bottlify GameHub (dev)' : 'Bottlify GameHub',
+        name: build === 'public' ? 'Bottlify GameHub' : `Bottlify GameHub (${build})`,
         version,
         description: 'Connects Bottlify to your game libraries; sign-ins stay in the extension.',
         permissions: ['declarativeNetRequest', 'storage'],
-        host_permissions: [...pages,
+        host_permissions: [...pages, ...sites,
             ...Object.values(PLATFORMS).flatMap(platform=>platform.hosts)],
         background: { service_worker: 'gamehub/src/worker.js', type: 'module' },
-        content_scripts: [{ matches: pages, js: ['gamehub/src/content.js'], run_at: 'document_start' }],
-        // A store's pages alone, as frames: no module is the page's to load.
+        content_scripts: [
+            { matches: pages, js: ['gamehub/src/content.js'], run_at: 'document_start' },
+            ...sites.length
+                ? [{ matches: sites, js: ['gamehub/src/tab.js'], run_at: 'document_idle' }] : []],
+        // A store's pages alone, as frames: no module is the page's to load -
+        // but where the stores run in a tab, the content scripts' modules, which
+        // a content script loads by address: wire.js on a page, the store's side
+        // and its sign-in page's markup on its site.
         web_accessible_resources: [{
-            resources: STORE_PAGES.map(([id, page])=>`${id}/${page}.html`),
-            matches: [...FRAMED_BY[build]] }],
+            resources: [...STORE_PAGES.map(([id, page])=>`${id}/${page}.html`),
+                ...sites.length ? ['gamehub/src/wire.js'] : []],
+            matches: [...FRAMED_BY[build]] },
+        ...sites.length ? [{ resources: ['gamehub/*', 'core/*',
+            ...STORE_PAGES.map(([id, page])=>`${id}/${page}.html`)], matches: sites }] : []],
         declarative_net_request: {
             rule_resources: Object.entries(PLATFORMS).map(([id, platform])=>(
                 { id, enabled: true, path: `gamehub/${platform.rules}` })),

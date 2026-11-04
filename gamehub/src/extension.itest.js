@@ -79,7 +79,7 @@ async function fromSteam(){
 
 const pause = (/** @type {number} */ ms)=>new Promise(done=>setTimeout(done, ms));
 const hello = (/** @type {boolean} */ steam, /** @type {string} */ extension)=>({
-    version: '0.1.0', origin: `chrome-extension://${extension}`,
+    version: '0.1.0', origin: `chrome-extension://${extension}`, transport: 'frame',
     stores: [{ id: 'steam', name: 'Steam', on: steam }] });
 
 test('the dev build carries a page to Steam and keeps the session from it', async t=>{

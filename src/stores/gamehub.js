@@ -15,6 +15,12 @@
  * embedded here, between this page's origin and the extension's alone. A
  * sign-in is not an op: the page frames the store's sign-in page, also the
  * extension's, and is told the account's name when it is done.
+ *
+ * Where the extension's own pages cannot reach a store (Safari: its rules do
+ * not apply to the extension's own requests), it runs each store in a tab of
+ * the store's site and says so (`transport: 'tab'`): every op is then asked
+ * of the content script, which passes it on, and a sign-in is a window of
+ * the store's site the extension opens, `signIn` answering once it is done.
  */
 
 const PEER = "bottlify-gamehub";
@@ -96,16 +102,19 @@ function frameOf(store) {
  * @returns {Promise<any>}
  */
 export async function ask(op, args = {}) {
-  if (op === "hello") return askOf(window, location.origin, op, args);
+  if (op === "hello" || (await gamehub())?.transport === "tab") {
+    return askOf(window, location.origin, op, args);
+  }
   const { target, origin } = await frameOf(String(args.store));
   return askOf(target, origin, op, args);
 }
 
 /**
- * What GameHub says of itself: its version, its stores, and its origin, where
- * each store's pages are.
+ * What GameHub says of itself: its version, its stores, its origin, where
+ * each store's pages are, and where it runs the stores: `frame` (or nothing
+ * said, by an older one) or `tab`.
  *
- * @typedef {{ version: string, origin?: string,
+ * @typedef {{ version: string, origin?: string, transport?: "frame" | "tab",
  *   stores: { id: string, name: string, on: boolean }[] }} Hello
  */
 
@@ -135,9 +144,23 @@ export function gamehub() {
  * @returns {Promise<string | null>}
  */
 export async function signInPage(store) {
-  const origin = (await gamehub())?.origin;
-  return typeof origin === "string" && origin.startsWith("chrome-extension://")
-    ? `${origin}/${encodeURIComponent(store)}/signin.html` : null;
+  const hello = await gamehub();
+  return hello?.transport !== "tab" && typeof hello?.origin === "string"
+    && hello.origin.startsWith("chrome-extension://")
+    ? `${hello.origin}/${encodeURIComponent(store)}/signin.html` : null;
+}
+
+/**
+ * A sign-in in a window of the store's site, where GameHub runs the store in a
+ * tab: `done` the account's name once it is signed in, rejected when the
+ * window is closed first. Null where GameHub signs in in a frame (`signInPage`).
+ *
+ * @param {string} store
+ * @returns {Promise<{ done: Promise<string> } | null>}
+ */
+export async function signInWindow(store) {
+  if ((await gamehub())?.transport !== "tab") return null;
+  return { done: ask("signIn", { store }).then((answer) => String(answer?.name ?? "")) };
 }
 
 /**

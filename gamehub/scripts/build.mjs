@@ -15,6 +15,9 @@
  * in git.
  *
  *   node scripts/build.mjs [out]
+ *
+ * `dist/safari/` is `dev` with each store run in a tab of its site, for Safari
+ * (manifest.js TRANSPORTS): Safari, Settings, Developer, Add Temporary Extension.
  */
 
 import { copyFile, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
@@ -22,7 +25,8 @@ import { readFileSync } from 'node:fs';
 import { dirname, join, posix, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-    ENTRIES, HOSTS, HOST_CHECKED, PAGES, PLATFORMS, STORE_PAGES, manifestFor,
+    ENTRIES, HOSTS, HOST_CHECKED, PAGES, PLATFORMS, STORE_PAGES, TRANSPORTS, TRANSPORT_WRITTEN,
+    manifestFor,
 } from '../src/manifest.js';
 
 const HERE = fileURLToPath(new URL('..', import.meta.url));
@@ -151,6 +155,17 @@ export async function build(out = join(HERE, 'dist')){
             }
             await writeFile(join(dir, path),
                 script.replace(blank, ()=>`const HOSTS = new RegExp(${JSON.stringify(hosts)});`));
+        }
+        for (const path of TRANSPORTS[flavour] === 'frame' ? [] : TRANSPORT_WRITTEN)
+        {
+            const script = await readFile(join(dir, path), 'utf8');
+            const blank = 'const TRANSPORT = /** @type {\'frame\' | \'tab\'} */ (\'frame\');';
+            if (!script.includes(blank))
+            {
+                throw new Error(`${path} lost the line the build writes its transport into`);
+            }
+            await writeFile(join(dir, path), script.replace(blank,
+                ()=>`const TRANSPORT = ${JSON.stringify(TRANSPORTS[flavour])};`));
         }
         await writeFile(join(dir, 'manifest.json'),
             `${JSON.stringify(manifestFor(flavour, version), null, 2)}\n`);

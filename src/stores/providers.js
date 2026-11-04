@@ -14,7 +14,7 @@
  * Without GameHub there are no stores.
  */
 
-import { ask, gamehub, signInPage } from "./gamehub.js";
+import { ask, gamehub, signInPage, signInWindow } from "./gamehub.js";
 import { INSTALLERS } from "./installers.js";
 
 /** What the page says of stores without GameHub. */
@@ -47,6 +47,7 @@ export const NEEDS_GAMEHUB = "Game stores need the Bottlify GameHub extension in
  * @property {{
  *   account: (options?: { fresh?: boolean }) => Promise<{ name: string, expires?: string } | null>,
  *   signInPage: () => Promise<string | null>,
+ *   signInWindow: () => Promise<{ done: Promise<string> } | null>,
  *   signOut: () => Promise<void>,
  * }} auth  The account: a sign-in is GameHub's page for the store, shown in a frame.
  * @property {(options?: { fresh?: boolean }) => Promise<StoreGame[]>} getList  The account's games.
@@ -103,6 +104,7 @@ export function storeProvider({ id, name }) {
     auth: {
       account: ({ fresh = false } = {}) => ask("account", { store: id, ...fresh ? { fresh } : {} }),
       signInPage: () => signInPage(id),
+      signInWindow: () => signInWindow(id),
       signOut: async () => {
         await ask("signOut", { store: id });
       },

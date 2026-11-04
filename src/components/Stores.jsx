@@ -192,9 +192,23 @@ export function useStores(onInstalled, load = loadProviders) {
  */
 export function StoreSignIn({ provider, onSignedIn, onClose }) {
   const [page, setPage] = useState(/** @type {string | null | undefined} */ (undefined));
+  /** A sign-in in a window of the store's site: going on, or what it ended in. */
+  const [inWindow, setInWindow] = useState(/** @type {string | null} */ (null));
+  // Read when the window's sign-in ends: one window per dialog, whatever renders between.
+  const signedIn = useRef(onSignedIn);
+  signedIn.current = onSignedIn;
   useEffect(() => {
     let gone = false;
-    provider.auth.signInPage().then((url) => !gone && setPage(url), () => !gone && setPage(null));
+    provider.auth.signInWindow().then((opened) => {
+      if (gone) return;
+      if (!opened) {
+        provider.auth.signInPage().then((url) => !gone && setPage(url), () => !gone && setPage(null));
+        return;
+      }
+      setInWindow("");
+      opened.done.then(() => !gone && signedIn.current(),
+        (e) => !gone && setInWindow(String(e?.message ?? e)));
+    }, () => !gone && setPage(null));
     return () => {
       gone = true;
     };
@@ -211,8 +225,12 @@ export function StoreSignIn({ provider, onSignedIn, onClose }) {
     <Dialog open onClose={onClose} maxWidth="xs" fullWidth>
       <DialogTitle>Sign in to {provider.name}</DialogTitle>
       <DialogContent dividers sx={{ p: 0 }}>
-        {page === undefined && <Box sx={{ display: "flex", justifyContent: "center", py: 4 }}>
-          <CircularProgress /></Box>}
+        {inWindow === "" && <Typography sx={{ m: 2 }}>
+          A {provider.name} window has opened: sign in there. It closes once you are signed in.
+        </Typography>}
+        {inWindow && <Alert severity="warning" sx={{ m: 2 }}>{inWindow}</Alert>}
+        {page === undefined && inWindow === null
+          && <Box sx={{ display: "flex", justifyContent: "center", py: 4 }}><CircularProgress /></Box>}
         {page === null && <Alert severity="warning" sx={{ m: 2 }}>
           This version of the Bottlify GameHub extension cannot sign in here; update it.</Alert>}
         {page && <iframe src={page} title={`Sign in to ${provider.name}`}
