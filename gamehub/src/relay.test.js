@@ -303,11 +303,29 @@ test('a sign-in window closed first is said; a tab not asked for a while is clos
     const [id] = [...one.tabs].find(([, tab])=>tab.window) ?? [];
     await one.chrome.tabs.remove(/** @type {number} */ (id));
     assert.match((await signing).error, /sign-in window was closed/);
-    assert.equal((await ask('account', { store: 'steam' })).result, null);
+    assert.equal(one.tabs.size, 0);
+    one.disk.session = { accountName: 'someone', refreshToken: TOKEN, id: 'a' };
+    assert.deepEqual((await ask('account', { store: 'steam' })).result, { name: 'someone' });
     assert.equal(one.tabs.size, 1);
     await new Promise(done=>setTimeout(done, 80));
     assert.equal(one.tabs.size, 0, 'the idle tab closed');
-    assert.equal((await ask('account', { store: 'steam' })).result, null, 'and opened again');
+    assert.deepEqual((await ask('account', { store: 'steam' })).result, { name: 'someone' },
+        'and opened again');
+    one.done();
+});
+
+test('nobody signed in: answered without a tab of the site', async()=>{
+    const one = browser();
+    one.disk.session = null;
+    const { ask } = one.page();
+    assert.equal((await ask('account', { store: 'steam' })).result, null);
+    assert.deepEqual((await ask('list', { store: 'steam', fresh: true })).result, []);
+    assert.deepEqual((await ask('runData', { store: 'steam', game: '400' })).result, {});
+    assert.deepEqual((await ask('signOut', { store: 'steam' })).result, {});
+    assert.equal(one.tabs.size, 0, 'no tab opened to say there is no account');
+    const cover = (await ask('cover', { store: 'steam', game: '440', kind: 'header' })).result;
+    assert.match(cover, /\/440\/header\.jpg$/, 'an op the store answers anyone still goes to it');
+    assert.equal(one.tabs.size, 1);
     one.done();
 });
 

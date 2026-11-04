@@ -59,6 +59,13 @@ export const OPS = Object.freeze({
     runData: { store: 'store', game: 'game' },
 });
 
+/**
+ * What every store answers these ops with nobody signed in, as above: what
+ * GameHub gives without asking the store, where reaching it costs (a tab of
+ * its site, relay.js).
+ */
+export const SIGNED_OUT = Object.freeze({ account: null, list: [], signOut: {}, runData: {} });
+
 /** @type {Record<ArgKind, (value: unknown) => boolean>} */
 const VALID = {
     id: value=>Number.isSafeInteger(value),

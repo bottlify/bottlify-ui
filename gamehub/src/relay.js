@@ -26,7 +26,7 @@
 import { vaultFor } from './vault.js';
 import { configOf, switchRulesets, wantedBy } from './rulesets.js';
 import { toWire } from './wire.js';
-import { TO } from './protocol.js';
+import { SIGNED_OUT, TO } from './protocol.js';
 
 export const PAGE_PORT = 'gamehub-page';
 export const TAB_PORT = 'gamehub-tab';
@@ -228,14 +228,39 @@ export function startRelay({ chrome, sites, fetchable, vaultOf = vaultFor, idleM
         const key = `${store}/session`;
         const relayed = ++next;
         asked.set(relayed, { port, id, key });
-        tabOf(store, 'session').then(tab=>tab.postMessage(
-            { request: { to: TO, id: relayed, op: message.op, args: message.args } }),
-        e=>{
+        signedOut(store, message.op, port.enabled).then(answer=>{
+            if (answer)
+            {
+                asked.delete(relayed);
+                port.postMessage({ id, result: answer.result });
+                return null;
+            }
+            return tabOf(store, 'session').then(tab=>tab.postMessage(
+                { request: { to: TO, id: relayed, op: message.op, args: message.args } }));
+        }).catch(e=>{
             if (asked.delete(relayed))
             {
                 port.postMessage({ id, error: String(e?.message ?? e) });
             }
         });
+    }
+
+    /**
+     * The protocol's answer to an op with nobody signed in, given here when no
+     * session is kept: no tab of the store's site is opened to say there is
+     * no account. A store the site has switched off is the tab's to refuse.
+     *
+     * @param {string} store @param {string} op @param {Promise<string[]>} on
+     * @returns {Promise<{ result: unknown } | null>}
+     */
+    async function signedOut(store, op, on){
+        if (!Object.hasOwn(SIGNED_OUT, op) || !(await on).includes(store))
+        {
+            return null;
+        }
+        const kept = await within(vault(store).get(), VAULT_MS,
+            'the extension\'s database did not answer');
+        return kept ? null : { result: SIGNED_OUT[/** @type {keyof typeof SIGNED_OUT} */ (op)] };
     }
 
     /** @param {any} port */

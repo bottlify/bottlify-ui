@@ -103,10 +103,9 @@ test('the Safari build runs Steam in a tab of its site, and the page downloads',
                 transport: 'tab', stores: [{ id: 'steam', name: 'Steam', on: true }] });
         });
 
-        await t.test('an op opens steamcommunity.com and Steam answers over its socket', async()=>{
+        await t.test('an op for Steam opens steamcommunity.com and goes over its socket', async()=>{
             assert.equal(await page('ask("account", { store: "steam" })'), null);
-            const [tab] = await steamTabs();
-            assert.match(tab?.url ?? '', /\?bottlify-gamehub=[0-9a-f-]{36}&store=steam&mode=session$/);
+            assert.deepEqual(await steamTabs(), [], 'no tab to say nobody is signed in');
             const download = await page(`ask("download", { store: "steam", game: "${APP}" })
                 .then(answer => ({ servers: answer.servers.length, depots: answer.depots.map(one =>
                     ({ depot: one.depot, key: one.key instanceof Uint8Array ? one.key.length : -1,
@@ -115,7 +114,9 @@ test('the Safari build runs Steam in a tab of its site, and the page downloads',
             const depot = download.depots.find((/** @type {any} */ one)=>one.depot === DEPOT);
             assert.equal(depot?.key, 32, 'the key reaches the page as bytes');
             assert.match(depot.code, /^[0-9]+$/);
-            assert.equal((await steamTabs()).length, 1, 'one tab for both ops');
+            const tabs = await steamTabs();
+            assert.equal(tabs.length, 1);
+            assert.match(tabs[0].url, /\?bottlify-gamehub=[0-9a-f-]{36}&store=steam&mode=session$/);
         });
 
         await t.test('the page reads a manifest and a chunk from the content servers', async()=>{
