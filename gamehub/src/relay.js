@@ -25,7 +25,8 @@
 
 import { vaultFor } from './vault.js';
 import { configOf, switchRulesets, wantedBy } from './rulesets.js';
-import { toWire } from './wire.js';
+import { fromWire, toWire } from './wire.js';
+import { nativeInflate } from './inflate.js';
 import { SIGNED_OUT, TO } from './protocol.js';
 
 export const PAGE_PORT = 'gamehub-page';
@@ -37,6 +38,12 @@ const NOTED = 'gamehub-tabs';
 const LOAD_MS = 30_000;
 /** How long the database is given to answer: a stall is said, not waited on. */
 const VAULT_MS = 15_000;
+/**
+ * The most a tab has decompressed for it at once: a CM's message, a client
+ * package. ponytail: the input is capped, not what it expands to; cap the
+ * stream's output if a store ever sends what it does not mean to.
+ */
+const INFLATE_MAX = 64 * 1024 * 1024;
 /** How long a site's configuration is waited on before every store is taken as on. */
 const CONFIG_MS = 5_000;
 /**
@@ -348,6 +355,16 @@ export function startRelay({ chrome, sites, fetchable, vaultOf = vaultFor, idleM
             const answer = await fetch(url.href, { credentials: 'omit' });
             const bytes = new Uint8Array(await answer.arrayBuffer());
             return { status: answer.status, body: toWire(bytes) };
+        }
+        if (message.inflate)
+        {
+            const bytes = fromWire(message.inflate);
+            if (!(bytes instanceof Uint8Array) || bytes.length > INFLATE_MAX
+                || !['gzip', 'deflate', 'deflate-raw'].includes(message.format))
+            {
+                throw new Error('a tab asked to decompress what is not a store\'s data');
+            }
+            return toWire(await nativeInflate(bytes, message.format));
         }
         throw new Error('a tab asked for nothing the worker gives');
     }

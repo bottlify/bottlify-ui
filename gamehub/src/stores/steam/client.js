@@ -19,6 +19,7 @@
  */
 
 import { parseText } from '@bottlify/core/steam/keyvalues';
+import { inflate } from '../../inflate.js';
 
 /** Valve's client CDN, where the client's manifest and packages are. */
 export const CLIENT_CDN = 'https://client-update.akamai.steamstatic.com';
@@ -37,15 +38,8 @@ const hex = bytes=>[...bytes].map(byte=>byte.toString(16).padStart(2, '0')).join
 const asBuffer = bytes=>/** @type {ArrayBuffer} */ (
     bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
 
-/**
- * @param {Uint8Array} bytes
- * @returns {Promise<Uint8Array>}
- */
-async function inflateRaw(bytes){
-    const stream = new Blob([asBuffer(bytes)]).stream()
-        .pipeThrough(new DecompressionStream('deflate-raw'));
-    return new Uint8Array(await new Response(stream).arrayBuffer());
-}
+/** @param {Uint8Array} bytes */
+const inflateRaw = bytes=>inflate(bytes, 'deflate-raw');
 
 /**
  * The entries of a zip archive named in `wanted`, by name: read through its

@@ -21,6 +21,7 @@
 
 import { startFrame } from './frame.js';
 import { fromWire, toWire } from './wire.js';
+import { inflateWith } from './inflate.js';
 import { TAB_PORT } from './relay.js';
 import { steamStore } from './stores/steam/store.js';
 import { mountSignIn } from './stores/steam/signin-ui.js';
@@ -134,6 +135,9 @@ export function runTab({ chrome, nonce, store, mode, onPort, make }){
         const { status, body } = await call({ fetch: address });
         return new Response(status === 204 || status === 304 ? null : fromWire(body), { status });
     };
+
+    // Safari refuses this world a DecompressionStream: the worker inflates for it.
+    inflateWith(async(bytes, format)=>fromWire(await call({ inflate: toWire(bytes), format })));
 
     const kept = {
         get: ()=>call({ vault: 'get' }),

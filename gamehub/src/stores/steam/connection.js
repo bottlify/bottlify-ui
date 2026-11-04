@@ -17,6 +17,7 @@
  */
 
 import { decode, encode } from '@bottlify/core/steam/protobuf';
+import { inflate } from '../../inflate.js';
 import {
     ClientHeartBeat, ClientHello, EMsg, EResult, Multi, PROTO_MASK, PROTOCOL_VERSION,
     ProtoBufHeader, REALM_GLOBAL,
@@ -51,14 +52,6 @@ export const ANONYMOUS_INDIVIDUAL = 0x0110000100000000n;
 
 /** No job: the value the header's job ids default to. */
 const NO_JOB = 0xFFFFFFFFFFFFFFFFn;
-
-/** @param {Uint8Array} bytes */
-async function gunzip(bytes){
-    const part = /** @type {Uint8Array<ArrayBuffer>} */ (bytes);
-    const stream = new Blob([part]).stream()
-        .pipeThrough(new DecompressionStream('gzip'));
-    return new Uint8Array(await new Response(stream).arrayBuffer());
-}
 
 /**
  * Splits a frame into its message.
@@ -111,7 +104,7 @@ export async function unpackMulti(body){
     let payload = /** @type {Uint8Array} */ (multi.message_body ?? new Uint8Array());
     if (multi.size_unzipped)
     {
-        payload = await gunzip(payload);
+        payload = await inflate(payload, 'gzip');
     }
     /** @type {Uint8Array[]} */
     const frames = [];
@@ -402,7 +395,9 @@ export function connectCm({ endpoint, socket, timeout = 30000 }){
             {
                 return;
             }
-            const message = parseFrame(new Uint8Array(event.data));
+            // Of this world's own: a socket a content script opens may hand its data
+            // to it as another world's buffer.
+            const message = parseFrame(Uint8Array.from(new Uint8Array(event.data)));
             if (message)
             {
                 queue = queue.then(()=>dispatch(message)).catch(error=>{

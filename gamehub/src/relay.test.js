@@ -14,6 +14,7 @@
  */
 
 import { test } from 'node:test';
+import { gzipSync } from 'node:zlib';
 import assert from 'node:assert/strict';
 import { startRelay } from './relay.js';
 import { runTab } from './tab-session.js';
@@ -359,6 +360,30 @@ test('nobody signed in: answered without a tab of the site', async()=>{
     const cover = (await ask('cover', { store: 'steam', game: '440', kind: 'header' })).result;
     assert.match(cover, /\/440\/header\.jpg$/, 'an op the store answers anyone still goes to it');
     assert.equal(one.tabs.size, 1);
+    one.done();
+});
+
+test('the worker decompresses for a tab, a store\'s formats alone', async()=>{
+    const one = browser();
+    const { ask } = one.page();
+    await ask('account', { store: 'steam' });
+    const [[id, opened]] = [...one.tabs];
+    // The driven tab's own port, as its page would make it again.
+    const port = one.connect('gamehub-tab', { id: 'gamehub', tab: { id }, url: opened.url });
+    const heard = /** @type {any[]} */ ([]);
+    port.onMessage.addListener((/** @type {any} */ m)=>heard.push(m));
+    port.postMessage({ hello: { nonce: new URL(opened.url).searchParams.get('bottlify-gamehub'),
+        store: 'steam', mode: 'session' } });
+    const text = 'a CM message, '.repeat(50);
+    port.postMessage({ call: 1, inflate: toWire(new Uint8Array(gzipSync(text))), format: 'gzip' });
+    port.postMessage({ call: 2, inflate: toWire(Uint8Array.of(1)), format: 'brotli' });
+    for (let i = 0; i < 100 && heard.length < 2; i++)
+    {
+        await new Promise(done=>setTimeout(done, 5));
+    }
+    const inflated = heard.find(m=>m.call === 1);
+    assert.equal(new TextDecoder().decode(fromWire(inflated.result)), text);
+    assert.match(heard.find(m=>m.call === 2).error, /not a store's data/);
     one.done();
 });
 
