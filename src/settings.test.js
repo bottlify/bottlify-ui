@@ -301,6 +301,8 @@ test("a bottle's memory is its own, else the general setting's, and only a size 
     "a size not offered is not kept");
   assert.equal(memorySizeFor(settings, { id: "plain" }), 2048 * 1024 * 1024);
   assert.equal(normalise({ memory: 999 }).memory, 2048);
+  assert.equal(normalise({ memory: 4096 }).memory, 4096,
+    "four gigabytes, for a program linked large-address-aware");
 });
 
 test("a bottle's driver rules are kept only as current, and read back as current or the default", async () => {

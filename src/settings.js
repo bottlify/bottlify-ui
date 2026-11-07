@@ -153,14 +153,16 @@ export const DEFAULT_SHADERS = "sm3";
 /**
  * How much memory the guest machine has, in megabytes. A game sizes its caches
  * from it and some refuse to start below what they ask for; two gigabytes is
- * all a program on Windows XP may address. Only what a program touches costs
- * anything.
+ * all a program on Windows XP may address, and four what a program linked
+ * large-address-aware is given on a 64-bit Windows -- any other still has two.
+ * The engine takes what a program is given, not the whole of it.
  */
 export const MEMORY_CHOICES = [
   { value: 512, label: "512 MB" },
   { value: 1024, label: "1 GB" },
   { value: 1536, label: "1.5 GB" },
   { value: 2048, label: "2 GB" },
+  { value: 4096, label: "4 GB" },
 ];
 
 /** @type {RunSettings} */
