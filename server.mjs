@@ -32,6 +32,10 @@ import { ICON_SIZES, headForBottle, homeManifest, iconFile, iconPath } from "./s
  *                       package is not installed, and only that engine fails;
  *  - `/bundles/...`   → the game bundles, from `BUNDLES_DIR` (by default the
  *                       engine repository's `bundles/` beside this one);
+ *  - `/docs/...`      → the documentation site, from `DOCS_DIR` (by default
+ *                       `dist/docs` in the engine repository beside this one,
+ *                       which its `npm run docs` writes); a folder is its
+ *                       `index.html`;
  *  - `/source/...`    → the engine repository's sources, only when
  *                       `BOTTLIFY_SOURCE` names it: the legacy `/debug/` page and
  *                       `?engine=src` run the engine unbuilt. Local only.
@@ -56,6 +60,7 @@ const CORK = (()=>{
   }
 })();
 const BUNDLES = resolve(process.env.BUNDLES_DIR ?? resolve(UI_ROOT, "..", "bottlify", "bundles"));
+const DOCS = resolve(process.env.DOCS_DIR ?? resolve(UI_ROOT, "..", "bottlify", "dist", "docs"));
 const SOURCE = process.env.BOTTLIFY_SOURCE ? resolve(process.env.BOTTLIFY_SOURCE) : null;
 const DIST = resolve(UI_ROOT, "dist");
 const DEBUG = resolve(UI_ROOT, "debug");
@@ -318,10 +323,12 @@ const handler = async(req, res)=>{
 
   // The engine, the relay client, the bundles, and -- when asked for -- the
   // engine's sources, each from the directory that holds it.
+  if (pathname === "/docs"){ res.writeHead(301, { Location: "/docs/" }).end(); return; }
   for (const [prefix, root] of [["/engine/", ENGINE], ["/networking/", NETWORKING],
-    ["/cork/", CORK], ["/bundles/", BUNDLES], ["/source/", SOURCE]]){
+    ["/cork/", CORK], ["/bundles/", BUNDLES], ["/docs/", DOCS], ["/source/", SOURCE]]){
     if (root && pathname.startsWith(prefix)){
-      const abs = joined(pathname.slice(prefix.length - 1), root);
+      const inside = pathname.slice(prefix.length - 1);
+      const abs = joined(prefix === "/docs/" && inside.endsWith("/") ? `${inside}index.html` : inside, root);
       const size = abs && (await sizeOf(abs));
       if (size !== null && size !== undefined){ sendFile(req, res, abs, size, prefix !== "/bundles/"); return; }
       res.writeHead(404).end(`not found: ${pathname}`);
