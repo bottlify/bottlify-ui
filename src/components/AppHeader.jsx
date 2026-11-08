@@ -58,6 +58,9 @@ export function AppHeader({ onAdd, onSettings, onStorage }) {
       </Link>
 
       <Stack direction="row" spacing={1} sx={{ ml: "auto" }} alignItems="center">
+        <Button size="small" href="/docs/" rel="external" sx={{ color: "text.primary" }}>
+          Docs
+        </Button>
         {onStorage && <SpaceIndicator onOpen={onStorage} />}
         {onAdd && (
           <Button

@@ -83,7 +83,10 @@ export default function App() {
     const onPop = () => setPath(window.location.pathname);
     const onClick = (event) => {
       const anchor = event.target.closest?.("a[href]");
-      if (!anchor || anchor.target || anchor.origin !== window.location.origin) return;
+      // `rel="external"`: a page the server hands out beside the app (the docs),
+      // which the app has no route for.
+      if (!anchor || anchor.target || anchor.origin !== window.location.origin
+        || anchor.relList.contains("external")) return;
       if (event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey) return;
       event.preventDefault();
       window.history.pushState(null, "", anchor.href);
