@@ -1252,6 +1252,11 @@ async function run({ bundle, media, canvas, report: show, silentInstall = false,
   app.on("bundle-fetching", ({ fetching }) => {
     report({ fetchingBundle: fetching === true });
   });
+  // No room left for what the game downloads, and nothing the engine may free:
+  // the game goes on, but the person should know why it fetches again.
+  app.on("storage-full", () => {
+    report({ storageFull: true });
+  });
   app.on("present-failed", ({ index, message }) => {
     report({ note: `frame ${index} could not be shown: ${message}` });
   });

@@ -20,7 +20,7 @@ import { bundleUrl } from "./btl.js";
  *
  * @param {{ id: string, entry: string, root?: string, revision?: number,
  *     bundle?: { file?: string } }} bundle
- * @param {{ cacheBundle: boolean }} settings
+ * @param {{ cacheBundle: boolean, overwriteBottles: boolean }} settings
  * @param {Blob | null} [file]  The bottle's bundle.btl, for one kept in this browser.
  */
 export function bundleStart(bundle, settings, file = null) {
@@ -49,6 +49,7 @@ export function bundleStart(bundle, settings, file = null) {
       store: "local",
       id: bundle.id,
       prefetch: settings.cacheBundle,
+      evictOthers: settings.overwriteBottles,
       // Packed again since a session was saved, its registry is laid over the saved one.
       ...(Number.isInteger(bundle.revision) ? { revision: bundle.revision } : {}),
     },

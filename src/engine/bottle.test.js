@@ -12,7 +12,8 @@ test("a bottle an installation made is mounted where the installation put it", (
   // Its registry names that directory: a launcher that changes into it, or
   // finds its game by it, finds the bottle there.
   const start = bundleStart({ id: "tron", entry: "TRON.exe",
-    root: "C:\\Program Files\\Buena Vista Interactive\\Tron 2.0 Demo" }, { cacheBundle: true });
+    root: "C:\\Program Files\\Buena Vista Interactive\\Tron 2.0 Demo" },
+  { cacheBundle: true, overwriteBottles: false });
   assert.equal(start.imagePath,
     "C:\\Program Files\\Buena Vista Interactive\\Tron 2.0 Demo\\TRON.exe");
   assert.deepEqual(start.bundle, {
@@ -21,6 +22,7 @@ test("a bottle an installation made is mounted where the installation put it", (
     store: "local",
     id: "tron",
     prefetch: true,
+    evictOthers: false,
   });
 });
 

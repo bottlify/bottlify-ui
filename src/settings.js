@@ -58,6 +58,11 @@ const SCREEN = Object.freeze({ width: 1024, height: 768, bitsPerPixel: 32 });
  * @property {boolean} cacheBundle  Copy the rest of the game to this machine in
  *                                  the background; what a run reads is kept
  *                                  either way.
+ * @property {boolean} overwriteBottles When this browser runs out of room for a
+ *                                  game's downloads and the game has none of its
+ *                                  own older than two hours, other bottles'
+ *                                  downloaded blocks may be let go, the oldest
+ *                                  first (the engine's `bundle.evictOthers`).
  * @property {string} logLevel      The journal's level for uncategorised areas.
  * @property {string[]} logAreas    Call areas recorded from the first instruction.
  * @property {number} logCapacity   Records the journal's ring holds.
@@ -177,6 +182,7 @@ export const DEFAULTS = Object.freeze({
   muted: false,
   traceStrings: false,
   cacheBundle: false,
+  overwriteBottles: true,
   logLevel: "info",
   logAreas: [],
   logCapacity: 4096,
@@ -284,6 +290,7 @@ export function normalise(raw) {
     muted: flag(source.muted, DEFAULTS.muted),
     traceStrings: flag(source.traceStrings, DEFAULTS.traceStrings),
     cacheBundle: flag(source.cacheBundle, DEFAULTS.cacheBundle),
+    overwriteBottles: flag(source.overwriteBottles, DEFAULTS.overwriteBottles),
     logLevel: LEVELS.includes(source.logLevel) ? source.logLevel : DEFAULTS.logLevel,
     logAreas: Array.isArray(source.logAreas)
       ? source.logAreas.filter((area) => typeof area === "string")

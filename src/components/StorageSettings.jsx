@@ -14,6 +14,7 @@ import {
   STORAGE_CHANGED, clearAllCaches, clearCache, deleteSaves, removeFromDevice, siteSpace, sizeText,
   storedBottles,
 } from "../engine/stored.js";
+import { loadSettings, saveSettings } from "../settings.js";
 
 /** How often the bar reads the room again while it is on screen. */
 const SPACE_POLL_MS = 60_000;
@@ -76,6 +77,7 @@ export function StorageSettings() {
   const [working, setWorking] = useState(false);
   /** The action waiting on its confirmation. */
   const [asking, setAsking] = useState(/** @type {any} */ (null));
+  const [overwrite, setOverwrite] = useState(() => loadSettings().overwriteBottles);
 
   const read = useCallback(async () => {
     try {
@@ -178,6 +180,18 @@ export function StorageSettings() {
               : state.persisted === false
                 ? "Not kept for sure: the browser may clear all of it, saves too, when the disk runs low."
                 : "Whether the browser keeps it when the disk runs low is not known."}
+          </Typography>
+          <FormControlLabel sx={{ mt: 1, display: "flex" }}
+            control={<Checkbox size="small" checked={overwrite}
+              onChange={(event) => {
+                setOverwrite(event.target.checked);
+                saveSettings({ overwriteBottles: event.target.checked });
+              }} />}
+            label={<Typography variant="body2">Overwrite other bottles automatically</Typography>} />
+          <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
+            {"When space runs out, a game first frees its own data downloaded more than two hours "
+              + "ago. On, it may then free other bottles' downloaded data, the oldest first; they "
+              + "download it again when they next need it. Saves are never touched."}
           </Typography>
           <Button size="small" color="error" variant="outlined" sx={{ mt: 1.5 }}
             disabled={working || !cached} onClick={ask.all}>

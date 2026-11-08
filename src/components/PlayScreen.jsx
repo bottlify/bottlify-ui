@@ -861,6 +861,16 @@ export function PlayScreen({ bundle, media, title, onClose, onExited }) {
         </Alert>
       </Snackbar>
 
+      {/* Stays until closed: a game that downloads again what it cannot keep
+        is slower for it, and the person can free space in Settings. */}
+      <Snackbar open={state.storageFull === true}
+        anchorOrigin={{ vertical: "bottom", horizontal: "left" }}>
+        <Alert severity="warning" onClose={() => report({ storageFull: false })}>
+          No free space left for this game's downloads. It keeps running, but what it downloads
+          now is not kept. Free space in Settings, Storage.
+        </Alert>
+      </Snackbar>
+
       {state.messageBox && (
         <MessageBox
           notice={state.messageBox}
