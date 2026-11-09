@@ -67,6 +67,9 @@ const SCREEN = Object.freeze({ width: 1024, height: 768, bitsPerPixel: 32 });
  * @property {string[]} logAreas    Call areas recorded from the first instruction.
  * @property {number} logCapacity   Records the journal's ring holds.
  * @property {boolean} logOpen      Whether a run opens with its log beside it.
+ * @property {boolean} logShaders   A log line for every shader a title compiles, with its
+ *                                  defines (the engine's `log.shaders`). A shader that
+ *                                  failed to compile is logged with its source either way.
  * @property {boolean} overlayOn    Whether the performance overlay (F3) is shown
  *                                  over the canvas. Off by default: it polls the
  *                                  engine once a second while it is on, and a
@@ -187,6 +190,7 @@ export const DEFAULTS = Object.freeze({
   logAreas: [],
   logCapacity: 4096,
   logOpen: false,
+  logShaders: false,
   overlayOn: false,
   profileCalls: false,
   libraryFilters: [],
@@ -297,6 +301,7 @@ export function normalise(raw) {
       : [],
     logCapacity: whole(source.logCapacity, DEFAULTS.logCapacity, LIMITS.logCapacity),
     logOpen: flag(source.logOpen, DEFAULTS.logOpen),
+    logShaders: flag(source.logShaders, DEFAULTS.logShaders),
     overlayOn: flag(source.overlayOn, DEFAULTS.overlayOn),
     profileCalls: flag(source.profileCalls, DEFAULTS.profileCalls),
     // Only values the library knows: one it has since dropped would narrow it

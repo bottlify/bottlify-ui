@@ -406,6 +406,14 @@ function BottleSettings({ app, running, facts, settings, change }) {
           onChange={(logOpen) => change({ logOpen })}
         />
         <Toggle
+          label="Log every compiled shader"
+          says={`A line for each shader a title compiles, with its defines. ${NEXT_RUN} A shader `
+            + "that fails to compile is logged with its source either way."}
+          checked={settings.logShaders}
+          onChange={(logShaders) => change({ logShaders })}
+          disabled={running}
+        />
+        <Toggle
           label="Resolve traced pointer arguments to their text"
           says={`A trace then names a library rather than an address. ${NEXT_RUN} It costs a `
             + "read of guest memory for every traced argument."}

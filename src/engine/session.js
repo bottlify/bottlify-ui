@@ -427,7 +427,8 @@ async function journalTail(app) {
  * asking for areas that way still gets the big ring it always got.
  *
  * @param {import("../settings.js").RunSettings} settings
- * @returns {{ categories: Record<string, string>, capacity: number, bytes?: number }}
+ * @returns {{ categories: Record<string, string>, capacity: number, bytes?: number,
+ *     shaders: boolean }}
  */
 function requestedLog(settings) {
   const asked = new URLSearchParams(window.location.search);
@@ -442,6 +443,9 @@ function requestedLog(settings) {
     categories: Object.fromEntries(all.map((area) => [area, "trace"])),
     capacity: Number(asked.get("logSize") ?? 0) || GPU_JOURNAL.capacity,
     bytes: GPU_JOURNAL.bytes,
+    // A line for each shader compiled, with its defines; a failed one is
+    // written with its source either way.
+    shaders: settings.logShaders,
   };
 }
 
