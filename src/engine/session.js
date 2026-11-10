@@ -442,7 +442,11 @@ function requestedLog(settings) {
   return {
     categories: Object.fromEntries(all.map((area) => [area, "trace"])),
     capacity: Number(asked.get("logSize") ?? 0) || GPU_JOURNAL.capacity,
-    bytes: GPU_JOURNAL.bytes,
+    // The bytes the records' text takes grow with the count asked for -- a
+    // ring of millions held a quarter of a million at the default bytes --
+    // or are asked for themselves (`logBytes`, in MiB).
+    bytes: Number(asked.get("logBytes") ?? 0) * (1 << 20)
+      || Math.max(GPU_JOURNAL.bytes, Number(asked.get("logSize") ?? 0) * 256),
     // A line for each shader compiled, with its defines; a failed one is
     // written with its source either way.
     shaders: settings.logShaders,
