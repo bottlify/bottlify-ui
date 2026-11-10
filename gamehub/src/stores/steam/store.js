@@ -26,7 +26,7 @@ import * as session from './session.js';
 import * as keys from './keys.js';
 import * as client from './client.js';
 import {
-    depotOwners, describeApp, publicAppInfo, sharedDepots, steamArt, storeGame,
+    DEMOS, depotOwners, describeApp, publicAppInfo, sharedDepots, steamArt, storeGame,
 } from './apps.js';
 
 /** @typedef {{ accountName: string, refreshToken: string }} Session */
@@ -260,6 +260,50 @@ export function steamStore({ vault, socket, fetch: get = fetch, clientFiles = tr
         return new Map(ids.flatMap(id=>(apps.get(id)?.info ? [[id, apps.get(id)?.info]] : [])));
     }
 
+    /**
+     * A licence to an app the signed-in account does not hold, asked of Steam
+     * as a free one -- a demo, a free game -- before its keys or its ticket
+     * are: Steam refuses both to an account without one. Nobody signed in, or
+     * an app the account holds: nothing asked.
+     *
+     * @param {number} appId
+     */
+    async function holding(appId){
+        const now = await account();
+        if (!now || now.apps.includes(appId))
+        {
+            return;
+        }
+        const logon = await loggedOn();
+        const granted = await steam.requestFreeLicense(logon.connection, [appId]);
+        if (granted.licenses)
+        {
+            logon.licenses = granted.licenses;
+        }
+        library = null;
+        if (!granted.apps.includes(appId) && !(await account())?.apps.includes(appId))
+        {
+            throw new Error(`Steam granted no licence to app ${appId}`
+                + ` (EResult ${granted.eresult}): it is not free to this account`);
+        }
+    }
+
+    /**
+     * An app's info as the account is told it: some demos' depots and launch
+     * options are shown only to an account holding them, not to anyone.
+     *
+     * @param {number} appId
+     */
+    async function accountInfo(appId){
+        const { connection: link } = await loggedOn();
+        const info = (await steam.productInfo(link, { apps: [appId] })).apps.get(appId);
+        if (info)
+        {
+            apps.set(appId, { at: Date.now(), info: publicAppInfo(info) });
+        }
+        return apps.get(appId)?.info ?? null;
+    }
+
     /** @param {string} game */
     const appOf = game=>{
         const id = Number(game);
@@ -287,15 +331,28 @@ export function steamStore({ vault, socket, fetch: get = fetch, clientFiles = tr
                 return {};
             },
 
-            // The account's games: every app its licences grant, of which the games.
+            // The account's games: every app its licences grant, of which the
+            // games; and the demos (`DEMOS`) Steam grants anyone signed in, of
+            // the games the account does not own. Nobody signed in: none -- the
+            // launcher shows the demos itself (its demos.js), GameHub or not.
             list: async({ fresh })=>{
                 const now = await account(fresh);
-                if (!now?.apps.length)
+                if (!now)
                 {
                     return [];
                 }
-                const infos = await productInfo(now.apps);
-                return now.apps.flatMap(id=>{
+                const owned = now.apps;
+                const ownsGameOf = (/** @type {number} */ id)=>DEMOS.some(({ demo, game })=>
+                    demo === id && owned.includes(game));
+                const ids = [...owned.filter(id=>!ownsGameOf(id)),
+                    ...DEMOS.filter(({ demo, game })=>!owned.includes(demo)
+                        && !owned.includes(game)).map(({ demo })=>demo)];
+                if (ids.length === 0)
+                {
+                    return [];
+                }
+                const infos = await productInfo(ids);
+                return ids.flatMap(id=>{
                     const game = storeGame(id, infos.get(id));
                     const { header, cover, hero } = steamArt(id);
                     return game ? [{ ...game, covers: { header, capsule: cover, hero } }] : [];
@@ -311,29 +368,72 @@ export function steamStore({ vault, socket, fetch: get = fetch, clientFiles = tr
             // content servers the ruleset opens to the page.
             download: async({ game })=>{
                 const appId = appOf(game);
-                const info = (await productInfo([appId])).get(appId);
+                if (DEMOS.some(({ demo })=>demo === appId) && !await account())
+                {
+                    throw new Error('steam: sign in to Steam to install this demo');
+                }
+                await holding(appId);
+                let info = (await productInfo([appId])).get(appId);
                 if (!info)
                 {
                     throw new Error(`Steam does not describe app ${appId}`);
                 }
+                if (describeApp(info).depots.length === 0 && await account())
+                {
+                    info = await accountInfo(appId) ?? info;
+                }
                 const owners = await productInfo(depotOwners(info));
                 const described = describeApp(info);
-                const wanted = [
+                const { connection: link, licenses } = await loggedOn();
+                // The depots the account's licences give, as the client takes them:
+                // Steam answers AccessDenied for a key to any other the app lists.
+                const owned = new Set(await steam.ownedDepots(link, licenses));
+                // A demo's content may be all another app's depots (HL2's demo is
+                // its game's depot 221), shared, which its licence names.
+                const listed = [
                     ...described.depots.map(({ id, gid })=>
                         ({ depot: id, gid, app: appId, shared: false })),
                     ...sharedDepots(info, owners).map(({ id, gid, app })=>
                         ({ depot: id, gid: String(gid), app, shared: true })),
                 ];
-                const { connection: link } = await loggedOn();
-                const depots = await Promise.all(wanted.map(async({ depot, gid, app, shared })=>({
-                    depot, gid, shared,
-                    key: await steam.depotKey(link, app, depot),
-                    code: String(await steam.manifestRequestCode(link, app, depot, BigInt(gid))),
-                })));
+                const wanted = listed.filter(({ depot })=>owned.has(depot));
+                if (wanted.length === 0)
+                {
+                    const ids = listed.map(({ depot })=>depot).join(', ') || 'none listed';
+                    throw new Error(`steam: this account's licences give none of app ${appId}'s`
+                        + ` depots (${ids})`);
+                }
+                /**
+                 * A depot's key under the app that owns it, and a shared one Steam
+                 * keeps from its owner (AccessDenied, EResult 15) under the app
+                 * installed, whose licence names it; its request code under the same.
+                 * @param {number} app @param {number} depot
+                 */
+                const keyed = async(app, depot)=>{
+                    try
+                    {
+                        return { app, key: await steam.depotKey(link, app, depot) };
+                    }
+                    catch (e){
+                        if (app === appId || !/\(EResult 15\)/.test(String(
+                            /** @type {Error} */ (e)?.message)))
+                        {
+                            throw e;
+                        }
+                        return { app: appId, key: await steam.depotKey(link, appId, depot) };
+                    }
+                };
+                const depots = await Promise.all(wanted.map(async({ depot, gid, app, shared })=>{
+                    const keyedOne = await keyed(app, depot);
+                    return { depot, gid, shared, key: keyedOne.key, code: String(
+                        await steam.manifestRequestCode(link, keyedOne.app, depot, BigInt(gid))) };
+                }));
                 const servers = (await steam.contentServers(link))
                     .filter((/** @type {{ vhost: string }} */ server)=>reachable(server.vhost));
+                // A demo says so: its bottle is the library's whoever is signed in.
                 return { name: String(info.common?.name ?? appId), launch: described.launch,
                     ...described.installscript ? { installscript: described.installscript } : {},
+                    ...DEMOS.some(({ demo })=>demo === appId) ? { demo: true } : {},
                     art: steamArt(appId), servers, depots };
             },
 
@@ -343,11 +443,15 @@ export function steamStore({ vault, socket, fetch: get = fetch, clientFiles = tr
             // check the client it loaded. Nobody signed in: nothing.
             runData: async({ game })=>{
                 const appId = appOf(game);
-                const now = await account();
-                if (!now)
+                if (!await account())
                 {
                     return {};
                 }
+                // A demo's licence first, for its ticket; an app Steam will not
+                // grant runs as it did, with none.
+                await holding(appId).catch(()=>{});
+                const now = /** @type {NonNullable<Awaited<ReturnType<typeof account>>>} */ (
+                    await account());
                 const [ticket, files] = await Promise.all([
                     steam.appOwnershipTicket((await loggedOn()).connection, appId).catch(()=>null),
                     clientFiles ? steam.fetchClientFiles({ fetch: get }).catch(()=>null) : null,

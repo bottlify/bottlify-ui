@@ -16,7 +16,8 @@
  */
 
 import {
-    ClientLicenseList, ClientLoggedOff, ClientLogon, ClientLogonResponse, EMsg, EResult,
+    ClientLicenseList, ClientLoggedOff, ClientLogon, ClientLogonResponse, ClientRequestFreeLicense,
+    ClientRequestFreeLicenseResponse, EMsg, EResult,
     OS_WINDOWS_10, PICSAccessTokenRequest, PICSAccessTokenResponse, PICSProductInfoRequest,
     PICSProductInfoResponse, PROTOCOL_VERSION,
 } from './messages.js';
@@ -232,6 +233,39 @@ const field = (node, key)=>{
 };
 
 /**
+ * The depots a session's licences give: every id the licences' packages name
+ * as a depot or an app, as the client counts a depot the account may have
+ * (Steam keeps a depot's key from an account none of whose packages names it,
+ * AccessDenied: an edition's, a language's or a beta's depot an app lists
+ * beside the ones the account bought).
+ *
+ * @param {CmConnection} connection
+ * @param {Array<Record<string, any>>} licenses
+ * @returns {Promise<number[]>}
+ */
+export async function ownedDepots(connection, licenses){
+    const { packages } = await productInfo(connection, {
+        packages: licenses.map(license=>({
+            packageid: license.package_id, access_token: license.access_token ?? 0n,
+        })),
+    });
+    /** @type {Set<number>} */
+    const ids = new Set();
+    for (const info of packages.values())
+    {
+        for (const key of ['depotids', 'appids'])
+        {
+            const named = /** @type {KeyValues | undefined} */ (field(info, key));
+            for (const id of Object.values(named ?? {}))
+            {
+                ids.add(Number(id));
+            }
+        }
+    }
+    return [...ids].sort((a, b)=>a - b);
+}
+
+/**
  * Every app a session's licences grant -- games, their DLC, tools -- by id,
  * read from the licences' packages alone. A signed-in account's product info
  * for apps comes back without its data for most of them once Steam has sent
@@ -285,6 +319,44 @@ export async function library(connection, licenses){
         }
     }
     return games.sort((a, b)=>a.name.localeCompare(b.name));
+}
+
+/** How long a licence list is waited for after Steam granted a licence. */
+const LICENSES_AFTER_GRANT_MS = 15_000;
+
+/**
+ * Asks Steam for a free licence to apps (a demo, a free game) as the
+ * client's "Download demo" does: what any signed-in account is granted, its
+ * library aside. Steam answers with the packages and apps it granted, none for
+ * an app already owned or not free, and sends the account's whole licence
+ * list again after a grant, which is answered here as `licenses`.
+ *
+ * @param {CmConnection} connection @param {number[]} apps
+ * @returns {Promise<{ eresult: number, packages: number[], apps: number[],
+ *     licenses: Array<Record<string, any>> | null }>}
+ */
+export async function requestFreeLicense(connection, apps){
+    const listed = connection.next(EMsg.ClientLicenseList);
+    listed.catch(()=>{});
+    const answer = await connection.request(EMsg.ClientRequestFreeLicense,
+        ClientRequestFreeLicense, { appids: apps });
+    const body = decode(ClientRequestFreeLicenseResponse, answer.body);
+    const packages = body.granted_packageids ?? [];
+    /** @type {Array<Record<string, any>> | null} */
+    let licenses = null;
+    if (packages.length > 0)
+    {
+        /** @type {ReturnType<typeof setTimeout> | undefined} */
+        let timer;
+        const late = new Promise(resolve=>{
+            timer = setTimeout(()=>resolve(null), LICENSES_AFTER_GRANT_MS);
+        });
+        const message = /** @type {any} */ (await Promise.race([listed, late]));
+        clearTimeout(timer);
+        licenses = message ? decode(ClientLicenseList, message.body).licenses : null;
+    }
+    return { eresult: body.eresult ?? EResult.Fail, packages, apps: body.granted_appids ?? [],
+        licenses };
 }
 
 /** CMsgClientGetAppOwnershipTicket, and its answer (EMsg 857, 858). */

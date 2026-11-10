@@ -21,15 +21,20 @@ export const STEAM_ART = 'https://shared.steamstatic.com/store_item_assets/steam
 
 /**
  * An app's art as a library and a bottle's manifest name it: the store's wide
- * header, the library's tall cover and its wide background.
+ * header, the library's tall cover and its wide background. A demo has a
+ * header of its own and no library art at all (its tall cover and background
+ * answer 404): those are its game's (`DEMOS`).
  *
  * @param {number} appId
  */
-export const steamArt = appId=>({
-    header: `${STEAM_ART}/${appId}/header.jpg`,
-    cover: `${STEAM_ART}/${appId}/library_600x900.jpg`,
-    hero: `${STEAM_ART}/${appId}/library_hero.jpg`,
-});
+export const steamArt = appId=>{
+    const game = DEMOS.find(({ demo })=>demo === appId)?.game ?? appId;
+    return {
+        header: `${STEAM_ART}/${appId}/header.jpg`,
+        cover: `${STEAM_ART}/${game}/library_600x900.jpg`,
+        hero: `${STEAM_ART}/${game}/library_hero.jpg`,
+    };
+};
 
 /**
  * Whether a depot is one an install of the app takes: Windows' (or every
@@ -167,20 +172,39 @@ export function describeApp(info, language = LANGUAGE){
 }
 
 /**
- * A game as the library shows it, or null for an app that is not a game: its
- * size the depots' added up, installable while it has a Windows launch option.
+ * The demos the library offers any signed-in account, whatever it owns: Steam
+ * grants a free licence to each on asking (`requestFreeLicense`), as its
+ * store's "Download demo" does. A game's demo is named in the store's own
+ * description of the game (`appdetails`' `demos`), not in what PICS tells of
+ * it, so they are listed here, each with its game: an account that owns the
+ * game is offered the game, not its demo.
+ */
+export const DEMOS = Object.freeze([
+    Object.freeze({ demo: 219, game: 220 }), // Half-Life 2
+    Object.freeze({ demo: 479030, game: 379720 }), // DOOM
+    Object.freeze({ demo: 2407990, game: 668580 }), // Atomic Heart
+]);
+
+/**
+ * A game as the library shows it, or null for an app that is neither a game
+ * nor a demo: its size the depots' added up, installable while it has a
+ * Windows launch option, and a demo always: Steam shows some demos' depots
+ * and launch options only to an account holding a licence to them, which an
+ * install asks for first.
  *
  * @param {number} appId
  * @param {any} info  Its product info.
  * @returns {{ id: string, name: string, bytes: number, exact: boolean,
- *     installable: boolean } | null}
+ *     installable: boolean, demo?: true } | null}
  */
 export function storeGame(appId, info){
-    if (String(info?.common?.type ?? '').toLowerCase() !== 'game')
+    const type = String(info?.common?.type ?? '').toLowerCase();
+    if (type !== 'game' && type !== 'demo')
     {
         return null;
     }
     const { bytes, launch } = describeApp(info);
     return { id: String(appId), name: String(info.common.name ?? appId), bytes, exact: false,
-        installable: launch !== null };
+        installable: launch !== null || type === 'demo',
+        ...type === 'demo' ? { demo: /** @type {true} */ (true) } : {} };
 }

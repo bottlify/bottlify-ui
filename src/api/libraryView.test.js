@@ -121,4 +121,9 @@ test("a store's games show as cards only while installable and not yet a bottle"
     .map((one) => one.id), ["shop:400"]);
   assert.deepEqual(withStoreGames([installed], []).map((one) => one.id), [],
     "no such store here -- no GameHub: its bottle could not start, and is not shown");
+  // A demo is anyone's: its bottle shows signed out too.
+  const demo = { ...bottle("Half-Life 2: Demo", "game", []), store: { id: "shop", game: "219",
+    demo: true } };
+  assert.deepEqual(withStoreGames([installed, demo], signedOut).map((one) => one.id),
+    ["Half-Life 2: Demo"]);
 });

@@ -9,7 +9,8 @@ import {
   LinearProgress, Stack, Typography,
 } from "@mui/material";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { NEEDS_GAMEHUB, knownProviders, loadProviders } from "../stores/providers.js";
+import { NEEDS_GAMEHUB, knownProviders, loadProviders, storeProvider } from "../stores/providers.js";
+import { steamDemoGames } from "../stores/demos.js";
 import { gamehub as greetGameHub, signedInName } from "../stores/gamehub.js";
 
 /** @typedef {import("../stores/providers.js").StoreProvider} StoreProvider */
@@ -70,9 +71,30 @@ const keep = (provider, what) => {
   }
 };
 
+/**
+ * What a store offers before any sign-in: Steam's demos (`demos.js`), which any
+ * account is granted; nothing of any other store.
+ *
+ * @param {StoreProvider} provider @returns {StoreGame[]}
+ */
+const offered = (provider) => (provider.id === "steam" ? steamDemoGames() : []);
+
 /** @param {StoreProvider} provider @returns {StoreState} */
-const fresh = (provider) => ({ provider, available: false, ...lastKnown(provider),
-  jobs: new Map(), error: "", syncing: true });
+const fresh = (provider) => {
+  const known = lastKnown(provider);
+  return { provider, available: false, ...known,
+    games: known.account ? known.games : offered(provider),
+    jobs: new Map(), error: "", syncing: true };
+};
+
+/**
+ * The stores with Steam among them however GameHub answers: its demos are in
+ * the library for everyone, GameHub or not, and their Install asks for it.
+ *
+ * @param {StoreProvider[]} list @returns {StoreProvider[]}
+ */
+const withSteam = (list) => (list.some((one) => one.id === "steam") ? list
+  : [...list, storeProvider({ id: "steam", name: "Steam" })]);
 
 /**
  * Every store's account in this browser, its games and their installs, for the
@@ -85,18 +107,26 @@ const fresh = (provider) => ({ provider, available: false, ...lastKnown(provider
  * @param {boolean} [active]  Whether the accounts are read now: where they are of use.
  */
 export function useStores(onInstalled, load = loadProviders, active = true) {
-  const [providers, setProviders] = useState(knownProviders);
+  const [providers, setProviders] = useState(() => withSteam(knownProviders()));
   const [gamehub, setGamehub] = useState(/** @type {boolean | null} */ (null));
   const [stores, setStores] = useState(() => providers.map(fresh));
   useEffect(() => {
     let gone = false;
-    load().then((now) => {
+    load().then((listed) => {
       if (gone) return;
-      setGamehub(now.length > 0);
+      setGamehub(listed.length > 0);
+      const now = withSteam(listed);
       setProviders(now);
+      // Without GameHub nothing is read: what each store offers anyone stays, not syncing.
       setStores((all) => now.map((provider) =>
-        ({ ...all.find((one) => one.provider.id === provider.id) ?? fresh(provider), provider })));
-    }, () => !gone && setGamehub(false));
+        ({ ...all.find((one) => one.provider.id === provider.id) ?? fresh(provider), provider,
+          ...listed.length > 0 ? {} : { syncing: false, account: null, games: offered(provider) } })));
+    }, () => {
+      if (gone) return;
+      setGamehub(false);
+      setStores((all) => all.map((one) =>
+        ({ ...one, syncing: false, account: null, games: offered(one.provider) })));
+    });
     return () => {
       gone = true;
     };
@@ -118,8 +148,9 @@ export function useStores(onInstalled, load = loadProviders, active = true) {
       // A Sync logs on anew here, so a session Steam no longer takes is found and
       // forgotten by GameHub before the list is asked of it.
       const account = available ? await provider.auth.account(options).catch(() => null) : null;
+      // Signed out: what the store offers anyone, whose Install asks for the sign-in.
       update(provider.id, () => ({ available, account: account?.name ?? null,
-        ...account ? {} : { games: [] } }));
+        ...account ? {} : { games: offered(provider) } }));
       if (!account) {
         keep(provider, null);
         return;
@@ -150,13 +181,26 @@ export function useStores(onInstalled, load = loadProviders, active = true) {
     await byId(id).auth.signOut().catch((e) => update(id, () => ({ error: String(e?.message ?? e) })));
     update(id, () => ({ account: null, games: [], jobs: new Map(), error: "" }));
     keep(byId(id), null);
-  }, [byId, update]);
+    // What it offers anyone is listed again.
+    await read(byId(id));
+  }, [byId, update, read]);
 
   /** The account's games read again from the store. @param {string} id */
   const sync = useCallback((id) => read(byId(id), { fresh: true }), [byId, read]);
 
+  /** The store whose sign-in an Install asked for, shown over the library. */
+  const [signInFor, setSignInFor] = useState(/** @type {string | null} */ (null));
+  /** The stores as last rendered, for an Install to read its account. */
+  const current = useRef(stores);
+  current.current = stores;
+
   /** @param {string} id @param {StoreGame} game */
   const install = useCallback(async (id, game) => {
+    // A game offered to anyone signed in, Install pressed signed out: the sign-in first.
+    if (!current.current.find((one) => one.provider.id === id)?.account) {
+      setSignInFor(id);
+      return;
+    }
     const key = `${id}:${game.id}`;
     if (going.current.has(key)) return;
     const stop = new AbortController();
@@ -178,7 +222,18 @@ export function useStores(onInstalled, load = loadProviders, active = true) {
   /** Stops an install; Install goes on from where it stopped. @param {string} id @param {StoreGame} game */
   const cancel = useCallback((id, game) => going.current.get(`${id}:${game.id}`)?.abort(), []);
 
-  return { stores, gamehub, signedIn, signOut, sync, install, cancel };
+  /** The sign-in an Install asked for ended: signed in, the store is read again. */
+  const signInDone = useCallback(async () => {
+    const id = signInFor;
+    setSignInFor(null);
+    if (id) await signedIn(id);
+  }, [signInFor, signedIn]);
+
+  const closeSignIn = useCallback(() => setSignInFor(null), []);
+
+  return { stores, gamehub, signedIn, signOut, sync, install, cancel,
+    signInFor: signInFor ? stores.find((one) => one.provider.id === signInFor) ?? null : null,
+    signInDone, closeSignIn };
 }
 
 /**
@@ -254,6 +309,38 @@ export function StoreSignIn({ provider, onSignedIn, onClose }) {
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose}>Cancel</Button>
+      </DialogActions>
+    </Dialog>
+  );
+}
+
+/**
+ * Install pressed on a store's game with no GameHub in this browser: the
+ * store's account is GameHub's to sign in to, so the extension comes first.
+ *
+ * @param {Object} props
+ * @param {StoreProvider} props.provider
+ * @param {string | null} [props.link]  Where GameHub is got, where the site says.
+ * @param {() => void} props.onAccounts  Opens Settings → Game Accounts.
+ * @param {() => void} props.onClose
+ */
+export function GameHubNeeded({ provider, link = null, onAccounts, onClose }) {
+  return (
+    <Dialog open onClose={onClose} maxWidth="xs" fullWidth>
+      <DialogTitle>Sign in to {provider.name} to play</DialogTitle>
+      <DialogContent dividers>
+        <Typography gutterBottom>
+          This game is installed from your {provider.name} account. Add the Bottlify GameHub
+          extension to this browser, reload the page, and sign in to {provider.name}: then
+          Install downloads it.
+        </Typography>
+        <Typography variant="caption" color="text.secondary" component="p">
+          Your password and the session stay in the extension, out of this page's reach.
+        </Typography>
+      </DialogContent>
+      <DialogActions>
+        {link && <Button href={link} target="_blank" rel="noopener">Get GameHub</Button>}
+        <Button variant="contained" onClick={onAccounts}>Game Accounts</Button>
       </DialogActions>
     </Dialog>
   );

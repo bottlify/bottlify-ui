@@ -76,6 +76,9 @@ export function GameCard({ bundle, onSelect, onSettings, onEdit, footer }) {
           component="img"
           image={small}
           alt={bundle.title}
+          // Steam's art from its CDN, which answers any origin: asked with CORS, a
+          // cross-origin isolated page shows it without GameHub's headers.
+          {...(/^https:\/\/shared\.steamstatic\.com\//.test(small) ? { crossOrigin: "anonymous" } : {})}
           // A store's game without a cover of its own shows the picture its
           // store has of it instead (a Steam app's store header).
           onError={(event) => {

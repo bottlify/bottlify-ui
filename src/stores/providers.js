@@ -27,6 +27,7 @@ export const NEEDS_GAMEHUB = "Game stores need the Bottlify GameHub extension in
  * @property {number} bytes  What it takes installed, as far as the store says.
  * @property {boolean} exact  Whether `bytes` is measured rather than added up.
  * @property {boolean} installable  Whether it has a build an install here can start.
+ * @property {boolean} [demo]  A demo any signed-in account is granted (`demos.js`).
  * @property {{ header?: string, capsule?: string, hero?: string }} [covers]
  */
 

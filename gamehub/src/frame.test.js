@@ -20,7 +20,7 @@ import { fakeSteam } from './stores/steam/steam.fixture.js';
 import { FakeSocket } from './socket.fixture.js';
 import { buildFrame, parseFrame } from './stores/steam/connection.js';
 import {
-    ClientLicenseList, ClientLogonResponse, EMsg, PICSProductInfoResponse,
+    ClientLicenseList, ClientLogonResponse, EMsg, PICSAccessTokenResponse, PICSProductInfoResponse,
 } from './stores/steam/messages.js';
 import { encode } from '@bottlify/core/steam/protobuf';
 import { TOKEN } from './stores/steam/steam.fixture.js';
@@ -54,6 +54,12 @@ class FakeCm extends FakeSocket {
                 encode(ClientLogonResponse, { eresult: 1, heartbeat_seconds: 30 }));
             this.answer(EMsg.ClientLicenseList, {},
                 encode(ClientLicenseList, { eresult: 1, licenses: [] }));
+        }
+        else if (message?.emsg === EMsg.ClientPICSAccessTokenRequest)
+        {
+            this.answer(EMsg.ClientPICSAccessTokenResponse,
+                { jobid_target: message.header.jobid_source },
+                encode(PICSAccessTokenResponse, { app_access_tokens: [] }));
         }
         else if (message?.emsg === EMsg.ClientPICSProductInfoRequest)
         {
@@ -128,7 +134,7 @@ test('the frame says it is ready, and its token goes into a logon alone', async(
     assert.deepEqual((await ask('list', { store: 'steam' })).result, []);
     assert.deepEqual((await ask('account', { store: 'steam', fresh: true })).result,
         { name: 'someone' });
-    assert.equal(seen.logons, 2);
+    assert.equal(seen.logons, 3, 'the account twice, and an anonymous logon for the demos');
     const logons = seen.frames.filter(one=>text(one).includes(SECRET));
     assert.equal(logons.length, 2, 'each put into a logon');
     assert.ok(logons.every(one=>parseFrame(one)?.emsg === EMsg.ClientLogon));
@@ -140,7 +146,8 @@ test('every op an account has: the token in nothing the page is posted', async()
     const steam = fakeSteam();
     const { page, ask, frame } = rig(steam);
     assert.deepEqual((await ask('account', { store: 'steam' })).result, { name: 'someone' });
-    assert.equal((await ask('list', { store: 'steam' })).result.length, 2);
+    assert.equal((await ask('list', { store: 'steam' })).result.length, 5,
+        'two games, three demos');
     const download = (await ask('download', { store: 'steam', game: '70' })).result;
     assert.equal(download.depots.length, 2, 'keys and codes given');
     const run = (await ask('runData', { store: 'steam', game: '400' })).result.win32.steam;

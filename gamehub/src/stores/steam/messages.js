@@ -23,6 +23,8 @@ export const EMsg = Object.freeze({
     ClientLoggedOff: 757,
     ClientLicenseList: 780,
     ClientLogon: 5514,
+    ClientRequestFreeLicense: 5572,
+    ClientRequestFreeLicenseResponse: 5573,
     ClientPICSProductInfoRequest: 8903,
     ClientPICSProductInfoResponse: 8904,
     ClientPICSAccessTokenRequest: 8905,
@@ -116,6 +118,16 @@ export const ClientLicenseList = {
         license_type: [9, 'uint32'],
         access_token: [17, 'uint64'],
     }, 'repeated'],
+};
+
+/** CMsgClientRequestFreeLicense: the apps a free licence is asked for. @type {Schema} */
+export const ClientRequestFreeLicense = { appids: [2, 'uint32', 'repeated'] };
+
+/** @type {Schema} */
+export const ClientRequestFreeLicenseResponse = {
+    eresult: [1, 'uint32'],
+    granted_packageids: [2, 'uint32', 'repeated'],
+    granted_appids: [3, 'uint32', 'repeated'],
 };
 
 /** @type {Schema} */

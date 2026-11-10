@@ -94,11 +94,13 @@ export function withStoreGames(bundles, stores) {
   /** @param {any} bottle */
   const ownedBottle = (bottle) => {
     const store = storeOf(bottle);
-    return !store || Boolean(owned.get(store)?.has(/** @type {string} */ (gameIdOf(bottle))));
+    return !store || bottle.store?.demo === true
+      || Boolean(owned.get(store)?.has(/** @type {string} */ (gameIdOf(bottle))));
   };
   // A store's bottle shows only while the account signed in owns it: without
   // the store -- without GameHub, or signed out -- it could not start, and
-  // another account's is not this one's.
+  // another account's is not this one's. A demo is anyone's: it shows signed
+  // out too (`store.demo`, which its install writes).
   return [
     ...bundles.filter(ownedBottle),
     ...stores.flatMap(({ provider, games }) => games.filter((game) => game.installable

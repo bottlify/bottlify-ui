@@ -145,7 +145,8 @@ export async function installSteamGame({ store, game, download: plan, onProgress
           labels: [],
           entry: executable,
           revision: 1,
-          store: { id: store, game },
+          // A demo shows in the library signed in or not (libraryView.js).
+          store: { id: store, game, ...plan.demo ? { demo: true } : {} },
           installedFrom: "Steam",
           ...plan.launch?.arguments ? { commandLine: plan.launch.arguments } : {},
           // Steam's own addresses: a bottle carries them wherever it goes.

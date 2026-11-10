@@ -6,7 +6,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { depotOwners, sharedDepots, wantedDepot } from './apps.js';
+import { depotOwners, sharedDepots, steamArt, wantedDepot } from './apps.js';
 
 test('an install takes the depots of other apps the app names, at their owners\' manifests',
     ()=>{
@@ -33,3 +33,12 @@ test('an install takes the depots of other apps the app names, at their owners\'
             false);
         assert.equal(wantedDepot({}, 'english'), true);
     });
+
+test('a demo\'s tall cover and background are its game\'s: Steam has none of its own', ()=>{
+    assert.deepEqual(steamArt(2407990), {
+        header: 'https://shared.steamstatic.com/store_item_assets/steam/apps/2407990/header.jpg',
+        cover: 'https://shared.steamstatic.com/store_item_assets/steam/apps/668580/library_600x900.jpg',
+        hero: 'https://shared.steamstatic.com/store_item_assets/steam/apps/668580/library_hero.jpg',
+    });
+    assert.match(steamArt(70).cover, /\/70\/library_600x900\.jpg$/, 'a game\'s own');
+});

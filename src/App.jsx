@@ -23,7 +23,7 @@ import { AddDialog } from "./components/AddDialog.jsx";
 import { AppHeader } from "./components/AppHeader.jsx";
 import { Footer } from "./components/Footer.jsx";
 import { InstallScreen } from "./components/InstallScreen.jsx";
-import { useStores } from "./components/Stores.jsx";
+import { GameHubNeeded, StoreSignIn, useStores } from "./components/Stores.jsx";
 import { Landing } from "./components/Landing.jsx";
 import { License } from "./components/License.jsx";
 import { BottleSettingsDialog, GameDetails } from "./components/GameDetails.jsx";
@@ -408,6 +408,19 @@ export default function App() {
           facts={[{ label: "Library", value: `${bundles.length} title${bundles.length === 1 ? "" : "s"}` }]}
           stores={stores}
         />
+
+        {/* Install pressed on a store's card signed out: its sign-in, then the
+          library's cards are read again; or, without GameHub, the extension first. */}
+        {stores.signInFor && (stores.signInFor.available
+          ? <StoreSignIn provider={stores.signInFor.provider} onSignedIn={stores.signInDone}
+            onClose={stores.closeSignIn} />
+          : <GameHubNeeded provider={stores.signInFor.provider}
+            link={typeof config?.gamehubUrl === "string" ? config.gamehubUrl : null}
+            onAccounts={() => {
+              stores.closeSignIn();
+              setSettings("accounts");
+            }}
+            onClose={stores.closeSignIn} />)}
 
         <Footer />
       </>)}

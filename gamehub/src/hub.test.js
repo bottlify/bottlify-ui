@@ -65,24 +65,66 @@ test('the account the worker keeps: its name answered, its token in nothing give
     assert.equal(await ask('account'), null);
 });
 
-test('the list is the account\'s games, as Steam tells anyone of them', async()=>{
+/** The demos as the fixture describes them, by name. */
+const DEMO_CARDS = [
+    { id: '219', name: 'Demo 219', bytes: 100, exact: false, installable: true, demo: true },
+    { id: '2407990', name: 'Demo 2407990', bytes: 100, exact: false, installable: true,
+        demo: true },
+    { id: '479030', name: 'Demo 479030', bytes: 0, exact: false, installable: true, demo: true },
+];
+
+/** A list as compared: its covers left out. @param {any[]} list */
+const cards = list=>list.map(game=>({ ...game, covers: undefined }));
+
+test('the list is the account\'s games, as Steam tells anyone of them, and the demos', async()=>{
     const { steam, kept, ask } = hubOver();
-    assert.deepEqual(await ask('list'), [], 'nobody signed in: none');
+    assert.deepEqual(await ask('list'), [],
+        'nobody signed in: none, the launcher showing the demos itself');
     kept.session = { accountName: 'someone', refreshToken: TOKEN };
     const list = await ask('list');
-    assert.deepEqual(list.map((/** @type {any} */ game)=>({ ...game, covers: undefined })), [
-        { id: '400', name: 'App 400', bytes: 1000, exact: false, installable: false,
+    assert.deepEqual(cards(list), [
+        { id: '400', name: 'App 400', bytes: 1010, exact: false, installable: false,
             covers: undefined },
-        { id: '70', name: 'App 70', bytes: 1000, exact: false, installable: true,
+        { id: '70', name: 'App 70', bytes: 1010, exact: false, installable: true,
             covers: undefined },
+        ...DEMO_CARDS.map(one=>({ ...one, covers: undefined })),
     ], 'by name; an app Steam does not describe left out');
     assert.equal(list[1].covers.capsule, await ask('cover', { game: '70', kind: 'capsule' }));
-    assert.deepEqual(steam.asked, ['logOn someone true', 'anonymous', 'info anonymous 70,400,999'],
-        'product info over an anonymous logon of its own beside the account\'s');
+    assert.deepEqual(steam.asked, ['logOn someone true', 'anonymous',
+        'info anonymous 70,400,999,219,479030,2407990'],
+    'product info over an anonymous logon of its own beside the account\'s');
     await ask('list');
     assert.equal(steam.asked.length, 3, 'read a while ago: not asked again');
     assert.equal(await ask('cover', { game: '70', kind: 'capsule' }),
         'https://shared.steamstatic.com/store_item_assets/steam/apps/70/library_600x900.jpg');
+});
+
+test('an account that owns a demo\'s game is offered the game, not the demo', async()=>{
+    const { steam, kept, ask } = hubOver();
+    steam.ownedApps = async()=>[70, 219, 220, 479030];
+    kept.session = { accountName: 'someone', refreshToken: TOKEN };
+    assert.deepEqual((await ask('list')).map((/** @type {any} */ game)=>game.id),
+        ['220', '70', '2407990', '479030'],
+        'Half-Life 2 owned: its demo goes, held or not; DOOM\'s demo held: listed once');
+});
+
+test('a demo installs for any account signed in: a free licence asked first', async()=>{
+    const { steam, kept, ask } = hubOver();
+    await assert.rejects(ask('download', { game: '479030' }), /sign in to Steam/,
+        'nobody signed in: a sign-in first');
+    kept.session = { accountName: 'someone', refreshToken: TOKEN };
+    const answer = await ask('download', { game: '479030' });
+    assert.deepEqual(steam.asked.filter(one=>/^(free|key|info account)/.test(one)),
+        ['free 479030', 'info account 479030', 'key 479030 479031'],
+        'the licence, then what Steam shows only an account holding the demo, then its key');
+    assert.deepEqual(answer.launch, { executable: 'DOOMx64.exe', arguments: '' });
+    assert.deepEqual(answer.depots.map((/** @type {any} */ one)=>[one.depot, one.gid]),
+        [[479031, '8']]);
+    const list = await ask('list', { fresh: true });
+    assert.equal(list.filter((/** @type {any} */ game)=>game.id === '479030').length, 1,
+        'held now: listed once');
+    await assert.rejects(ask('download', { game: '480' }), /granted no licence to app 480/,
+        'a game that is not free is not installed for an account without it');
 });
 
 test('download answers what an install needs, the redistributables under their owner', async()=>{
@@ -126,3 +168,23 @@ test('run data: Steam running for the account, the ticket, Valve\'s client files
         ['ticket 400', 'ticket 480']);
     assert.doesNotMatch(JSON.stringify(run), /secret-signature|eyJ/);
 });
+
+test('a download keys only the depots the licences give, a shared one under the app if need be',
+    async()=>{
+        const { steam, kept, ask } = hubOver();
+        kept.session = { accountName: 'someone', refreshToken: TOKEN };
+        const owner = steam.depotKey;
+        steam.depotKey = async(/** @type {any} */ link, /** @type {number} */ app,
+            /** @type {number} */ depot)=>{
+            if (app === 228980)
+            {
+                throw new Error(`steam: no key for depot ${depot} (EResult 15)`);
+            }
+            return owner(link, app, depot);
+        };
+        const answer = await ask('download', { game: '70' });
+        assert.deepEqual(answer.depots.map((/** @type {any} */ one)=>one.depot), [1, 228990],
+            'depot 2, which no licence names, is not asked for');
+        assert.deepEqual(steam.asked.filter(one=>one.startsWith('key')),
+            ['key 70 1', 'key 70 228990'], 'the shared depot under the app installed');
+    });
