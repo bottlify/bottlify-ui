@@ -750,6 +750,9 @@ async function run({ bundle, media, canvas, report: show, silentInstall = false,
 
 
   const query = new URLSearchParams(window.location.search);
+  // Two addresses, hex or decimal: the range `?interpretRange=` leaves to the interpreter.
+  const range = (query.get("interpretRange") ?? "").split(",").map((one) => Number(one.trim()));
+  const interpretRange = range.length === 2 && range.every((one) => Number.isFinite(one)) ? range : null;
   const setCursor = (wanted) => applyCursor(canvas, wanted);
 
   // Diagnostic: `?hook=Module:offset:label:argBytes:len,len[:strings];...` puts
@@ -845,7 +848,9 @@ async function run({ bundle, media, canvas, report: show, silentInstall = false,
     // `cork`), under what the address asks for.
     // `?translate=0`: every instruction interpreted, nothing compiled to wasm;
     // `?translateWorker=0`: translated on the engine's own thread, no worker.
-    ...(query.has("blockProfile") || query.get("checkReads") === "1"
+    // `?interpretRange=0x401000,0x2000000`: the code in that range interpreted, the
+    // rest translated -- halved run by run, it finds the code a translation gets wrong.
+    ...(query.has("blockProfile") || query.get("checkReads") === "1" || interpretRange
       || query.get("traceStore") === "1" || query.get("translate") === "0"
       || query.get("translateWorker") === "0" || Object.keys(corkConfig).length > 0
       ? { cork: { config: {
@@ -856,6 +861,7 @@ async function run({ bundle, media, canvas, report: show, silentInstall = false,
         ...(query.get("traceStore") === "1" ? { traceStore: true } : {}),
         ...(query.get("translate") === "0" ? { translate: false } : {}),
         ...(query.get("translateWorker") === "0" ? { worker: false } : {}),
+        ...(interpretRange ? { interpretRange } : {}),
       } } }
       : {}),
     // `?cores=3` (`?executors=3` of old): the virtual cores the machine has,
