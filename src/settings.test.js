@@ -332,3 +332,18 @@ test("a bottle's multithreading is what is said, here or in its manifest, and of
   assert.equal(multithreadingFor(settings, { id: "silent" }), false, "nothing said: one core");
   assert.equal(multithreadingFor(settings, { id: "junk", multithreading: "yes" }), false);
 });
+
+test("the desktop is the chosen shape, or the screen's own for auto", async () => {
+  const { displayScreen, normalise } = await import("./settings.js");
+  const size = (/** @type {string} */ choice, /** @type {number} */ aspect) => {
+    const { width, height } = displayScreen(choice, aspect);
+    return `${width}x${height}`;
+  };
+  assert.equal(size("auto", 2560 / 1440), "1920x1080");
+  assert.equal(size("auto", 1440 / 900), "1920x1200", "a MacBook's 16:10");
+  assert.equal(size("auto", 1024 / 768), "1600x1200");
+  assert.equal(size("auto", 3440 / 1440), "1920x1080", "an ultrawide takes the widest");
+  assert.equal(size("4:3", 16 / 9), "1600x1200", "a choice is kept whatever the screen");
+  assert.equal(normalise({ display: "21:9" }).display, "auto", "an unknown shape is auto");
+  assert.equal(normalise({ display: "16:10" }).display, "16:10");
+});

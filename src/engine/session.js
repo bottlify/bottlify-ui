@@ -42,7 +42,8 @@ import { loadProviders, providerOf } from "../stores/providers.js";
 import { outOfMemoryNote, refusedMemory } from "./out-of-memory.js";
 import { phoneScreen, viewOf } from "../screen.js";
 import {
-  CHANGED, GPU_JOURNAL, SHADER_CHOICES, bottleConfigFor, driverRulesFor, loadSettings,
+  CHANGED, GPU_JOURNAL, SHADER_CHOICES, bottleConfigFor, displayScreen, driverRulesFor,
+  loadSettings,
   multithreadingFor,
   memorySizeFor,
 } from "../settings.js";
@@ -555,8 +556,9 @@ async function run({ bundle, media, canvas, report: show, silentInstall = false,
   };
   const memoryAsked = Number(asked.get("memory")) * 1024 * 1024;
   // A phone is told a desktop of its own landscape shape (`screen.js`);
-  // everything else the screen of the settings.
-  const screen = isTouchScreen(window) ? phoneScreen(viewOf(window)) : settings.screen;
+  // everything else the desktop the settings choose, by the screen's shape.
+  const screen = isTouchScreen(window) ? phoneScreen(viewOf(window))
+    : displayScreen(settings.display, window.screen.width / Math.max(1, window.screen.height));
   report({ screen });
   const { networking, cork: corkConfig, graphics: graphicsConfig, cpu: cpuConfig } = await getConfig();
   // The clock the loader's "elapsed" line reads, started before the engine is

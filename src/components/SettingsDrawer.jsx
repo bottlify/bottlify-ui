@@ -20,7 +20,8 @@ import {
 } from "../engine/journal.js";
 import { jsonParts } from "../engine/jsonparts.js";
 import {
-  AREAS, GPU_JOURNAL, LEVELS, MEMORY_CHOICES, loadSettings, saveSettings, storagePersists,
+  AREAS, DISPLAY_CHOICES, GPU_JOURNAL, LEVELS, MEMORY_CHOICES, loadSettings, saveSettings,
+  storagePersists,
 } from "../settings.js";
 
 /** Warn and error, the two the filter keeps. */
@@ -326,6 +327,22 @@ function BottleSettings({ app, running, facts, settings, change }) {
             sx={{ mt: 2 }}
           >
             {MEMORY_CHOICES.map((one) => <MenuItem key={one.value} value={one.value}>{one.label}</MenuItem>)}
+          </TextField>
+        </Tooltip>
+        <Tooltip title={running ? APPLIES_NEXT_START : ""} disableHoverListener={!running}>
+          <TextField
+            select
+            fullWidth
+            size="small"
+            label="Screen"
+            value={settings.display}
+            disabled={running}
+            onChange={(event) => change({ display: event.target.value })}
+            helperText={"The desktop every bottle's machine has. A game that draws at less "
+              + "scales its own picture up to it."}
+            sx={{ mt: 2 }}
+          >
+            {DISPLAY_CHOICES.map((one) => <MenuItem key={one.value} value={one.value}>{one.label}</MenuItem>)}
           </TextField>
         </Tooltip>
         <NumberField

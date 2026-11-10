@@ -90,6 +90,8 @@ const SCREEN = Object.freeze({ width: 1024, height: 768, bitsPerPixel: 32 });
  * @property {Record<string, BottleConfig>} bottleConfig
  *                                  The person's own choices for a bottle, by bundle
  *                                  id, over what its manifest says.
+ * @property {string} display       The desktop's shape (`DISPLAY_CHOICES`), "auto" the
+ *                                  browser screen's.
  * @property {number} memory        The guest's memory, in megabytes (`MEMORY_CHOICES`),
  *                                  for every bottle that does not choose its own.
  */
@@ -173,6 +175,35 @@ export const MEMORY_CHOICES = [
   { value: 4096, label: "4 GB" },
 ];
 
+/**
+ * The desktop a bottle's machine has, by shape: large, so a game that renders
+ * at less scales its own picture up to the screen rather than the page
+ * scaling a small desktop. "auto" takes the shape of the screen the browser
+ * is on.
+ */
+export const DISPLAY_CHOICES = [
+  { value: "auto", label: "Match this screen" },
+  { value: "16:9", label: "16:9 (1920 × 1080)", width: 1920, height: 1080 },
+  { value: "16:10", label: "16:10 (1920 × 1200)", width: 1920, height: 1200 },
+  { value: "4:3", label: "4:3 (1600 × 1200)", width: 1600, height: 1200 },
+];
+
+/**
+ * The desktop for a display choice, the screen's own shape deciding "auto":
+ * each shape takes the ratios nearer to it than to its neighbours.
+ *
+ * @param {string} choice  One of `DISPLAY_CHOICES`.
+ * @param {number} aspect  The browser's screen, width over height.
+ * @returns {{ width: number, height: number, bitsPerPixel: number }}
+ */
+export function displayScreen(choice, aspect) {
+  const shape = choice !== "auto" ? choice
+    : aspect >= (16 / 9 + 16 / 10) / 2 ? "16:9" : aspect >= (16 / 10 + 4 / 3) / 2 ? "16:10" : "4:3";
+  const chosen = DISPLAY_CHOICES.find((one) => one.value === shape) ?? DISPLAY_CHOICES[1];
+  return { width: /** @type {number} */ (chosen.width), height: /** @type {number} */ (chosen.height),
+    bitsPerPixel: 32 };
+}
+
 /** @type {RunSettings} */
 export const DEFAULTS = Object.freeze({
   screen: SCREEN,
@@ -201,6 +232,7 @@ export const DEFAULTS = Object.freeze({
   // and a title of this era picks its whole preset from the physical memory it is
   // told of, the lowest one below a gigabyte.
   memory: 2048,
+  display: "auto",
 });
 
 /** The journal's severities in its own order: error is 1, trace is 5. */
@@ -318,6 +350,8 @@ export function normalise(raw) {
     bottleConfig: bottleConfigOf(source.bottleConfig),
     memory: MEMORY_CHOICES.some((one) => one.value === source.memory)
       ? source.memory : DEFAULTS.memory,
+    display: DISPLAY_CHOICES.some((one) => one.value === source.display)
+      ? source.display : DEFAULTS.display,
   };
 }
 
