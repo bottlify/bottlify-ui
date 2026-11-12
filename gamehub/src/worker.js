@@ -27,7 +27,8 @@ const TRANSPORT = /** @type {'frame' | 'tab'} */ ('frame');
 if (TRANSPORT === 'tab')
 {
     startRelay({ chrome,
-        sites: Object.fromEntries(Object.entries(PLATFORMS).map(([id, one])=>[id, one.site])),
+        sites: Object.fromEntries(Object.entries(PLATFORMS).flatMap(([id, one])=>
+            (one.site ? [[id, one.site]] : []))),
         // What a store's tab is refused by its site's CORS: Steam's directory and Valve's
         // client files, which the session frame fetches itself.
         fetchable: new RegExp(String.raw`^https://(api\.steampowered\.com/ISteamDirectory/`

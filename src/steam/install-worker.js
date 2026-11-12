@@ -17,7 +17,11 @@
  *    origin's file system, through a sync access handle -- which only a
  *    worker has, and which writes in place where a page's writable copies the
  *    whole file -- then the program it starts (`entry`) and, last, its
- *    `manifest.json`, which makes it a bottle the library lists.
+ *    `manifest.json`, which makes it a bottle the library lists;
+ *  - a GOG install (`gog/browser-install.js`), given the build and its links:
+ *    the engine's `installGogBundle` into the bottle the same way, its chunks
+ *    fetched and opened here -- inflating is the browser's own, and MD5 keeps
+ *    up with the network.
  *
  * What a stopped install had done is kept beside it (`install.json`): the next
  * run goes on from there.
@@ -25,6 +29,7 @@
 
 import { downloadChunk } from "@bottlify/core/steam";
 import { installBundle } from "@bottlify/core/steam/install";
+import { installGogBundle } from "@bottlify/core/gog/install";
 import { bottlesFolder } from "../engine/bottles.js";
 
 /** @typedef {import("@bottlify/core/steam/install").DepotOpening} DepotOpening */
@@ -115,19 +120,23 @@ async function put(folder, name, bytes) {
 const base64 = (bytes) => btoa(String.fromCharCode(...bytes));
 
 /**
- * @param {Object} task
- * @param {string} task.id  The bottle's directory.
- * @param {DepotOpening[]} task.depots
- * @param {import("@bottlify/core/steam").ContentServer[]} task.servers
- * @param {string} [task.installscript] @param {string} task.executable
- * @param {Record<string, unknown>} task.manifest  The bottle's description but for its bundle.
- * @param {MessagePort[]} task.ports
- * @param {AbortSignal} signal
+ * A store's install into a bottle: its bundle written in place by `fill`,
+ * taken up from what a stopped run saved (`install.json`), then the program it
+ * starts (`entry`) and, last, its `manifest.json`, which makes it a bottle the
+ * library lists.
+ *
+ * @param {string} id  The bottle's directory.
+ * @param {Record<string, unknown>} manifest  The bottle's description but for its bundle.
+ * @param {(job: { handle: FileSystemSyncAccessHandle, resume: { stamp: string, done: Uint8Array } | null,
+ *     onSave: (progress: { stamp: string, done: Uint8Array }) => Promise<void>,
+ *     onProgress: (progress: { stage: string, done: number, total: number }) => void })
+ *     => Promise<{ bundle: Record<string, unknown>, entry: Uint8Array | null,
+ *     manifest?: Record<string, unknown> }>} fill
+ *     `manifest`: what the install learnt of the bottle (the program, its arguments).
  */
-async function install({ id, depots, servers, installscript, executable, manifest, ports, through },
-  signal) {
+async function intoBottle(id, manifest, fill) {
   const folder = await (await bottlesFolder()).getDirectoryHandle(id, { create: true });
-  /** @type {import("@bottlify/core/steam/install").InstallProgress | null} */
+  /** @type {{ stamp: string, done: Uint8Array } | null} */
   let resume = null;
   try {
     const kept = JSON.parse(await (await (await folder.getFileHandle("install.json")).getFile()).text());
@@ -144,8 +153,7 @@ async function install({ id, depots, servers, installscript, executable, manifes
   }
   let shown = 0;
   try {
-    const { bundle, entry } = await installBundle({ handle, depots, servers, installscript,
-      executable, resume, signal, decode: decoders(ports), fetch: fetchThrough(through),
+    const { bundle, entry, manifest: learnt } = await fill({ handle, resume,
       onSave: (progress) => put(folder, "install.json", new TextEncoder().encode(
         JSON.stringify({ stamp: progress.stamp, done: base64(progress.done) }))),
       onProgress: (progress) => {
@@ -154,9 +162,9 @@ async function install({ id, depots, servers, installscript, executable, manifes
         shown = Date.now();
         postMessage({ progress });
       } });
-    if (!entry) throw new Error(`${executable} is not among the files the depots install`);
+    const described = { ...manifest, ...learnt, bundle: { file: "bundle.btl", ...bundle } };
+    if (!entry) throw new Error(`${String(described.entry)} is not among the files the store installs`);
     await put(folder, "entry", entry);
-    const described = { ...manifest, bundle: { file: "bundle.btl", ...bundle } };
     await put(folder, "manifest.json", new TextEncoder().encode(JSON.stringify(described, null, 4)));
     await folder.removeEntry("install.json").catch(() => {});
     return described;
@@ -165,16 +173,56 @@ async function install({ id, depots, servers, installscript, executable, manifes
   }
 }
 
+/**
+ * @param {Object} task
+ * @param {string} task.id  The bottle's directory.
+ * @param {DepotOpening[]} task.depots
+ * @param {import("@bottlify/core/steam").ContentServer[]} task.servers
+ * @param {string} [task.installscript] @param {string} task.executable
+ * @param {Record<string, unknown>} task.manifest  The bottle's description but for its bundle.
+ * @param {MessagePort[]} task.ports
+ * @param {MessagePort | null} [task.through]
+ * @param {AbortSignal} signal
+ */
+const install = ({ id, depots, servers, installscript, executable, manifest, ports, through },
+  signal) => intoBottle(id, manifest, async ({ handle, resume, onSave, onProgress }) => {
+  const { bundle, entry } = await installBundle({ handle, depots, servers, installscript,
+    executable, resume, signal, decode: decoders(ports), fetch: fetchThrough(through), onSave,
+    onProgress });
+  return { bundle, entry };
+});
+
+/**
+ * A GOG build into a bottle (`@bottlify/core/gog/install`): its program and
+ * arguments are its primary play task's, read from the build itself.
+ *
+ * @param {Object} task
+ * @param {string} task.id
+ * @param {import("@bottlify/core/gog/install").InstallPlan} task.plan
+ * @param {string} [task.language]
+ * @param {Record<string, unknown>} task.manifest
+ * @param {AbortSignal} signal
+ */
+const installGog = ({ id, plan, language, manifest }, signal) =>
+  intoBottle(id, manifest, async ({ handle, resume, onSave, onProgress }) => {
+    const done = await installGogBundle({ handle, plan, language, resume, onSave, onProgress,
+      signal });
+    for (const line of done.said) postMessage({ said: line });
+    if (!done.executable) throw new Error("the build names no program to start");
+    return { bundle: done.bundle, entry: done.entry, manifest: { entry: done.executable,
+      ...done.arguments ? { commandLine: done.arguments } : {} } };
+  });
+
 const stop = new AbortController();
 onmessage = async ({ data }) => {
   if (data.serve) {
     serve(data.serve, data.through);
   } else if (data.cancel) {
     stop.abort(new DOMException("the install was stopped", "AbortError"));
-  } else if (data.install) {
+  } else if (data.install || data.installGog) {
     try {
-      postMessage({ done: await install({ ...data.install, ports: data.ports,
-        through: data.through }, stop.signal) });
+      postMessage({ done: data.installGog ? await installGog(data.installGog, stop.signal)
+        : await install({ ...data.install, ports: data.ports, through: data.through }, stop.signal) });
     } catch (e) {
       postMessage({ error: String(/** @type {Error} */ (e)?.message ?? e),
         stopped: stop.signal.aborted });

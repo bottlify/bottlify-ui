@@ -1,0 +1,35 @@
+<!doctype html>
+<!--
+  Copyright © 2026 Bottlify Project
+  Licensed under the Mozilla Public License, version 2.0
+  See LICENSE for details
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sign in to GOG</title>
+<style>
+  :root { color-scheme: light dark; --fg: #1b1b1f; --muted: #5f6368;
+    --accent: #1a73e8; --error: #c5221f; --bg: #fff; }
+  @media (prefers-color-scheme: dark) {
+    :root { --fg: #e8e8ec; --muted: #a0a4ab; --accent: #8ab4f8; --error: #f28b82; --bg: #1e1f24; }
+  }
+  body { margin: 0; padding: 16px; font: 14px/1.45 system-ui, sans-serif; color: var(--fg);
+    background: var(--bg); text-align: center; }
+  p { color: var(--muted); }
+  button { font: inherit; padding: 8px 16px; border-radius: 6px; border: 1px solid var(--accent);
+    background: transparent; color: var(--accent); cursor: pointer; }
+  button:disabled { opacity: .5; cursor: default; }
+  .status { min-height: 1.45em; }
+  .error { color: var(--error); }
+</style>
+</head>
+<body>
+  <p>GOG's own sign-in page opens in a window of its own. The password goes to GOG alone;
+    this browser keeps only the session.</p>
+  <button type="button" id="open">Sign in on GOG.com</button>
+  <p class="status" id="status" role="status"></p>
+  <script type="module" src="/gamehub/src/stores/gog/signin.js"></script>
+</body>
+</html>

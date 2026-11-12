@@ -37,7 +37,8 @@
     document.documentElement.dataset.bottlifyGamehub = version;
 
     /** The stores, as a person knows them. */
-    const STORES = { steam: 'Steam' };
+    // GOG runs in its session frame alone, which the tab build has none of.
+    const STORES = TRANSPORT === 'tab' ? { steam: 'Steam' } : { steam: 'Steam', gog: 'GOG' };
     const PEER = 'bottlify-gamehub';
     const origin = new URL(chrome.runtime.getURL('')).origin;
 

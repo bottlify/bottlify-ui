@@ -81,7 +81,35 @@ export const PLATFORMS = Object.freeze({
             'https://shared.cloudflare.steamstatic.com/*', 'https://cdn.akamai.steamstatic.com/*',
             'https://cdn.cloudflare.steamstatic.com/*']),
     }),
+    gog: Object.freeze({
+        rules: 'rules/gog.json',
+        // No site: GOG runs in its session frame alone, never in a tab (the
+        // Safari build leaves it out, content.js).
+        site: null,
+        pages: Object.freeze({
+            session: Object.freeze({ html: 'src/stores/gog/session.html',
+                script: 'gamehub/src/stores/gog/session-page.js' }),
+            signin: Object.freeze({ html: 'src/stores/gog/signin.html',
+                script: 'gamehub/src/stores/gog/signin.js' }),
+        }),
+        // The page GOG's login ends at, whose address carries the sign-in's
+        // code to GameHub (stores/gog/redirect.js).
+        redirect: Object.freeze({ matches: Object.freeze(['https://embed.gog.com/on_login_success*']),
+            script: 'gamehub/src/stores/gog/redirect.js' }),
+        // GOG's sign-in, API and content system, asked by the frame; the CDN
+        // the page downloads from (rules/gog.json, rule 2, and
+        // stores/gog/store.js, CDN_HOSTS); the games' art.
+        hosts: Object.freeze(['https://*.gog.com/*', 'https://gog-cdn.gcdn.co/*',
+            'https://gog-cdn-lumen.secure2.footprint.net/*', 'https://*.gog-statics.com/*']),
+    }),
 });
+
+/** The stores a build that runs them in a tab can: those with a site to open. */
+const TABBED = Object.values(PLATFORMS).filter(platform=>platform.site);
+
+/** Content scripts on a store's own pages, outside any tab transport. */
+const REDIRECTS = Object.values(PLATFORMS).flatMap(platform=>
+    ('redirect' in platform ? [platform.redirect] : []));
 
 /** Each store's pages, `[store, page, { html, script }]`. */
 export const STORE_PAGES = Object.freeze(Object.entries(PLATFORMS).flatMap(([id, platform])=>
@@ -95,7 +123,7 @@ export const STORE_PAGES = Object.freeze(Object.entries(PLATFORMS).flatMap(([id,
  */
 export const ENTRIES = Object.freeze(['gamehub/src/worker.js', 'gamehub/src/content.js',
     'gamehub/src/tab.js', 'gamehub/src/tab-session.js', 'gamehub/src/wire.js',
-    ...STORE_PAGES.map(([, , files])=>files.script)]);
+    ...STORE_PAGES.map(([, , files])=>files.script), ...REDIRECTS.map(one=>one.script)]);
 
 /** The scripts the build writes its transport into (`TRANSPORTS`). */
 export const TRANSPORT_WRITTEN = Object.freeze(['gamehub/src/content.js', 'gamehub/src/worker.js']);
@@ -122,7 +150,7 @@ export const FRAMED_BY = PAGES;
 export function manifestFor(build, version){
     const pages = [...PAGES[build]];
     const sites = TRANSPORTS[build] === 'tab'
-        ? Object.values(PLATFORMS).map(platform=>`${platform.site}*`) : [];
+        ? TABBED.map(platform=>`${platform.site}*`) : [];
     return {
         manifest_version: 3,
         name: build === 'public' ? 'Bottlify GameHub' : `Bottlify GameHub (${build})`,
@@ -135,7 +163,9 @@ export function manifestFor(build, version){
         content_scripts: [
             { matches: pages, js: ['gamehub/src/content.js'], run_at: 'document_start' },
             ...sites.length
-                ? [{ matches: sites, js: ['gamehub/src/tab.js'], run_at: 'document_idle' }] : []],
+                ? [{ matches: sites, js: ['gamehub/src/tab.js'], run_at: 'document_idle' }] : [],
+            ...TRANSPORTS[build] === 'frame' ? REDIRECTS.map(one=>({ matches: [...one.matches],
+                js: [one.script], run_at: 'document_start' })) : []],
         // A store's pages alone, as frames: no module is the page's to load -
         // but where the stores run in a tab, the content script's on the store's
         // site loads the store's side by address, and its sign-in page's markup.

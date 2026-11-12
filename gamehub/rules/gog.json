@@ -1,0 +1,30 @@
+[
+    {
+        "id": 1,
+        "priority": 1,
+        "action": {
+            "type": "modifyHeaders",
+            "responseHeaders": [
+                { "header": "Access-Control-Allow-Origin", "operation": "set", "value": "*" },
+                { "header": "Cross-Origin-Resource-Policy", "operation": "set", "value": "cross-origin" }
+            ]
+        },
+        "condition": { "requestDomains": ["gog-statics.com"], "resourceTypes": ["image"] }
+    },
+    {
+        "id": 2,
+        "priority": 1,
+        "action": {
+            "type": "modifyHeaders",
+            "responseHeaders": [
+                { "header": "Access-Control-Allow-Origin", "operation": "set", "value": "*" },
+                { "header": "Cross-Origin-Resource-Policy", "operation": "set", "value": "cross-origin" }
+            ]
+        },
+        "condition": {
+            "requestDomains": ["gog-cdn-fastly.gog.com", "cdn.gog.com", "gog-cdn.gcdn.co",
+                "gog-cdn-lumen.secure2.footprint.net"],
+            "resourceTypes": ["xmlhttprequest", "other"]
+        }
+    }
+]

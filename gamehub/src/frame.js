@@ -25,7 +25,11 @@ import { FROM, readRequest } from './protocol.js';
 import { vaultFor } from './vault.js';
 import { configOf, switchRulesets, wantedBy } from './rulesets.js';
 
-/** @typedef {import('./stores/steam/store.js').Vault} Vault */
+/**
+ * The session as a store asks it: Steam's, and the renewal GOG's needs.
+ *
+ * @typedef {import('./stores/steam/store.js').Vault & import('./stores/gog/store.js').Vault} Vault
+ */
 
 /**
  * @param {Object} options
@@ -45,6 +49,14 @@ export function startFrame({ store, make, kept, enabled, toPage, version = '' })
             return session ? { accountName: session.accountName, id: session.id } : null;
         },
         token: ()=>kept.get(),
+        // A store whose refresh token is replaced with each use (GOG's) keeps the new one.
+        renew: async refreshToken=>{
+            const session = await kept.get();
+            if (session)
+            {
+                await kept.set({ ...session, refreshToken });
+            }
+        },
         signOut: ()=>kept.set(null),
     };
 

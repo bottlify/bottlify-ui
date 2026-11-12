@@ -12,6 +12,7 @@
  */
 
 import { installSteamGame } from "../steam/browser-install.js";
+import { installGogGame } from "../gog/browser-install.js";
 import { withClientFiles } from "../steam/client-files.js";
 
 /**
@@ -21,7 +22,7 @@ import { withClientFiles } from "../steam/client-files.js";
  */
 
 /** @type {Record<string, Installer>} */
-export const INSTALLERS = { steam: installSteamGame };
+export const INSTALLERS = { steam: installSteamGame, gog: installGogGame };
 
 /**
  * What the page adds to a store's run data, by the store's name, where GameHub

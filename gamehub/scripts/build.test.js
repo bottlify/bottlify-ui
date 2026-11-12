@@ -50,12 +50,25 @@ test('each build is whole, and the page may load a store\'s pages alone', async(
                     .includes(inTab ? 'const TRANSPORT = "tab";' : frameLine),
                 `${flavour}: ${path} runs the stores ${inTab ? 'in a tab' : 'in a frame'}`);
             }
-            const onSites = manifest.content_scripts.slice(1);
+            const scripts = manifest.content_scripts.slice(1);
+            const redirects = scripts.filter((/** @type {any} */ one)=>
+                one.js[0].endsWith('/redirect.js'));
+            const onSites = scripts.filter((/** @type {any} */ one)=>!redirects.includes(one));
             assert.equal(onSites.length, inTab ? 1 : 0,
                 `${flavour}: a content script on the stores' sites`);
-            for (const one of onSites)
+            // GOG's sign-in ends on its own page, whose address a script hands
+            // over; GOG runs in a frame alone, so the tab build has none.
+            assert.deepEqual(redirects.map((/** @type {any} */ one)=>one.matches),
+                inTab ? [] : [['https://embed.gog.com/on_login_success*']]);
+            for (const one of scripts)
             {
                 assert.ok(existsSync(join(dir, one.js[0])), one.js[0]);
+            }
+            for (const one of redirects)
+            {
+                assert.doesNotMatch(readFileSync(join(dir, one.js[0]), 'utf8')
+                    .replace(/\/\*[\s\S]*?\*\//g, ''), /\bimport\b/,
+                `${one.js[0]}: a content script on GOG's page loads nothing`);
             }
             for (const [id, page] of STORE_PAGES)
             {
