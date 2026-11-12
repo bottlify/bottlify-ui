@@ -854,11 +854,15 @@ async function run({ bundle, media, canvas, report: show, silentInstall = false,
     // `cork`), under what the address asks for.
     // `?translate=0`: every instruction interpreted, nothing compiled to wasm;
     // `?translateWorker=0`: translated on the engine's own thread, no worker.
+    // `?translationStore=0`: no translation store - nothing read from the bottle's
+    // cache of translations, nothing kept in it; whether a cached translation is
+    // what a run does wrong, or what fills its memory.
     // `?interpretRange=0x401000,0x2000000`: the code in that range interpreted, the
     // rest translated -- halved run by run, it finds the code a translation gets wrong.
     ...(query.has("blockProfile") || query.get("checkReads") === "1" || interpretRange
       || query.get("traceStore") === "1" || query.get("translate") === "0"
-      || query.get("translateWorker") === "0" || Object.keys(corkConfig).length > 0
+      || query.get("translateWorker") === "0" || query.get("translationStore") === "0"
+      || Object.keys(corkConfig).length > 0
       ? { cork: { config: {
         ...corkConfig,
         ...(query.has("blockProfile")
@@ -867,6 +871,7 @@ async function run({ bundle, media, canvas, report: show, silentInstall = false,
         ...(query.get("traceStore") === "1" ? { traceStore: true } : {}),
         ...(query.get("translate") === "0" ? { translate: false } : {}),
         ...(query.get("translateWorker") === "0" ? { worker: false } : {}),
+        ...(query.get("translationStore") === "0" ? { store: null } : {}),
         ...(interpretRange ? { interpretRange } : {}),
       } } }
       : {}),

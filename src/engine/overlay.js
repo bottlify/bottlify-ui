@@ -190,26 +190,43 @@ function rise(now, was) {
  * that runs out of memory goes to swap and dies with nothing said; this is
  * the number that climbs first.
  *
+ * Chrome counts a shared memory once for every worker that holds it, and
+ * whole, as allocated rather than as touched. Every executor holds the guest
+ * memory the engine worker holds already, so the executors are left out of
+ * the total and said apart (`executors`: that memory again, plus their own
+ * heaps). The total is what is allocated; the operating system's figure for
+ * the tab, what is resident, stays under it.
+ *
  * @param {{ bytes: number, breakdown?: { bytes: number, attribution?: { url?: string,
  *     scope?: string }[] }[] } | null | undefined} measured
- * @returns {{ totalMB: number, top: { name: string, mb: number }[] } | null}
+ * @returns {{ totalMB: number, top: { name: string, mb: number }[],
+ *     executors: { count: number, mb: number } } | null}
  */
 export function tabMemoryOf(measured) {
   if (!measured || typeof measured.bytes !== "number") return null;
   /** @type {Map<string, number>} */
   const by = new Map();
+  const executors = { count: 0, mb: 0 };
+  let total = 0;
   for (const part of measured.breakdown ?? []) {
     if (!(part.bytes > 0)) continue;
     const who = part.attribution?.[0];
     const name = !who ? "shared"
       : who.scope === "Window" ? "page"
         : (who.url ?? "").split("/").pop()?.split("?")[0] || who.scope || "unknown";
+    if (name === "executor.worker.js") {
+      executors.count++;
+      executors.mb += part.bytes / (1 << 20);
+      continue;
+    }
+    total += part.bytes;
     by.set(name, (by.get(name) ?? 0) + part.bytes);
   }
   return {
-    totalMB: measured.bytes / (1 << 20),
+    totalMB: total / (1 << 20),
     top: [...by].map(([name, bytes]) => ({ name, mb: bytes / (1 << 20) }))
       .sort((a, b) => b.mb - a.mb).slice(0, 5),
+    executors,
   };
 }
 

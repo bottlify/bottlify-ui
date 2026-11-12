@@ -373,18 +373,22 @@ test("without the kernel's counts the thread rows are empty and the bound is not
 });
 
 test("the tab's memory is its total and who holds it, a worker by its script, largest first", () => {
+  const executor = { url: "https://x/engine/executor.worker.js", scope: "DedicatedWorkerGlobalScope" };
+  // Chrome's total counts the guest memory again in each executor that holds it.
   const memory = tabMemoryOf({
-    bytes: 6 << 20,
+    bytes: 16 << 20,
     breakdown: [
       { bytes: 1 << 20, attribution: [{ url: "https://x/app/", scope: "Window" }] },
       { bytes: 3 << 20, attribution: [{ url: "https://x/engine/engine.worker.js?v=1", scope: "DedicatedWorkerGlobalScope" }] },
       { bytes: 2 << 20, attribution: [] },
       { bytes: 0, attribution: [{ url: "https://x/idle.js", scope: "DedicatedWorkerGlobalScope" }] },
+      { bytes: 5 << 20, attribution: [executor] },
+      { bytes: 5 << 20, attribution: [executor] },
     ],
   });
   assert.deepEqual(memory, { totalMB: 6, top: [
     { name: "engine.worker.js", mb: 3 }, { name: "shared", mb: 2 }, { name: "page", mb: 1 },
-  ] });
+  ], executors: { count: 2, mb: 10 } });
   assert.equal(tabMemoryOf(null), null);
 });
 

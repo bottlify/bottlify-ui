@@ -216,10 +216,13 @@ export function PerfOverlay({ app, active, symbols }) {
       <Row label="draws" value={rows.drawsPerFrame.toFixed(0)} />
       <Row
         label="memory, MiB"
-        value={`tab ${tab ? tab.totalMB.toFixed(0) : "not measured"} · guest ${rows.guestMappedMB.toFixed(0)}`}
+        value={`allocated ${tab ? tab.totalMB.toFixed(0) : "not measured"} · guest ${rows.guestMappedMB.toFixed(0)}`}
       />
       {tab && tab.top.length > 0 && (
         <Row label="  by" value={tab.top.slice(0, 3).map((part) => `${part.name} ${part.mb.toFixed(0)}`).join(" · ")} />
+      )}
+      {tab && tab.executors.count > 0 && (
+        <Row label="  executors" value={`${tab.executors.count}: ${tab.executors.mb.toFixed(0)}, the guest's memory again`} />
       )}
       {rows.shownBy.length > 0 && (
         <Row label="on the canvas" value={rows.shownBy.map((row) => `${row.name} ${row.count}`).join(" · ")} />
