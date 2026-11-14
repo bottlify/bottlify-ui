@@ -65,7 +65,8 @@ const STAGE_STEP = { fetch: 1, init: 2, loading: 3, installing: 3 };
  *     An installer, or a disc image mounted as a drive of its own.
  * @param {string} [props.title]
  * @param {() => void} props.onClose
- * @param {(app: any, code: number) => void} [props.onExited]  The run is over; read what it left.
+ * @param {(app: any, code: number, layersNeeded: string[]) => void} [props.onExited]
+ *     The run is over; read what it left, and the layers the engine asked for in it.
  */
 /** How long into a run the header goes up, and stays down when reached for on a touch screen. */
 const HEADER_HIDES_MS = 5000;
@@ -271,6 +272,13 @@ export function PlayScreen({ bundle, media, title, onClose, onExited }) {
     };
   }, [bundleId, media, attempt, report, pressed]);
 
+  // The engine asked for a layer this bottle did not have, now written down
+  // for it: started again, this time standing on it. The new run's state
+  // carries no `again`, so it is once.
+  useEffect(() => {
+    if (state.again) setAttempt((count) => count + 1);
+  }, [state.again]);
+
   const { stage } = state;
   const running = stage === "running" || stage === "loading" || stage === "installing";
   const over = stage === "stopped" || stage === "failed" || stage === "exited";
@@ -359,7 +367,9 @@ export function PlayScreen({ bundle, media, title, onClose, onExited }) {
   // prefix is finished. Announced once and only for a run that got that far:
   // a stop the person asked for has nothing to hand over.
   useEffect(() => {
-    if (stage === "exited" && controls.current) onExited?.(controls.current.app, state.exitCode);
+    if (stage === "exited" && controls.current) {
+      onExited?.(controls.current.app, state.exitCode, controls.current.layersNeeded?.() ?? []);
+    }
     // Announced once, when the stage turns: the exit code is settled by then.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stage, onExited]);

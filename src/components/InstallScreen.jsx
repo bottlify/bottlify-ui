@@ -60,8 +60,9 @@ export function InstallScreen({ media, upload, onSaved, onClose }) {
   // Where the bottle goes: this browser's own file system unless the person
   // sends it to the server, which is a choice only when one is configured.
   const [where, setWhere] = useState("browser");
+  const [layers, setLayers] = useState(/** @type {string[]} */ ([]));
 
-  const onExited = useCallback(async (app, code) => {
+  const onExited = useCallback(async (app, code, layersNeeded = []) => {
     // Read once, here: taking the tree out of the volume copies it, and the
     // screen below asks about it repeatedly.
     let collected;
@@ -79,6 +80,7 @@ export function InstallScreen({ media, upload, onSaved, onClose }) {
     if (code === 0 && upload) setId(await hashedId(media.name));
     setFailure(null);
     setDone(null);
+    setLayers(layersNeeded);
     setPrefix(collected);
     setAsking(true);
   }, [media, upload]);
@@ -110,6 +112,9 @@ export function InstallScreen({ media, upload, onSaved, onClose }) {
       installedFrom: media.name,
       kind,
       labels: LABELS.map((one) => one.value).filter((value) => labels.includes(value)),
+      // A runtime the install asked for (a .NET Framework setup), which the
+      // bottle stands on as a layer rather than carrying.
+      ...(layers.length > 0 ? { layers } : {}),
     };
     try {
       const { packed } = where === "server"

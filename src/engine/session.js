@@ -32,6 +32,7 @@ import { getConfig } from "../api/config.js";
 import { mirrorChanges, mountOf, patchFor } from "./patches.js";
 import { desktopPicture } from "./desktop.js";
 import { bundleStart } from "./bottle.js";
+import { layerBundles, layersOf, noteLayerNeeded } from "./layers.js";
 import { bundleUrl, httpRanges, readBundle } from "./btl.js";
 import { bottleFile } from "./bottles.js";
 import { shownToThePerson } from "./boxes.js";
@@ -393,6 +394,8 @@ function cursorStyle(cursor, picture) {
  * @property {{ count: number }} [system]  How many files the DirectX runtime mounted.
  * @property {string} [hooks]  What the bundle's sidecar hooks bound and refused, for
  *                             the whole run; absent when the bundle carries no sidecar.
+ * @property {boolean} [again]  The run is to be started again: the engine asked for a
+ *                              layer the bottle did not have, written down for it now.
  */
 
 /**
@@ -416,6 +419,8 @@ async function journalTail(app) {
  *     where the program's is even while the program hides it: the virtual cursor a
  *     touchpad is steered by.
  * @property {() => Promise<void>} stop
+ * @property {() => string[]} layersNeeded  The layers the engine asked for in this run
+ *     (`layer-needed`): what a bottle an install makes stands on.
  */
 
 /**
@@ -796,6 +801,17 @@ async function run({ bundle, media, canvas, report: show, silentInstall = false,
   // `?preload=1`, what the library's Download asks for: the bundle comes in
   // whole before the program starts, told as it goes.
   if (started && query.get("preload") === "1") started.bundle.preload = true;
+  // The runtimes the bottle stands on, mounted under its own files.
+  const layerIds = started ? layersOf(localStorage, bundle) : [];
+  if (started && layerIds.length > 0) {
+    const { layers, missing } = await layerBundles(layerIds, settings);
+    if (layers.length > 0) started.bundle.layers = layers;
+    for (const id of missing) {
+      report({ off: `The bottle needs ${id}, which this server does not have; it starts without it.` });
+    }
+  }
+  /** The layers the engine asked for in this run. @type {Set<string>} */
+  const needed = new Set();
   const patch = prefix ? null : await patchFor(bundle.id);
   const imagePath = prefix ? prefix.imagePath : started.imagePath;
 
@@ -1000,6 +1016,13 @@ async function run({ bundle, media, canvas, report: show, silentInstall = false,
     bundle: prefix ? undefined : started.bundle,
     // What the engine tells while it starts, before there is an app to ask.
     on: {
+      // Asked while the program is loaded, before it runs: a bottle that did
+      // not know it needs the layer is started again with it, once.
+      "layer-needed": ({ layer }) => {
+        needed.add(layer);
+        if (stopping || !started || layerIds.includes(layer)) return;
+        if (noteLayerNeeded(localStorage, bundle.id, layer)) report({ again: true });
+      },
       "bundle-preload": (state) => {
         if (stopping) return;
         if (state.unbacked) {
@@ -1385,6 +1408,7 @@ async function run({ bundle, media, canvas, report: show, silentInstall = false,
     // Handed out so that what a run left behind can be read once it is over --
     // which for an install is the whole point of having run it.
     app,
+    layersNeeded: () => [...needed],
     // For the perf overlay's "guest code" block, undefined when this bundle
     // carries none -- addresses print as `image+0xrva` instead.
     symbols: sidecarSymbols,

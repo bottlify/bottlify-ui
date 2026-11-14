@@ -300,11 +300,14 @@ const handler = async(req, res)=>{
 
   // Which bottles there are: every directory under bundles/ with a manifest.
   // Listed by this process because a page cannot read a directory, and a
-  // list kept by hand in the page is stale the moment a bottle is sent.
+  // list kept by hand in the page is stale the moment a bottle is sent. A
+  // layer -- a runtime bottles stand on, `"kind": "layer"` -- is not one: the
+  // page asks for it by its id when a bottle needs it.
   if (pathname === "/bundles/index.json"){
     const ids = [];
     for (const name of await readdir(BUNDLES, { withFileTypes: true }).catch(()=>[])){
-      if (name.isDirectory() && await sizeOf(join(BUNDLES, name.name, "manifest.json"))){
+      if (name.isDirectory() && await sizeOf(join(BUNDLES, name.name, "manifest.json"))
+        && (await bottleManifest(name.name))?.kind !== "layer"){
         ids.push(name.name);
       }
     }
