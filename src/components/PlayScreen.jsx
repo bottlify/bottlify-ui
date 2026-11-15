@@ -116,9 +116,12 @@ export function PlayScreen({ bundle, media, title, onClose, onExited }) {
   // reached through the library was clicked into, and starts at once -- unless
   // its browser wants the press itself for sound, as a phone's does, which the
   // run finds out and then waits for the press too. A browser that cannot say
-  // is taken at its word that sound may start.
+  // is taken at its word that sound may start. `?autostart=1` starts without
+  // the press, its sound as the browser allows: a script or a person driving
+  // the page by its address does not stop to click.
   const [pressed, setPressed] = useState(
-    () => /** @type {any} */ (navigator).userActivation?.hasBeenActive ?? true);
+    () => new URLSearchParams(window.location.search).get("autostart") === "1"
+      || (/** @type {any} */ (navigator).userActivation?.hasBeenActive ?? true));
   // The speaker, opened inside the press that starts a run (`openRunSpeaker`)
   // and handed to that run, which owns it from then on.
   const speakerRef = useRef(/** @type {any} */ (null));
