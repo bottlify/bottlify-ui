@@ -38,11 +38,10 @@ const MEMORY = 1024 * 1024 * 1024;
 /**
  * The tab's memory for every process of the build together, by the engine's
  * account: the setup, the installers it starts, ngen's workers; past it the
- * translator lets its coldest modules go. The page held about twice what that
- * account said (7 GB committed against 3.5), so it is set to half of what the
- * tab may hold; unbounded, the setup's run grew until the browser took the page.
+ * translator lets its coldest modules go, and an allocation past it is refused.
+ * Unbounded, the setup's run grew until the browser took the page.
  */
-const MACHINE = 3 * 1024 * 1024 * 1024;
+const MACHINE = 5 * 1024 * 1024 * 1024;
 const REG = "C:\\WINDOWS\\system32\\reg.exe";
 
 /**
