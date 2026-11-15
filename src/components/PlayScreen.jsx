@@ -881,6 +881,10 @@ export function PlayScreen({ bundle, media, title, onClose, onExited }) {
         </Alert>
       </Snackbar>
 
+      {state.layerBuild && state.layerBuild.stage !== "done" && stage !== "failed" && (
+        <LayerBuild build={state.layerBuild} />
+      )}
+
       {state.messageBox && (
         <MessageBox
           notice={state.messageBox}
@@ -889,6 +893,48 @@ export function PlayScreen({ bundle, media, title, onClose, onExited }) {
         />
       )}
     </Box>
+  );
+}
+
+/** What each stage of a layer's build is called where the person sees it. */
+const BUILD_STAGES = {
+  download: "Downloading the setup",
+  install: "Installing",
+  then: "Preparing it to start fast",
+  pack: "Keeping it in this browser",
+};
+
+/**
+ * A runtime the bottle needs, built in this browser before it starts: once,
+ * for every bottle that needs it. Nothing to press; a page closed meanwhile
+ * goes on from the stage it stopped at.
+ *
+ * @param {{ build: import("../engine/layer-build.js").BuildReport }} props
+ */
+function LayerBuild({ build }) {
+  const measured = build.progress && build.progress.total > 0;
+  return (
+    <Dialog open fullWidth maxWidth="sm">
+      <DialogTitle>Setting up the .NET Framework</DialogTitle>
+      <DialogContent>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+          This program needs it, and this browser does not have it yet. It is set up once, for
+          every program that needs it; that takes a while.
+        </Typography>
+        <Typography variant="body2">
+          {BUILD_STAGES[build.stage] ?? build.stage}
+          {build.steps ? ` (step ${build.step} of ${build.steps})` : ""}
+        </Typography>
+        <LinearProgress
+          variant={measured ? "determinate" : "indeterminate"}
+          value={measured ? Math.min(100, (100 * build.progress.read) / build.progress.total) : 0}
+          sx={{ my: 1.5 }}
+        />
+        <Typography variant="caption" color="text.secondary" sx={{ wordBreak: "break-all" }}>
+          {build.detail}
+        </Typography>
+      </DialogContent>
+    </Dialog>
   );
 }
 

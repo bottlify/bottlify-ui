@@ -33,6 +33,7 @@ import { mirrorChanges, mountOf, patchFor } from "./patches.js";
 import { desktopPicture } from "./desktop.js";
 import { bundleStart } from "./bottle.js";
 import { layerBundles, layersOf, noteLayerNeeded } from "./layers.js";
+import { LAYER_RECIPES, buildLayer, keptLayer } from "./layer-build.js";
 import { bundleUrl, httpRanges, readBundle } from "./btl.js";
 import { bottleFile } from "./bottles.js";
 import { shownToThePerson } from "./boxes.js";
@@ -396,6 +397,8 @@ function cursorStyle(cursor, picture) {
  *                             the whole run; absent when the bundle carries no sidecar.
  * @property {boolean} [again]  The run is to be started again: the engine asked for a
  *                              layer the bottle did not have, written down for it now.
+ * @property {import("./layer-build.js").BuildReport} [layerBuild]  A layer the bottle needs,
+ *                              being built in this browser before it starts.
  */
 
 /**
@@ -801,15 +804,25 @@ async function run({ bundle, media, canvas, report: show, silentInstall = false,
   // `?preload=1`, what the library's Download asks for: the bundle comes in
   // whole before the program starts, told as it goes.
   if (started && query.get("preload") === "1") started.bundle.preload = true;
-  // The runtimes the bottle stands on, mounted under its own files.
+  // The runtimes the bottle stands on, mounted under its own files: one kept in
+  // this browser, else the server's, else built here the first time it is needed.
   const layerIds = started ? layersOf(localStorage, bundle) : [];
-  if (started && layerIds.length > 0) {
-    const { layers, missing } = await layerBundles(layerIds, settings);
-    if (layers.length > 0) started.bundle.layers = layers;
-    for (const id of missing) {
-      report({ off: `The bottle needs ${id}, which this server does not have; it starts without it.` });
-    }
+  /** @type {object[]} */
+  const layers = [];
+  for (const id of layerIds) {
+    const layer = await keptLayer(id) ?? (await layerBundles([id], settings)).layers[0]
+      ?? (LAYER_RECIPES[id]
+        ? await buildLayer(id, { createApp, report: (build) => report({ layerBuild: build }) })
+          .catch((e) => {
+            clearInterval(progressTimer);
+            throw failure(`${LAYER_RECIPES[id].title} could not be built`,
+              `${e.message}. Starting again goes on from where it stopped.`, e.stack ?? "");
+          })
+        : null);
+    if (layer) layers.push(layer);
+    else report({ off: `The bottle needs ${id}, which this server does not have; it starts without it.` });
   }
+  if (layers.length > 0) started.bundle.layers = layers;
   /** The layers the engine asked for in this run. @type {Set<string>} */
   const needed = new Set();
   const patch = prefix ? null : await patchFor(bundle.id);
