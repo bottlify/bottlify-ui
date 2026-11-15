@@ -17,7 +17,9 @@ Work is listed in `TODO.md`, a local file outside git (TODO and Done, a status o
   `public/config.json`.
 - `server.mjs` — the local/production server. Routes: `/` the built app (`dist/`), `/engine/*` the
   engine package's `dist/`, `/networking/*` the relay client's sources, `/bundles/*` the bundles
-  from `BUNDLES_DIR`, `/source/*` the engine's sources only when `BOTTLIFY_SOURCE` names them,
+  from `BUNDLES_DIR` (layers among them, left out of `/bundles/index.json`), `/redist/*` the
+  redistributables a layer is built from (`REDIST_DIR`, filled by `npm run redist`),
+  `/source/*` the engine's sources only when `BOTTLIFY_SOURCE` names them,
   `/debug/*` the legacy vanilla page, `/relay` the network relay (WebSocket). Every file is served
   with byte ranges: a bundle is read a block at a time.
 - `debug/` — the legacy vanilla page (needs `BOTTLIFY_SOURCE`).
@@ -54,6 +56,7 @@ npm run dev          # Vite dev server
 ```
 
 Environment: `PORT` (5180), `TLS_DIR`, `BUNDLES_DIR` (default `../bottlify/bundles`),
+`REDIST_DIR` (default `./redist`),
 `BOTTLIFY_SOURCE`, `RELAY_ALLOW`, `BOTTLE_PORT` (8788, the bottle server uploads are passed to).
 
 ## Rules

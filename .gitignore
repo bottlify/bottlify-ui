@@ -17,3 +17,6 @@ dist/
 
 # GameHub's builds (npm run build:gamehub).
 /gamehub/dist/
+
+# The redistributables a layer is built from (npm run redist): the publisher's files, not ours.
+/redist/

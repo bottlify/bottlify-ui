@@ -32,6 +32,8 @@ import { ICON_SIZES, headForBottle, homeManifest, iconFile, iconPath } from "./s
  *                       package is not installed, and only that engine fails;
  *  - `/bundles/...`   → the game bundles, from `BUNDLES_DIR` (by default the
  *                       engine repository's `bundles/` beside this one);
+ *  - `/redist/...`    → the redistributables a layer is built from in the
+ *                       browser, from `REDIST_DIR` (`npm run redist`);
  *  - `/docs/...`      → the documentation site, from `DOCS_DIR` (by default
  *                       `dist/docs` in the engine repository beside this one,
  *                       which its `npm run docs` writes); a folder is its
@@ -60,6 +62,8 @@ const CORK = (()=>{
   }
 })();
 const BUNDLES = resolve(process.env.BUNDLES_DIR ?? resolve(UI_ROOT, "..", "bottlify", "bundles"));
+/** The redistributables a layer is built from (`npm run redist`), the publisher's files. */
+const REDIST = resolve(process.env.REDIST_DIR ?? resolve(UI_ROOT, "redist"));
 const DOCS = resolve(process.env.DOCS_DIR ?? resolve(UI_ROOT, "..", "bottlify", "dist", "docs"));
 const SOURCE = process.env.BOTTLIFY_SOURCE ? resolve(process.env.BOTTLIFY_SOURCE) : null;
 const DIST = resolve(UI_ROOT, "dist");
@@ -328,7 +332,8 @@ const handler = async(req, res)=>{
   // engine's sources, each from the directory that holds it.
   if (pathname === "/docs"){ res.writeHead(301, { Location: "/docs/" }).end(); return; }
   for (const [prefix, root] of [["/engine/", ENGINE], ["/networking/", NETWORKING],
-    ["/cork/", CORK], ["/bundles/", BUNDLES], ["/docs/", DOCS], ["/source/", SOURCE]]){
+    ["/cork/", CORK], ["/bundles/", BUNDLES], ["/redist/", REDIST], ["/docs/", DOCS],
+    ["/source/", SOURCE]]){
     if (root && pathname.startsWith(prefix)){
       const inside = pathname.slice(prefix.length - 1);
       const abs = joined(prefix === "/docs/" && inside.endsWith("/") ? `${inside}index.html` : inside, root);

@@ -22,7 +22,8 @@ A bottle is a directory in `BUNDLES_DIR`: `<id>/manifest.json` and `<id>/bundle.
 |---|---|---|
 | `PORT` | `5180` | the port |
 | `TLS_DIR` | none | a directory with `cert.pem` and `key.pem`: https, bound to every address |
-| `BUNDLES_DIR` | `../bottlify/bundles` | where the bottles are |
+| `BUNDLES_DIR` | `../bottlify/bundles` | where the bottles are, and the layers they stand on (a manifest of `"kind": "layer"`) |
+| `REDIST_DIR` | `./redist` | the redistributables a layer is built from in the browser, served under `/redist/`; `npm run redist` fetches them from their publisher, SHA-256 checked |
 | `RELAY_ALLOW` | none | hosts the relay may connect to beyond its rooms (`a.example.com,*.example.net`) |
 | `BOTTLE_PORT` | `8788` | the bottle server that uploads are passed to |
 | `ISOLATION` | on | `off` serves the page without cross-origin isolation, as on a page embedded elsewhere |

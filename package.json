@@ -14,6 +14,7 @@
     "start": "node server.mjs",
     "dev": "vite",
     "build": "vite build",
+    "redist": "node scripts/fetch-redist.mjs",
     "preview": "vite preview",
     "lint": "eslint . --max-warnings 0",
     "test": "node --test \"src/**/*.test.js\" \"gamehub/src/**/*.test.js\" \"gamehub/scripts/**/*.test.js\" \"gamehub/tools/**/*.test.js\"",
