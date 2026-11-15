@@ -891,12 +891,15 @@ async function run({ bundle, media, canvas, report: show, silentInstall = false,
     ...(query.has("blockProfile") || query.get("checkReads") === "1" || interpretRange
       || query.get("traceStore") === "1" || query.get("translate") === "0"
       || query.get("translateWorker") === "0" || query.get("translationStore") === "0"
-      || Object.keys(corkConfig).length > 0
+      || query.get("corkTimings") === "1" || Object.keys(corkConfig).length > 0
       ? { cork: { config: {
         ...corkConfig,
         ...(query.has("blockProfile")
           ? { blockProfile: true, blockProfileFrom: Number(query.get("blockProfile")) || 0 } : {}),
         ...(query.get("checkReads") === "1" ? { checkReads: true } : {}),
+        // `?corkTimings=1`: the translator times its own parts (forming,
+        // emitting, compiling, relinking), where a stall in a game is looked for.
+        ...(query.get("corkTimings") === "1" ? { timings: true } : {}),
         ...(query.get("traceStore") === "1" ? { traceStore: true } : {}),
         ...(query.get("translate") === "0" ? { translate: false } : {}),
         ...(query.get("translateWorker") === "0" ? { worker: false } : {}),
