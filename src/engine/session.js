@@ -806,7 +806,11 @@ async function run({ bundle, media, canvas, report: show, silentInstall = false,
   if (started && query.get("preload") === "1") started.bundle.preload = true;
   // The runtimes the bottle stands on, mounted under its own files: one kept in
   // this browser, else the server's, else built here the first time it is needed.
-  const layerIds = started ? layersOf(localStorage, bundle) : [];
+  // An install stands on layers too, kept by the program that installs: a
+  // setup whose wizard is a managed program needs the Framework while it runs.
+  const installKey = prefix ? `install:${media?.name ?? "disc"}` : null;
+  const layerIds = started ? layersOf(localStorage, bundle)
+    : installKey ? layersOf(localStorage, { id: installKey }) : [];
   /** @type {object[]} */
   const layers = [];
   for (const id of layerIds) {
@@ -822,7 +826,7 @@ async function run({ bundle, media, canvas, report: show, silentInstall = false,
     if (layer) layers.push(layer);
     else report({ off: `The bottle needs ${id}, which this server does not have; it starts without it.` });
   }
-  if (layers.length > 0) started.bundle.layers = layers;
+  if (layers.length > 0 && started) started.bundle.layers = layers;
   /** The layers the engine asked for in this run. @type {Set<string>} */
   const needed = new Set();
   const patch = prefix ? null : await patchFor(bundle.id);
@@ -1030,14 +1034,16 @@ async function run({ bundle, media, canvas, report: show, silentInstall = false,
     // No bundle under a prefix: the writable layer is the whole volume, so
     // everything in it afterwards is what the installer produced.
     bundle: prefix ? undefined : started.bundle,
+    ...prefix && layers.length > 0 ? { layers } : {},
     // What the engine tells while it starts, before there is an app to ask.
     on: {
       // Asked while the program is loaded, before it runs: a bottle that did
       // not know it needs the layer is started again with it, once.
       "layer-needed": ({ layer }) => {
         needed.add(layer);
-        if (stopping || !started || layerIds.includes(layer)) return;
-        if (noteLayerNeeded(localStorage, bundle.id, layer)) report({ again: true });
+        if (stopping || layerIds.includes(layer)) return;
+        const key = started ? bundle.id : installKey;
+        if (key && noteLayerNeeded(localStorage, key, layer)) report({ again: true });
       },
       "bundle-preload": (state) => {
         if (stopping) return;
@@ -1424,7 +1430,8 @@ async function run({ bundle, media, canvas, report: show, silentInstall = false,
     // Handed out so that what a run left behind can be read once it is over --
     // which for an install is the whole point of having run it.
     app,
-    layersNeeded: () => [...needed],
+    // An install's own layers too: the bottle it makes stands on what it did.
+    layersNeeded: () => [...new Set([...needed, ...(prefix ? layerIds : [])])],
     // For the perf overlay's "guest code" block, undefined when this bundle
     // carries none -- addresses print as `image+0xrva` instead.
     symbols: sidecarSymbols,
