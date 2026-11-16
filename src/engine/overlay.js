@@ -5,34 +5,51 @@
  */
 
 /**
- * Turns two `app.diagnostics()` snapshots into the performance overlay's rows.
+ * Turns two `app.log.live()` readings into the performance overlay's rows.
  *
- * Every diagnostics counter this reads (`cpu.instructions`, a phase's `selfMs`,
- * `graphics.presenter.shown`, `graphics.seam.device.draws`, a hook's `ms`) is
- * cumulative since the engine started, never per frame -- so one snapshot says
- * nothing about the second that just passed, and every figure here is a delta
- * between two readings taken `elapsedMs` apart. Framework-free and side-effect
- * -free on purpose: this is the one part of the overlay worth testing without a
- * browser.
+ * The overlay asks the engine nothing: `log.live` is answered by the log
+ * keeper, a worker of the engine's own, from the tables the layers publish
+ * into shared memory once a frame (`docs/core/api.md` in the engine). Every
+ * figure there is cumulative since the engine started, never per frame -- so
+ * one reading says nothing about the second that just passed, and every
+ * figure here is a delta between two readings taken `elapsedMs` apart.
+ * Framework-free and side-effect-free on purpose: this is the one part of the
+ * overlay worth testing without a browser.
  */
 
 /**
- * `log`'s `topPhases` metric is a formatted line -- `"name kind xN self=1.234
- * worst=0.567"` -- rather than a structured row (`docs/core/log.md` §2's
- * `diagnostics()` table), because the layer that owns it publishes a string
- * for a one-off look, not a table. Parsed back into a name and its cumulative
- * self time in ms.
+ * The one read the overlay makes of a running engine. Only the keeper's
+ * `log.live`: the engine's own thread answers `diagnostics()` and `report()`,
+ * and one such answer a second was a 100-160 ms hitch a second in a game.
+ * Null where the page shares no memory with the engine, which the overlay
+ * shows as not measured rather than paying for it.
+ *
+ * @param {{ log: { live: () => Promise<LiveReading | null> } }} app
+ * @returns {Promise<LiveReading | null>}
  */
-const TOP_PHASE_LINE = /^(\S+) \S+ x\d+ self=([\d.]+) worst=([\d.]+)$/;
+export function readLive(app) {
+  return app.log.live();
+}
 
-/** @param {string[] | undefined} lines @returns {Map<string, number>} */
-function phaseSelfMs(lines) {
-  const map = new Map();
-  for (const line of lines ?? []) {
-    const match = TOP_PHASE_LINE.exec(line);
-    if (match) map.set(match[1], Number(match[2]));
-  }
-  return map;
+/**
+ * What `app.log.live()` answers (the engine's `docs/core/api.md`).
+ *
+ * @typedef {Object} LiveReading
+ * @property {number | null} instructions
+ * @property {{ name: string, kind: string, count: number, selfMs: number }[]} phases
+ * @property {{ id: number, name: string, instructions: number, state: string }[]} threads
+ * @property {{ name: string, base: number, size: number }[]} regions
+ * @property {{ address: number, instructions: number }[]} samples
+ * @property {{ name: string, calls: number, ms: number }[]} hooks
+ * @property {{ shown: number, shownBy: Record<string, number>,
+ *     device: { draws: number, gpuFrames: number, gpuMs: number } | null,
+ *     lastFrame: Record<string, number> | null,
+ *     worker: { batches: number, readSelfMs: number, sweepMs: number } | null } | null} graphics
+ */
+
+/** @param {LiveReading} reading @returns {Map<string, number>} */
+function phaseSelfMs(reading) {
+  return new Map(reading.phases.map((phase) => [phase.name, phase.selfMs]));
 }
 
 /**
@@ -164,18 +181,9 @@ export function smoothRows(previous, current, fields, keep) {
 }
 
 /**
- * @param {{ name: string, metrics?: Record<string, any> }[]} layers
- * @param {string} name
- * @returns {Record<string, any>}
- */
-function metricsOf(layers, name) {
-  return layers.find((layer) => layer.name === name)?.metrics ?? {};
-}
-
-/**
  * A later cumulative counter minus an earlier one, floored at zero: a counter
- * cannot go backwards, but a phase or a hook dropping out of `topPhases`'s
- * top sixteen between two polls would otherwise read as one that did.
+ * cannot go backwards, but a machine rebuilt under the reader -- a process
+ * replaced -- starts its counters again, which is no negative time.
  *
  * @param {number} now @param {number} was
  */
@@ -230,47 +238,6 @@ export function tabMemoryOf(measured) {
   };
 }
 
-/**
- * The kernel's `byThread` line (`"name instructions state p8 b0 | ..."`,
- * cumulative since each thread began) as each thread's instructions and state.
- *
- * @param {string | undefined} line
- * @returns {Map<string, { instructions: number, state: string }>}
- */
-function threadsOf(line) {
-  const threads = new Map();
-  for (const entry of (line ?? "").split(" | ")) {
-    const [name, instructions, state] = entry.split(" ");
-    if (name && Number.isFinite(Number(instructions))) {
-      threads.set(name, { instructions: Number(instructions), state });
-    }
-  }
-  return threads;
-}
-
-/**
- * The bare regions the memory layer reports (`"Name base+size"` strings),
- * for resolving a raw guest address to the module it falls in -- the same
- * convention the test harness's own `symboliser` uses server-side
- * (`modules/core/test/page/game/harness.js`).
- *
- * @param {string[] | undefined} layout
- */
-function regionsOf(layout) {
-  // `"msvcrt.dll .data 0x201f000+0x1000 rw"`: a name may hold spaces, and
-  // the access follows the extent.
-  return (layout ?? [])
-    .map((entry) => {
-      const words = entry.split(" ");
-      const at = words.findIndex((word) => /^(0x[0-9a-f]+|\d+)\+(0x[0-9a-f]+|\d+)$/i.test(word));
-      if (at < 0) return null;
-      const [base, size] = words[at].split("+").map(Number);
-      return { name: words.slice(0, at).join(" "), base, end: base + size };
-    })
-    .filter((region) => region !== null)
-    .sort((a, b) => a.base - b.base);
-}
-
 /** @param {{ name: string, base: number, end: number }[]} regions @param {number} address */
 function whereIn(regions, address) {
   const region = regions.find((r) => address >= r.base && address < r.end);
@@ -318,7 +285,7 @@ function foldSymbol(at, symbols) {
  *           when every call is profiled (`profileCalls`); empty otherwise.
  * @property {number | null} notInPhaseMs
  *           Wall time per frame that no phase accounted for: the frame minus
- *           every phase's self time (`log.phasesSelfMs`). Null when the two
+ *           every phase's self time (`phases`). Null when the two
  *           polls cannot give it -- no frame presented, or no phase totals.
  * @property {{ name: string, ms: number }[]} entryWork
  *           What a Direct3D 8 or 9 call does before its method, ms per frame by
@@ -326,7 +293,7 @@ function foldSymbol(at, symbols) {
  *           time; empty when none of them rose in the window.
  * @property {{ batchesPerSecond: number, readMs: number | null, sweepMs: number | null }
  *     | null} worker
- *           The graphics worker's thread (`graphics.worker.phases`): its
+ *           The graphics worker's thread (`graphics.worker`): its
  *           batches read and played, without the look at objects at zero, and
  *           that look, in ms per frame; null ms when no frame was presented.
  *           Null when the worker has said nothing of its time -- not in use,
@@ -340,7 +307,7 @@ function foldSymbol(at, symbols) {
  *           "Sampling"). Empty before the sampler has anything to report.
  * @property {{ name: string, share: number, instructionsPerSecond: number, state: string }[]} threads
  *           The guest's threads by instructions retired this second, from the
- *           kernel's per-thread counts (`byThread`), the busiest first; empty
+ *           kernel's per-thread counts (`threads`), the busiest first; empty
  *           before the kernel has reported twice.
  * @property {number | null} parallelBound
  *           This second's instructions over the busiest thread's: the most any
@@ -349,21 +316,21 @@ function foldSymbol(at, symbols) {
  * @property {number} guestMappedMB
  *           The guest's address space the memory layer has mapped, in MiB.
  * @property {{ name: string, count: number }[]} shownBy
- *           Canvas copies this second by what was shown (`presenter.shownBy`):
+ *           Canvas copies this second by what was shown (`graphics.shownBy`):
  *           a Direct3D target, OpenGL's gl-shown pair, the desktop's bytes. Two names
  *           rising together is a picture painted over by another.
  * @property {string | null} lastFrame
- *           The device's last presented frame in one line (`seam.device.
- *           recentFrames`): draws, of them offscreen, clears and the back
+ *           The device's last presented frame in one line (`graphics.
+ *           lastFrame`): draws, of them offscreen, clears and the back
  *           buffer's clear colour, the viewport and the target. Null before
  *           a device has presented.
  */
 
 /**
- * @param {{ name: string, metrics?: Record<string, any> }[] | null} previous
- *        The prior snapshot, or null for the first poll -- which has nothing to
+ * @param {LiveReading | null} previous
+ *        The prior reading, or null for the first poll -- which has nothing to
  *        take a delta against and answers null.
- * @param {{ name: string, metrics?: Record<string, any> }[]} current
+ * @param {LiveReading} current
  * @param {number} elapsedMs  Wall time between the two polls, from the caller's
  *        own clock (`performance.now()`), not the guest's.
  * @param {Record<string, { rva: number, name: string | null }[]> | null} [symbols]
@@ -376,24 +343,15 @@ export function overlayRows(previous, current, elapsedMs, symbols) {
   if (!previous || !(elapsedMs > 0)) return null;
   const seconds = elapsedMs / 1000;
 
-  const cpuWas = metricsOf(previous, "cpu");
-  const cpuNow = metricsOf(current, "cpu");
-  const graphicsWas = metricsOf(previous, "graphics");
-  const graphicsNow = metricsOf(current, "graphics");
-  const logWas = metricsOf(previous, "log");
-  const logNow = metricsOf(current, "log");
-  const bridgeWas = metricsOf(previous, "bridge");
-  const bridgeNow = metricsOf(current, "bridge");
+  const graphicsWas = previous.graphics;
+  const graphicsNow = current.graphics;
 
-  const instructions = rise(cpuNow.instructions ?? 0, cpuWas.instructions ?? 0);
-  const frames = rise(graphicsNow.presenter?.shown ?? 0, graphicsWas.presenter?.shown ?? 0);
-  const draws = rise(
-    graphicsNow.seam?.device?.draws ?? 0,
-    graphicsWas.seam?.device?.draws ?? 0,
-  );
+  const instructions = rise(current.instructions ?? 0, previous.instructions ?? 0);
+  const frames = rise(graphicsNow?.shown ?? 0, graphicsWas?.shown ?? 0);
+  const draws = rise(graphicsNow?.device?.draws ?? 0, graphicsWas?.device?.draws ?? 0);
 
-  const phasesWas = phaseSelfMs(logWas.topPhases);
-  const phasesNow = phaseSelfMs(logNow.topPhases);
+  const phasesWas = phaseSelfMs(previous);
+  const phasesNow = phaseSelfMs(current);
   const perFrame = (ms) => (frames > 0 ? ms / frames : 0);
   /** @type {{ name: string, ms: number }[]} */
   const deltas = [...phasesNow.entries()]
@@ -426,8 +384,11 @@ export function overlayRows(previous, current, elapsedMs, symbols) {
   // call reaches its device, the loop between slices -- shows as itself
   // rather than inside the budget's rows. A weighted phase is an estimate
   // and can overshoot the wall by a little, which is not time found twice.
-  const phasesSelf = typeof logNow.phasesSelfMs === "number" && typeof logWas.phasesSelfMs === "number"
-    ? rise(logNow.phasesSelfMs, logWas.phasesSelfMs)
+  // Not measured where a reading has no phases at all: a build without the
+  // profiler would otherwise charge the whole second to nothing.
+  const selfOf = (reading) => reading.phases.reduce((sum, phase) => sum + phase.selfMs, 0);
+  const phasesSelf = previous.phases.length > 0 && current.phases.length > 0
+    ? rise(selfOf(current), selfOf(previous))
     : null;
   const notInPhaseMs = frames > 0 && phasesSelf !== null
     ? Math.max(0, elapsedMs - phasesSelf) / frames
@@ -440,28 +401,26 @@ export function overlayRows(previous, current, elapsedMs, symbols) {
     .filter((row) => row.ms > 0);
 
   // The graphics worker keeps no phase table; its totals since it started
-  // cross with its diagnostics, and a delta of them is its window.
-  const workerNow = graphicsNow.worker?.phases ?? null;
-  const workerWas = graphicsWas.worker?.phases ?? null;
+  // come with every frame it presents, and a delta of them is its window.
+  const workerNow = graphicsNow?.worker ?? null;
+  const workerWas = graphicsWas?.worker ?? null;
   const worker = workerNow && workerWas
     ? {
-      batchesPerSecond: rise(workerNow["batch-read"].count, workerWas["batch-read"].count) / seconds,
-      readMs: frames > 0
-        ? rise(workerNow["batch-read"].selfMs, workerWas["batch-read"].selfMs) / frames : null,
-      sweepMs: frames > 0
-        ? rise(workerNow["batch-sweep"].ms, workerWas["batch-sweep"].ms) / frames : null,
+      batchesPerSecond: rise(workerNow.batches, workerWas.batches) / seconds,
+      readMs: frames > 0 ? rise(workerNow.readSelfMs, workerWas.readSelfMs) / frames : null,
+      sweepMs: frames > 0 ? rise(workerNow.sweepMs, workerWas.sweepMs) / frames : null,
     }
     : null;
 
-  // The GPU's time per frame, from a submit to the work done
-  // (`seam.device.timing`); null when no frame reached the GPU in the window.
-  const timingNow = graphicsNow.seam?.device?.timing;
-  const timingWas = graphicsWas.seam?.device?.timing;
+  // The GPU's time per frame, from a submit to the work done; null when no
+  // frame reached the GPU in the window, or no device measures it.
+  const timingNow = graphicsNow?.device;
+  const timingWas = graphicsWas?.device;
   const gpuFrames = timingNow && timingWas ? rise(timingNow.gpuFrames, timingWas.gpuFrames) : 0;
   const gpuMs = gpuFrames > 0 ? rise(timingNow.gpuMs, timingWas.gpuMs) / gpuFrames : null;
 
-  const hooksNow = bridgeNow.hooks ?? [];
-  const hooksWas = hookMs(bridgeWas.hooks);
+  const hooksNow = current.hooks;
+  const hooksWas = hookMs(previous.hooks);
   const hooks = hooksNow.length === 0 ? null : {
     msPerFrame: (frames > 0
       ? hooksNow.reduce((sum, hook) => sum + rise(hook.ms, hooksWas.get(hook.name) ?? 0), 0) / frames
@@ -476,22 +435,19 @@ export function overlayRows(previous, current, elapsedMs, symbols) {
       .slice(0, 6),
   };
 
-  // The cpu layer's always-on sampler: raw address buckets, cumulative since
-  // boot (`docs/core/cpu.md`'s "Sampling"). Reported here by the bucket's own
-  // address, matching `rise()`'s pattern for every other cumulative counter
-  // on this page -- a bucket absent from the prior poll's top 64 is treated
-  // as having started this second at zero, which is right unless it was
-  // already hot and simply ranked below 64th, a rare miss at this cadence.
-  const samplesWas = new Map((cpuWas.samples?.top ?? []).map((bucket) => [bucket.address, bucket]));
-  const regions = regionsOf(metricsOf(current, "memory").layout);
-  const guestDeltas = (cpuNow.samples?.top ?? [])
-    .map((bucket) => {
-      const was = samplesWas.get(bucket.address);
-      return {
-        address: bucket.address,
-        instructions: rise(bucket.instructions, was?.instructions ?? 0),
-      };
-    })
+  // The cpu layer's always-on sampler: address buckets, cumulative since
+  // boot (`docs/core/cpu.md`'s "Sampling"), the keeper's heaviest 64. A
+  // bucket absent from the prior reading's 64 is treated as having started
+  // this second at zero, which is right unless it was already hot and simply
+  // ranked below 64th, a rare miss at this cadence.
+  const samplesWas = new Map(previous.samples.map((bucket) => [bucket.address, bucket]));
+  const regions = current.regions
+    .map((region) => ({ name: region.name, base: region.base, end: region.base + region.size }));
+  const guestDeltas = current.samples
+    .map((bucket) => ({
+      address: bucket.address,
+      instructions: rise(bucket.instructions, samplesWas.get(bucket.address)?.instructions ?? 0),
+    }))
     .filter((bucket) => bucket.instructions > 0)
     .sort((a, b) => b.instructions - a.instructions);
   // The sampler carries no clock (its cost would be a fifth of a heavy
@@ -505,12 +461,13 @@ export function overlayRows(previous, current, elapsedMs, symbols) {
     ms: instructions > 0 ? (bucket.instructions / instructions) * guestMs : 0,
   }));
 
-  const threadsWas = threadsOf(metricsOf(previous, "kernel").byThread);
-  const threadDeltas = [...threadsOf(metricsOf(current, "kernel").byThread)]
-    .map(([name, now]) => ({
-      name,
-      state: now.state,
-      instructions: rise(now.instructions, threadsWas.get(name)?.instructions ?? 0),
+  // By the thread's id: two threads may share a name.
+  const threadsWas = new Map(previous.threads.map((thread) => [thread.id, thread]));
+  const threadDeltas = current.threads
+    .map((thread) => ({
+      name: thread.name,
+      state: thread.state,
+      instructions: rise(thread.instructions, threadsWas.get(thread.id)?.instructions ?? 0),
     }))
     .sort((a, b) => b.instructions - a.instructions);
   const threadTotal = threadDeltas.reduce((sum, thread) => sum + thread.instructions, 0);
@@ -527,21 +484,21 @@ export function overlayRows(previous, current, elapsedMs, symbols) {
 
   // The guest's address space the memory layer has mapped, reserved or
   // committed: what a program's own allocations have grown to.
-  const guestMappedMB = regionsOf(metricsOf(current, "memory").layout)
-    .reduce((sum, region) => sum + (region.end - region.base), 0) / (1 << 20);
+  const guestMappedMB = current.regions.reduce((sum, region) => sum + region.size, 0) / (1 << 20);
 
-  const shownWas = graphicsWas.presenter?.shownBy ?? {};
-  const shownBy = Object.entries(graphicsNow.presenter?.shownBy ?? {})
+  const shownWas = graphicsWas?.shownBy ?? {};
+  const shownBy = Object.entries(graphicsNow?.shownBy ?? {})
     .map(([name, count]) => ({ name, count: rise(count, shownWas[name] ?? 0) }))
     .filter((row) => row.count > 0)
     .sort((a, b) => b.count - a.count);
-  const recent = graphicsNow.seam?.device?.recentFrames;
-  const last = Array.isArray(recent) && recent.length > 0 ? recent[recent.length - 1] : null;
-  const lastFrame = last && typeof last.clears === "number"
+  const last = graphicsNow?.lastFrame ?? null;
+  const lastFrame = last
     ? `#${last.index} draws ${last.draws}`
       + (last.offscreenDraws > 0 ? ` (${last.offscreenDraws} offscreen into ${last.offscreenTargets})` : "")
-      + `, clears ${last.clears}${last.clearColor ? ` ${last.clearColor}` : ""}`
-      + `, viewport ${last.viewport} of ${last.target}`
+      + `, clears ${last.clears}`
+      + (last.clearColor >= 0 ? ` #${(last.clearColor >>> 0).toString(16).padStart(8, "0")}` : "")
+      + `, viewport ${last.viewportX},${last.viewportY} ${last.viewportWidth}x${last.viewportHeight}`
+      + ` of ${last.targetWidth}x${last.targetHeight}`
     : null;
 
   return {

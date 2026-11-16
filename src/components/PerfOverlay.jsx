@@ -6,7 +6,7 @@
 
 import { Box, Typography } from "@mui/material";
 import { useEffect, useRef, useState } from "react";
-import { overlayRows, smoothRows, tabMemoryOf } from "../engine/overlay.js";
+import { overlayRows, readLive, smoothRows, tabMemoryOf } from "../engine/overlay.js";
 import { CHANGED, loadSettings, saveSettings } from "../settings.js";
 
 /**
@@ -34,16 +34,12 @@ const TAB_MEMORY_MS = 10000;
  * the settings panel; both write the same stored setting, so either one turns
  * the other's next look on.
  *
- * `app.diagnostics()` with no layer name costs the same as asking for one --
- * the engine always builds every layer's table first and filters afterwards
- * (`src/host/serve.js`) -- so one such call a second reads `cpu`, `graphics`,
- * `log` and `bridge` together rather than four times over. That is also the
- * only way to read `graphics` and `bridge` at all: neither publishes a table
- * of its own yet (`docs/core/host.md` §"What became asynchronous, and why"),
- * so a request to the engine's thread is the sole path to them. At the once-a-
- * second rate this polls, that is a fraction the profile below has a number
- * for: measured at a 20 ms rate, this same call was 6-12% of a frame; a
- * cadence fifty times slower is a cadence fifty times cheaper.
+ * It only reads what the engine has already published: `readLive` asks the
+ * log keeper, a worker that answers from the tables the layers fill once a
+ * frame, and never the engine's own thread. `app.diagnostics()` once a second
+ * was 80-110 ms of that thread each time, a hitch a second in the game being
+ * measured. Where the page shares no memory with the engine there is nothing
+ * to read, and the overlay says so instead of asking.
  *
  * @param {Object} props
  * @param {any} props.app        The running engine, or null.
@@ -82,7 +78,7 @@ export function PerfOverlay({ app, active, symbols }) {
   }, [active]);
 
   const [rows, setRows] = useState(/** @type {import("../engine/overlay.js").OverlayRows | null} */ (null));
-  const previous = useRef(/** @type {{ layers: any[], at: number } | null} */ (null));
+  const previous = useRef(/** @type {{ reading: any, at: number } | null} */ (null));
   const [tab, setTab] = useState(/** @type {ReturnType<typeof tabMemoryOf>} */ (null));
   const tabNow = useRef(tab);
 
@@ -123,11 +119,16 @@ export function PerfOverlay({ app, active, symbols }) {
     let timer = 0;
     const tick = async () => {
       try {
-        const layers = await app.diagnostics();
+        const reading = await readLive(app);
         const at = performance.now();
         if (cancelled) return;
+        if (!reading) {
+          console.error("performance overlay: not measured, the page shares no memory with the engine");
+          setRows(null);
+          return;
+        }
         const fresh = overlayRows(
-          previous.current?.layers ?? null, layers, at - (previous.current?.at ?? at), symbols,
+          previous.current?.reading ?? null, reading, at - (previous.current?.at ?? at), symbols,
         );
         // Every look as it was taken, unsmoothed, for a tool to chart a stretch
         // of play (`tools/frame-series.mjs` in the engine's repository): one
@@ -163,7 +164,7 @@ export function PerfOverlay({ app, active, symbols }) {
             threads: smoothRows(shown.threads, fresh.threads, ["share", "instructionsPerSecond"], 6),
           };
         });
-        previous.current = { layers, at };
+        previous.current = { reading, at };
         timer = setTimeout(tick, POLL_MS);
       } catch (error) {
         // The engine is gone (disposed, or never started this deep): nothing
