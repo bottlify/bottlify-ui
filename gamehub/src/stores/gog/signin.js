@@ -44,14 +44,14 @@ else
     button.addEventListener('click', ()=>{
         const opened = window.open(SIGN_IN_URL, 'bottlify-gog-signin',
             'popup,width=520,height=760');
-        if (!opened)
-        {
-            say('The browser blocked GOG\'s window: allow pop-ups for this page and try again.',
-                true);
-            return;
-        }
+        // Waited for either way: the launcher is cross-origin isolated, and a
+        // window opened from it onto another site is put in a group of its own
+        // and answered as null, as a blocked one is - the code GOG's window ends
+        // with was thrown away, the window closing on nothing.
         waiting = true;
-        say('Sign in in GOG\'s window…');
+        say(opened ? 'Sign in in GOG\'s window…'
+            : 'Sign in in GOG\'s window. If none opened, allow pop-ups for this page and try'
+                + ' again.');
     });
     chrome.runtime.onMessage.addListener((/** @type {any} */ message, /** @type {any} */ sender)=>{
         const code = message?.gogSignIn?.code;
