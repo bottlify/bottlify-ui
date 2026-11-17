@@ -107,6 +107,10 @@ const SCREEN = Object.freeze({ width: 1024, height: 768, bitsPerPixel: 32 });
  *     at once; absent, the manifest's, else they do.
  * @property {ReturnType<typeof touchLayout>} [touch] Its controls on a touch
  *     screen (`engine/touch.js`); absent, the defaults.
+ * @property {string} [entry] The program it starts, relative to its folder as
+ *     the manifest's `entry` is; absent, the manifest's.
+ * @property {string} [args] What that program is started with; absent, the
+ *     manifest's `commandLine`.
  */
 
 /**
@@ -382,6 +386,11 @@ function bottleConfigOf(raw) {
     if (MEMORY_CHOICES.some((one) => one.value === config.memory)) kept.memory = config.memory;
     if (config.driverRules === "legacy") kept.driverRules = config.driverRules;
     if (typeof config.multithreading === "boolean") kept.multithreading = config.multithreading;
+    const entry = typeof config.entry === "string" ? config.entry.trim().replace(/\//g, "\\") : "";
+    // A program inside the bottle's folder: no drive, no way above it.
+    if (entry && !/^[a-z]:|^\\|(^|\\)\.\.(\\|$)/i.test(entry)) kept.entry = entry;
+    const args = typeof config.args === "string" ? config.args.trim() : "";
+    if (args) kept.args = args.slice(0, 2048);
     if (config.touch && typeof config.touch === "object") kept.touch = touchLayout(config.touch);
     if (Object.keys(kept).length > 0) out[bundle] = kept;
   }
@@ -444,6 +453,25 @@ export function multithreadingFor(settings, bundle) {
  */
 export function touchLayoutFor(settings, bundle) {
   return touchLayout(settings.bottleConfig[bundle.id]?.touch);
+}
+
+/**
+ * A bundle as this browser starts it: the program and arguments its settings
+ * here choose over its manifest's -- a game started past a launcher it ships
+ * (the launcher's own program beside it), or with a switch it takes.
+ *
+ * @template {{ id: string, entry?: string, commandLine?: string }} B
+ * @param {RunSettings} settings
+ * @param {B} bundle
+ * @returns {B}
+ */
+export function launchFor(settings, bundle) {
+  const own = settings.bottleConfig[bundle.id] ?? {};
+  return {
+    ...bundle,
+    ...(own.entry ? { entry: own.entry } : {}),
+    ...(own.args ? { commandLine: own.args } : {}),
+  };
 }
 
 /**

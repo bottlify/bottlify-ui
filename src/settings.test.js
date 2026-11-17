@@ -348,3 +348,23 @@ test("the desktop is the chosen shape, or the screen's own for auto", async () =
   assert.equal(normalise({ display: "21:9" }).display, "auto", "an unknown shape is auto");
   assert.equal(normalise({ display: "16:10" }).display, "16:10");
 });
+
+test("a bottle's program and arguments are this browser's, over its manifest's, and stay inside it", async () => {
+  const { normalise, launchFor } = await fresh(11);
+  const settings = normalise({
+    bottleConfig: {
+      game: { entry: " SH.exe ", args: "-screen-fullscreen 0" },
+      sub: { entry: "bin/game.exe" },
+      out: { entry: "..\\other.exe", args: "  " },
+      drive: { entry: "C:\\WINDOWS\\notepad.exe" },
+    },
+  });
+  assert.deepEqual(settings.bottleConfig, {
+    game: { entry: "SH.exe", args: "-screen-fullscreen 0" },
+    sub: { entry: "bin\\game.exe" },
+  }, "a path above the folder or on a drive, or empty arguments, are dropped");
+  const manifest = { id: "game", entry: "SUPERHOT.exe", commandLine: "-launcher", title: "t" };
+  assert.deepEqual(launchFor(settings, manifest),
+    { id: "game", entry: "SH.exe", commandLine: "-screen-fullscreen 0", title: "t" });
+  assert.deepEqual(launchFor(settings, { id: "plain", entry: "a.exe" }), { id: "plain", entry: "a.exe" });
+});

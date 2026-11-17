@@ -34,7 +34,7 @@ import { desktopPicture } from "./desktop.js";
 import { bundleStart } from "./bottle.js";
 import { layerBundles, layersOf, noteLayerNeeded } from "./layers.js";
 import { LAYER_RECIPES, buildLayer, keptLayer } from "./layer-build.js";
-import { bundleUrl, httpRanges, readBundle } from "./btl.js";
+import { blobRanges, bundleUrl, httpRanges, readBundle } from "./btl.js";
 import { bottleFile } from "./bottles.js";
 import { shownToThePerson } from "./boxes.js";
 import { keepEnding, reportParts } from "./journal.js";
@@ -45,6 +45,7 @@ import { outOfMemoryNote, refusedMemory } from "./out-of-memory.js";
 import { phoneScreen, viewOf } from "../screen.js";
 import {
   CHANGED, GPU_JOURNAL, SHADER_CHOICES, bottleConfigFor, displayScreen, driverRulesFor,
+  launchFor,
   loadSettings,
   multithreadingFor,
   memorySizeFor,
@@ -562,6 +563,10 @@ async function run({ bundle, media, canvas, report: show, silentInstall = false,
     ...(asked.get("sound") === "0" ? { sound: false } : {}),
     ...(asked.get("video") === "0" ? { video: false } : {}),
   };
+  // The program and arguments this browser chose for the bottle, over its
+  // manifest's; the program it was installed with is kept beside it.
+  const installedEntry = bundle?.entry;
+  if (bundle) bundle = launchFor(settings, bundle);
   const memoryAsked = Number(asked.get("memory")) * 1024 * 1024;
   // A phone is told a desktop of its own landscape shape (`screen.js`);
   // everything else the desktop the settings choose, by the screen's shape.
@@ -686,17 +691,21 @@ async function run({ bundle, media, canvas, report: show, silentInstall = false,
   // A bottle kept in this browser keeps the program it starts beside it; any
   // other's is read out of its bundle by this page, from wherever the bundle is.
   const kept = !prefix && bundle?.local === true;
+  // A program other than the one it was installed with is read out of the kept bundle.
+  const keptEntry = kept && bundle.entry === installedEntry;
   const executable = prefix
     ? prefix.executable
-    : kept
+    : keptEntry
       ? new Uint8Array(await (await bottleFile(bundle.id, "entry")).arrayBuffer())
-      : await readBundle(httpRanges(bundleUrl(bundle)))
+      : await readBundle(kept ? blobRanges(await bottleFile(bundle.id, "bundle.btl"))
+        : httpRanges(bundleUrl(bundle)))
         .then((read) => read.read(bundle.entry, (done, total) => report({
           detail: `entry image — ${megabytes(done)} of ${megabytes(total)}`,
           progress: { label: "entry image", read: done, total },
         })))
         .catch((e) => {
-          throw failure("entry image could not be read", `${bundleUrl(bundle)}: ${e.message}`);
+          throw failure("entry image could not be read",
+            `${kept ? bundle.entry : bundleUrl(bundle)}: ${e.message}`);
         });
   // The program's own icon, for the tab and the home screen to show the game by.
   if (bundle) report({ icon: engine.programIcon?.(executable) ?? null });

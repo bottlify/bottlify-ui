@@ -117,6 +117,9 @@ export function BottleSettingsDialog({
   const [memory, setMemory] = useState(own.memory ?? 0);
   // Kept in this browser as the memory is: a way to compare two answers, not the bottle's own.
   const [driverRules, setDriverRules] = useState(own.driverRules ?? "current");
+  // The program it starts and what with, over the manifest's: this browser's choice.
+  const [entry, setEntry] = useState(own.entry ?? "");
+  const [args, setArgs] = useState(own.args ?? "");
   // The controls on a touch screen: this browser's, as the hands holding it are.
   const [touch, setTouch] = useState(() => touchLayout(own.touch));
   /** @param {Partial<ReturnType<typeof touchLayout>>} patch */
@@ -178,9 +181,11 @@ export function BottleSettingsDialog({
    * @param {object} config
    */
   const withMemory = (config) => {
-    const next = { ...config, memory, driverRules, touch };
+    const next = { ...config, memory, driverRules, touch, entry: entry.trim(), args: args.trim() };
     if (!memory) delete next.memory;
     if (driverRules !== "legacy") delete next.driverRules;
+    if (!next.entry) delete next.entry;
+    if (!next.args) delete next.args;
     return next;
   };
 
@@ -340,6 +345,14 @@ export function BottleSettingsDialog({
               onChange={(event) => setDriverRules(event.target.value)}>
               {DRIVER_RULES_CHOICES.map((one) => <MenuItem key={one.value} value={one.value}>{one.label}</MenuItem>)}
             </TextField>
+            <TextField size="small" label="Program" value={entry} disabled={saving}
+              placeholder={bundle.entry ?? ""}
+              helperText="The program it starts, inside its folder; empty, the bottle's own. Kept in this browser"
+              onChange={(event) => setEntry(event.target.value)} />
+            <TextField size="small" label="Arguments" value={args} disabled={saving}
+              placeholder={bundle.commandLine ?? ""}
+              helperText="What that program is started with; empty, the bottle's own. Kept in this browser"
+              onChange={(event) => setArgs(event.target.value)} />
             <TextField select size="small" label="Touch controls" value={touch.controls} disabled={saving}
               helperText="On a phone or a tablet, over the picture; kept in this browser"
               onChange={(event) => changeTouch({ controls: event.target.value })}>
