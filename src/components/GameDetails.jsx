@@ -18,7 +18,7 @@ import { residency } from "../engine/btl.js";
 import { mayNotFit, siteSpace, sizeText } from "../engine/stored.js";
 import { EDITABLE_TYPES } from "../api/config.js";
 import {
-  DEFAULT_SHADERS, DRIVER_RULES_CHOICES, GRAPHICS_CHOICES, MEMORY_CHOICES, SHADER_CHOICES,
+  DEFAULT_SHADERS, DEFAULT_WINDOWS, DRIVER_RULES_CHOICES, GRAPHICS_CHOICES, MEMORY_CHOICES, SHADER_CHOICES,
   WINDOWS_CHOICES, loadSettings,
   saveSettings,
 } from "../settings.js";
@@ -105,18 +105,18 @@ export function BottleSettingsDialog({
   const [settings, setSettings] = useState(loadSettings);
   const own = settings.bottleConfig[bundle.id] ?? {};
   const [windows, setWindows] = useState(
-    (onServer ? undefined : own.windows) ?? bundle.windows ?? "winxp");
+    (onServer ? undefined : own.windows) ?? bundle.windows ?? DEFAULT_WINDOWS);
   const [graphics, setGraphics] = useState(
     (onServer ? undefined : own.graphics) ?? bundle.graphics ?? "all");
   const [shaders, setShaders] = useState(
     (onServer ? undefined : own.shaders) ?? bundle.shaders ?? DEFAULT_SHADERS);
   // Said as true or false, or not at all -- which runs on one core.
   const [multithreading, setMultithreading] = useState(
-    ((onServer ? undefined : own.multithreading) ?? bundle.multithreading) === true);
+    ((onServer ? undefined : own.multithreading) ?? bundle.multithreading) !== false);
   // Zero follows the general setting; the choice is this browser's, whoever owns the bottle.
   const [memory, setMemory] = useState(own.memory ?? 0);
   // Kept in this browser as the memory is: a way to compare two answers, not the bottle's own.
-  const [driverRules, setDriverRules] = useState(own.driverRules ?? "legacy");
+  const [driverRules, setDriverRules] = useState(own.driverRules ?? "current");
   // The controls on a touch screen: this browser's, as the hands holding it are.
   const [touch, setTouch] = useState(() => touchLayout(own.touch));
   /** @param {Partial<ReturnType<typeof touchLayout>>} patch */
@@ -180,7 +180,7 @@ export function BottleSettingsDialog({
   const withMemory = (config) => {
     const next = { ...config, memory, driverRules, touch };
     if (!memory) delete next.memory;
-    if (driverRules !== "current") delete next.driverRules;
+    if (driverRules !== "legacy") delete next.driverRules;
     return next;
   };
 

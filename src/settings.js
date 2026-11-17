@@ -102,9 +102,9 @@ const SCREEN = Object.freeze({ width: 1024, height: 768, bitsPerPixel: 32 });
  * @property {string} [graphics]  One of `GRAPHICS_CHOICES`, `all` for everything.
  * @property {string} [shaders]   One of `SHADER_CHOICES`, the video adapter's profile.
  * @property {number} [memory]    One of `MEMORY_CHOICES`, in megabytes.
- * @property {string} [driverRules] One of `DRIVER_RULES_CHOICES`; absent, legacy.
+ * @property {string} [driverRules] One of `DRIVER_RULES_CHOICES`; absent, current.
  * @property {boolean} [multithreading] Whether its threads run on several cores
- *     at once; absent, the manifest's, else not.
+ *     at once; absent, the manifest's, else they do.
  * @property {ReturnType<typeof touchLayout>} [touch] Its controls on a touch
  *     screen (`engine/touch.js`); absent, the defaults.
  */
@@ -157,8 +157,15 @@ export const SHADER_CHOICES = [
   { value: "host", label: "As the browser's GPU" },
 ];
 
-/** The profile a bottle that chooses none is shown with. */
-export const DEFAULT_SHADERS = "sm3";
+/**
+ * The profile a bottle that chooses none is shown with: the browser's own GPU,
+ * so a program sees the card that draws it; a bottle whose program wants an
+ * older card names that model.
+ */
+export const DEFAULT_SHADERS = "host";
+
+/** The Windows a bottle that names none runs as. */
+export const DEFAULT_WINDOWS = "win7";
 
 /**
  * How much memory the guest machine has, in megabytes. A game sizes its caches
@@ -228,10 +235,10 @@ export const DEFAULTS = Object.freeze({
   librarySort: SORTS[0].value,
   bottleFiles: {},
   bottleConfig: {},
-  // Two gigabytes: reserved, not committed, so it costs what the guest touches --
-  // and a title of this era picks its whole preset from the physical memory it is
-  // told of, the lowest one below a gigabyte.
-  memory: 2048,
+  // Four gigabytes: reserved, not committed, so it costs what the guest touches --
+  // and a title picks its whole preset from the physical memory it is told of,
+  // the lowest one below a gigabyte.
+  memory: 4096,
   display: "auto",
 });
 
@@ -373,7 +380,7 @@ function bottleConfigOf(raw) {
     if (GRAPHICS_CHOICES.some((one) => one.value === config.graphics)) kept.graphics = config.graphics;
     if (SHADER_CHOICES.some((one) => one.value === config.shaders)) kept.shaders = config.shaders;
     if (MEMORY_CHOICES.some((one) => one.value === config.memory)) kept.memory = config.memory;
-    if (config.driverRules === "current") kept.driverRules = config.driverRules;
+    if (config.driverRules === "legacy") kept.driverRules = config.driverRules;
     if (typeof config.multithreading === "boolean") kept.multithreading = config.multithreading;
     if (config.touch && typeof config.touch === "object") kept.touch = touchLayout(config.touch);
     if (Object.keys(kept).length > 0) out[bundle] = kept;
@@ -383,7 +390,7 @@ function bottleConfigOf(raw) {
 
 /**
  * What a bottle runs as, in `createApp`'s terms: the person's choice, else its
- * manifest's, else nothing -- the engine's default; and the profile its video
+ * manifest's, else `DEFAULT_WINDOWS`; and the profile its video
  * adapter is shown with, which falls back to `DEFAULT_SHADERS` instead.
  *
  * @param {RunSettings} settings
@@ -392,32 +399,32 @@ function bottleConfigOf(raw) {
  */
 export function bottleConfigFor(settings, bundle) {
   const own = settings.bottleConfig[bundle.id] ?? {};
-  const windows = own.windows ?? bundle.windows;
+  const windows = own.windows ?? bundle.windows ?? DEFAULT_WINDOWS;
   const graphics = own.graphics ?? bundle.graphics;
   const shaders = own.shaders ?? bundle.shaders ?? DEFAULT_SHADERS;
   return {
-    ...(windows ? { windows } : {}),
+    windows,
     ...(graphics && graphics !== "all" ? { graphicsApi: graphics } : {}),
     gpuProfile: shaders,
   };
 }
 
 /**
- * The driver rules a bottle runs under: `current` when its settings say so,
- * else nothing, the engine's default (legacy).
+ * The driver rules a bottle runs under: `legacy` when its settings say so,
+ * else `current`, later drivers' and Wine's answers.
  *
  * @param {RunSettings} settings
  * @param {{ id: string }} bundle
- * @returns {"current" | undefined}
+ * @returns {"legacy" | "current"}
  */
 export function driverRulesFor(settings, bundle) {
-  return settings.bottleConfig[bundle.id]?.driverRules === "current" ? "current" : undefined;
+  return settings.bottleConfig[bundle.id]?.driverRules === "legacy" ? "legacy" : "current";
 }
 
 /**
  * Whether a bottle's threads run on several cores at once: what its settings
- * here say, else what its manifest says, said as true or false; else not --
- * a bottle runs on one core until someone says it does better on more.
+ * here say, else what its manifest says, said as true or false; else they do,
+ * on several cores, unless someone says it does better on one.
  *
  * @param {RunSettings} settings
  * @param {{ id: string, multithreading?: unknown }} bundle
@@ -426,7 +433,7 @@ export function driverRulesFor(settings, bundle) {
 export function multithreadingFor(settings, bundle) {
   const own = settings.bottleConfig[bundle.id]?.multithreading;
   if (typeof own === "boolean") return own;
-  return typeof bundle.multithreading === "boolean" ? bundle.multithreading : false;
+  return typeof bundle.multithreading === "boolean" ? bundle.multithreading : true;
 }
 
 /**

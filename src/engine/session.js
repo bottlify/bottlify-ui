@@ -866,10 +866,10 @@ async function run({ bundle, media, canvas, report: show, silentInstall = false,
       // `?rereadBuffers=1`: every Direct3D draw reads the vertices it reaches
       // from guest memory again (with `graphicsWorker=off`).
       ...(query.get("rereadBuffers") === "1" ? { rereadBuffers: true } : {}),
-      // `?driverRules=current`: where Direct3D left a behaviour to the driver,
-      // later drivers' and Wine's answer rather than the shader-model-1 era's.
-      ...((query.get("driverRules") ?? (bundle ? driverRulesFor(settings, bundle) : undefined))
-        === "current" ? { driverRules: "current" } : {}),
+      // `?driverRules=legacy`: where Direct3D left a behaviour to the driver,
+      // the shader-model-1 era's answer rather than later drivers' and Wine's.
+      driverRules: (query.get("driverRules") ?? (bundle ? driverRulesFor(settings, bundle) : null))
+        === "legacy" ? "legacy" : "current",
     },
     // `?blockProfile=SECONDS`: the translator counts every block it runs from
     // that many seconds into the run (0 from the start), and a report names

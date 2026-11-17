@@ -259,7 +259,7 @@ test("an earlier launcher's file edits are kept by bundle until the patch takes 
   });
 });
 
-test("a bottle's Windows and graphics are the person's, else its manifest's, else the engine's", async () => {
+test("a bottle's Windows and graphics are the person's, else its manifest's, else the defaults", async () => {
   const { normalise, bottleConfigFor } = await fresh(10);
   const settings = normalise({
     bottleConfig: {
@@ -274,14 +274,14 @@ test("a bottle's Windows and graphics are the person's, else its manifest's, els
     game: { graphics: "all" },
   }, "only names the engine knows are kept");
   assert.deepEqual(bottleConfigFor(settings, { id: "benchmark", windows: "win2000" }),
-    { windows: "win2000", graphicsApi: "directx7", gpuProfile: "sm3" });
+    { windows: "win2000", graphicsApi: "directx7", gpuProfile: "host" });
   assert.deepEqual(bottleConfigFor(settings, { id: "game", graphics: "directx8" }),
-    { gpuProfile: "sm3" }, "every API chosen over the manifest's one passes none");
+    { windows: "win7", gpuProfile: "host" }, "every API chosen over the manifest's one passes none");
   assert.deepEqual(bottleConfigFor(settings, { id: "plain", graphics: "directx9" }),
-    { graphicsApi: "directx9", gpuProfile: "sm3" },
+    { windows: "win7", graphicsApi: "directx9", gpuProfile: "host" },
     "the manifest's own when the person chose nothing");
-  assert.deepEqual(bottleConfigFor(settings, { id: "plain" }), { gpuProfile: "sm3" },
-    "the adapter's profile is model 3's unless a bottle chooses another");
+  assert.deepEqual(bottleConfigFor(settings, { id: "plain" }), { windows: "win7", gpuProfile: "host" },
+    "Windows 7 and the browser's GPU unless a bottle chooses others");
   const chosen = normalise({ bottleConfig: { mine: { shaders: "sm1" }, junk: { shaders: "sm9" } } });
   assert.deepEqual(chosen.bottleConfig, { mine: { shaders: "sm1" } });
   assert.equal(bottleConfigFor(chosen, { id: "mine", shaders: "sm3" }).gpuProfile, "sm1",
@@ -291,7 +291,7 @@ test("a bottle's Windows and graphics are the person's, else its manifest's, els
 
 test("a bottle's memory is its own, else the general setting's, and only a size offered", async () => {
   const { normalise, memorySizeFor, DEFAULTS } = await fresh(11);
-  assert.equal(DEFAULTS.memory, 2048, "two gigabytes: a title's preset reads physical memory");
+  assert.equal(DEFAULTS.memory, 4096, "four gigabytes: a title's preset reads physical memory");
   const settings = normalise({
     memory: 2048,
     bottleConfig: { small: { memory: 512 }, odd: { memory: 3000 } },
@@ -300,24 +300,25 @@ test("a bottle's memory is its own, else the general setting's, and only a size 
   assert.equal(memorySizeFor(settings, { id: "odd" }), 2048 * 1024 * 1024,
     "a size not offered is not kept");
   assert.equal(memorySizeFor(settings, { id: "plain" }), 2048 * 1024 * 1024);
-  assert.equal(normalise({ memory: 999 }).memory, 2048);
+  assert.equal(normalise({ memory: 999 }).memory, 4096);
   assert.equal(normalise({ memory: 4096 }).memory, 4096,
     "four gigabytes, for a program linked large-address-aware");
 });
 
-test("a bottle's driver rules are kept only as current, and read back as current or the default", async () => {
+test("a bottle's driver rules are kept only as legacy, and read back as legacy or current", async () => {
   const { normalise, driverRulesFor } = await fresh(10);
   const settings = normalise({
     bottleConfig: { water: { driverRules: "current" }, fog: { driverRules: "legacy" },
       junk: { driverRules: "newest" } },
   });
-  assert.deepEqual(settings.bottleConfig, { water: { driverRules: "current" } },
-    "legacy is the engine's default and is not kept");
+  assert.deepEqual(settings.bottleConfig, { fog: { driverRules: "legacy" } },
+    "current is the default and is not kept");
   assert.equal(driverRulesFor(settings, { id: "water" }), "current");
-  assert.equal(driverRulesFor(settings, { id: "fog" }), undefined);
+  assert.equal(driverRulesFor(settings, { id: "fog" }), "legacy");
+  assert.equal(driverRulesFor(settings, { id: "junk" }), "current");
 });
 
-test("a bottle's multithreading is what is said, here or in its manifest, and off when nothing is", async () => {
+test("a bottle's multithreading is what is said, here or in its manifest, and on when nothing is", async () => {
   const { normalise, multithreadingFor } = await fresh(11);
   const settings = normalise({
     bottleConfig: { on: { multithreading: true }, off: { multithreading: false },
@@ -329,8 +330,8 @@ test("a bottle's multithreading is what is said, here or in its manifest, and of
   assert.equal(multithreadingFor(settings, { id: "off", multithreading: true }), false,
     "the browser's word over the manifest's");
   assert.equal(multithreadingFor(settings, { id: "manifest", multithreading: true }), true);
-  assert.equal(multithreadingFor(settings, { id: "silent" }), false, "nothing said: one core");
-  assert.equal(multithreadingFor(settings, { id: "junk", multithreading: "yes" }), false);
+  assert.equal(multithreadingFor(settings, { id: "silent" }), true, "nothing said: several cores");
+  assert.equal(multithreadingFor(settings, { id: "junk", multithreading: "yes" }), true);
 });
 
 test("the desktop is the chosen shape, or the screen's own for auto", async () => {
