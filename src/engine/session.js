@@ -1235,6 +1235,21 @@ async function run({ bundle, media, canvas, report: show, silentInstall = false,
   app.on("message-box", (notice) => {
     if (shownToThePerson(notice)) report({ messageBox: notice });
   });
+  // A box the program shows as it goes down is told as a failure is, in the
+  // play screen's own place: drawn on the guest's desktop it may never reach
+  // the screen, and nothing after it is worth playing.
+  let failedByProgram = false;
+  app.on("program-error", (notice) => {
+    failedByProgram = true;
+    report({
+      stage: "failed",
+      error: {
+        reason: notice.caption || "The program reported an error",
+        message: notice.text,
+        trace: notice.trace ?? "",
+      },
+    });
+  });
   // A copy inside the program is a copy the person expects to paste outside
   // it. The click that made it is a user gesture, so the write is normally
   // allowed; when it is not, the text is shown where it can be copied by hand.
@@ -1330,7 +1345,9 @@ async function run({ bundle, media, canvas, report: show, silentInstall = false,
   // frame: the page has nothing to do per frame.
   app.on("frame", ({ width, height, presented }) => {
     report({ frame: { width, height } });
-    if (frames === 0) {
+    // A program that went down before its first frame keeps its failure: that
+    // first frame is the desktop its error box is drawn on.
+    if (frames === 0 && !failedByProgram) {
       // The wait is over, so the loader stops polling and its first frame
       // time is recorded: the range the next launch shows comes only from
       // launches on this machine, never from a number written in by hand.
