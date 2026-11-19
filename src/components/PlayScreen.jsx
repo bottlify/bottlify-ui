@@ -16,7 +16,7 @@ import { loadSettings, saveSettings, touchLayoutFor } from "../settings.js";
 import { touchLayout } from "../engine/touch.js";
 import { isTouchScreen } from "../engine/touch.js";
 import { TouchControls } from "./TouchControls.jsx";
-import { PerfOverlay } from "./PerfOverlay.jsx";
+import { FpsMeter } from "./FpsMeter.jsx";
 import { SettingsDrawer } from "./SettingsDrawer.jsx";
 import { VolumeControl } from "./AppHeader.jsx";
 
@@ -785,11 +785,7 @@ export function PlayScreen({ bundle, media, title, onClose, onExited }) {
             )}
             {pressed && !drawn && !over && <Starting state={state} />}
             {drawn && !over && <BundleWait fetching={state.fetchingBundle === true} />}
-            <PerfOverlay
-              app={controls.current?.app ?? null}
-              active={drawn}
-              symbols={controls.current?.symbols ?? null}
-            />
+            <FpsMeter app={controls.current?.app ?? null} active={drawn} />
           </Box>
           {/* Everything after the wait is said over the whole stage, never
             beside it: the last frame stays underneath, dimmed, and the words

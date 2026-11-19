@@ -439,15 +439,16 @@ function BottleSettings({ app, running, facts, settings, change }) {
           disabled={running}
         />
         <Toggle
-          label="Performance overlay (F3 · Ctrl/⌘+Shift+P)"
-          says={"fps, guest code speed and what the frame is made of, over the corner of the "
-            + "canvas. Off, nothing here reads the engine at all; on, once a second."}
+          label="FPS meter (F3 · Ctrl/⌘+Shift+P)"
+          says={"Frames a second and a wave of every frame's time over the last ten seconds, "
+            + "drops in red, over the corner of the canvas. Read from a buffer the engine "
+            + "writes as each frame reaches the canvas; off, it reads nothing."}
           checked={settings.overlayOn}
           onChange={(overlayOn) => change({ overlayOn })}
         />
         <Toggle
           label="Profile host calls"
-          says={"The overlay then splits host calls by function (draws, uploads, audio, "
+          says={"The phase profile (report, live tools) splits host calls by function (draws, uploads, audio, "
             + `win32). ${NEXT_RUN} Two clock reads per call.`}
           checked={settings.profileCalls}
           onChange={(profileCalls) => change({ profileCalls })}

@@ -70,7 +70,7 @@ const SCREEN = Object.freeze({ width: 1024, height: 768, bitsPerPixel: 32 });
  * @property {boolean} logShaders   A log line for every shader a title compiles, with its
  *                                  defines (the engine's `log.shaders`). A shader that
  *                                  failed to compile is logged with its source either way.
- * @property {boolean} overlayOn    Whether the performance overlay (F3) is shown
+ * @property {boolean} overlayOn    Whether the fps meter (F3) is shown
  *                                  over the canvas. Off by default: it polls the
  *                                  engine once a second while it is on, and a
  *                                  person who never asked for it should pay
