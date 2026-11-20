@@ -5,13 +5,16 @@
 import { useEffect, useRef, useState } from "react";
 import { Box } from "@mui/material";
 import { readFrameClock } from "@bottlify/core/frame-clock";
+import { readSoundTable } from "@bottlify/core/sound-meter";
 import { CHANGED, loadSettings, saveSettings } from "../settings.js";
 import { frameStats } from "../engine/frame-stats.js";
+import { soundStats } from "../engine/sound-stats.js";
 
 /** How much of the run the wave shows, in milliseconds. */
 const SPAN_MS = 10000;
 const WIDTH = 240;
 const HEIGHT = 64;
+const SOUND_HEIGHT = 14;
 
 /**
  * Frames a second and the wave of every frame's time over the last ten
@@ -51,6 +54,8 @@ export function FpsMeter({ app, active }) {
   }, [active]);
 
   const wave = useRef(/** @type {HTMLCanvasElement | null} */ (null));
+  const gapsWave = useRef(/** @type {HTMLCanvasElement | null} */ (null));
+  const [sound, setSound] = useState(/** @type {ReturnType<typeof soundStats> | null} */ (null));
   const [stats, setStats] = useState(/** @type {ReturnType<typeof frameStats> | null} */ (null));
   const [failed, setFailed] = useState(/** @type {string | null} */ (null));
 
@@ -66,6 +71,15 @@ export function FpsMeter({ app, active }) {
     let seen = 0;
     let lastNew = performance.now();
     let shownAt = 0;
+    // The speaker, read off the table its worklet plays: none where the page
+    // plays no sound through shared memory.
+    /** @type {SharedArrayBuffer | null} */
+    let table = null;
+    try { table = app.audio?.memory?.()?.table ?? null; } catch { table = null; }
+    if (!(table instanceof SharedArrayBuffer)) table = null;
+    /** @type {{ at: number, starvedFrames: number }[]} */
+    let heard = [];
+    let rate = 0;
     const step = (buffer) => {
       if (cancelled) return;
       const read = readFrameClock(buffer, seen);
@@ -77,13 +91,22 @@ export function FpsMeter({ app, active }) {
       const newest = times.at(-1) ?? 0;
       times = times.filter((at) => at > newest - SPAN_MS);
       const pageNow = performance.now();
+      if (table)
+      {
+        const speaker = readSoundTable(table);
+        rate = speaker.rate;
+        heard.push({ at: pageNow, starvedFrames: speaker.starvedFrames });
+        heard = heard.filter((sample) => sample.at > pageNow - SPAN_MS);
+      }
       // A quarter of a second between redraws of the numbers: the wave is
       // drawn on every animation frame, the text would only flicker.
       if (pageNow - shownAt > 250) {
         shownAt = pageNow;
         setStats(frameStats(times, pageNow - lastNew));
+        setSound(table ? soundStats(heard, rate) : null);
       }
       drawWave(wave.current, times);
+      if (table) drawGaps(gapsWave.current, heard, pageNow);
       raf = requestAnimationFrame(() => step(buffer));
     };
     Promise.resolve(app.frameClock()).then((buffer) => {
@@ -125,8 +148,38 @@ export function FpsMeter({ app, active }) {
         </>
       )}
       <canvas ref={wave} width={WIDTH} height={HEIGHT} style={{ display: "block", marginTop: 4, width: WIDTH, height: HEIGHT }} />
+      {!failed && sound && (
+        <div style={{ marginTop: 4 }}>
+          {`sound ${sound.silentShare === null ? "—" : `${(sound.silentShare * 100).toFixed(1)}% silent`} · gaps ${sound.gaps} in 10 s`}
+        </div>
+      )}
+      {sound && <canvas ref={gapsWave} width={WIDTH} height={SOUND_HEIGHT} style={{ display: "block", marginTop: 2, width: WIDTH, height: SOUND_HEIGHT }} />}
     </Box>
   );
+}
+
+/**
+ * Each gap the speaker played over the last ten seconds as a red bar at its
+ * moment, as tall as the silence it played: a crackle to be seen.
+ *
+ * @param {HTMLCanvasElement | null} canvas
+ * @param {{ at: number, starvedFrames: number }[]} heard @param {number} now
+ */
+function drawGaps(canvas, heard, now){
+  const context = canvas?.getContext("2d");
+  if (!context) return;
+  context.clearRect(0, 0, WIDTH, SOUND_HEIGHT);
+  context.fillStyle = "rgba(255,255,255,0.12)";
+  context.fillRect(0, SOUND_HEIGHT - 1, WIDTH, 1);
+  context.fillStyle = "#ff5a52";
+  for (let n = 1; n < heard.length; n++)
+  {
+    const lost = heard[n].starvedFrames - heard[n - 1].starvedFrames;
+    if (lost <= 0) continue;
+    const x = WIDTH - ((now - heard[n].at) / SPAN_MS) * WIDTH;
+    const height = Math.min(SOUND_HEIGHT, 2 + lost / 64);
+    context.fillRect(Math.floor(x) - 1, SOUND_HEIGHT - height, 2, height);
+  }
 }
 
 /**
