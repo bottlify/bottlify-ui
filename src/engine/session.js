@@ -45,7 +45,7 @@ import { loadProviders, providerOf } from "../stores/providers.js";
 import { outOfMemoryNote, refusedMemory } from "./out-of-memory.js";
 import { phoneScreen, viewOf } from "../screen.js";
 import {
-  CHANGED, GPU_JOURNAL, SHADER_CHOICES, bottleConfigFor, buildFor, displayScreen, driverRulesFor,
+  CHANGED, GPU_JOURNAL, SHADER_CHOICES, bottleConfigFor, buildFor, machineFor, displayScreen, driverRulesFor,
   launchFor,
   loadSettings,
   multithreadingFor,
@@ -728,6 +728,12 @@ async function run({ bundle, media, canvas, report: show, silentInstall = false,
     }
   }
   const launched = twin ? { ...bundle, entry: twin } : bundle;
+  // A 32-bit program of a 64-bit bottle, when the 32-bit build is chosen, runs
+  // on a 32-bit Windows over the bottle's volume (the engine's `layout`): a
+  // launcher that picks its game's build by the system's width picks the
+  // 32-bit one as well.
+  const on32 = Boolean(bundle && !prefix && machineFor(settings, bundle) === "amd64"
+    && buildFor(settings, bundle) === "x86" && imageBits(executable) === 32);
   // The program's own icon, for the tab and the home screen to show the game by.
   if (bundle) report({ icon: engine.programIcon?.(executable) ?? null });
   // Beside the bundle's manifest, never inside it -- absent for most bundles.
@@ -1011,6 +1017,7 @@ async function run({ bundle, media, canvas, report: show, silentInstall = false,
     quantum: settings.quantum,
     // The Windows and the graphics API the bottle runs as (`bottleConfigFor`).
     ...(prefix || !bundle ? {} : bottleConfigFor(settings, bundle)),
+    ...(on32 ? { machine: "x86", layout: "amd64" } : {}),
     // An install's machine, chosen before it starts and kept by the bottle it makes.
     ...(prefix ? { machine: installMachine } : {}),
     // `?gpu=sm1` .. `sm4` or `host`: the video adapter's profile, over the bottle's.
