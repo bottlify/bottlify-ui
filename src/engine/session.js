@@ -877,6 +877,11 @@ async function run({ bundle, media, canvas, report: show, silentInstall = false,
     // not -- unless `?mode=compatible` or `?mode=isolated` forces one;
     // isolated on a page that cannot share memory is refused rather than run.
     mode: ["compatible", "isolated"].includes(query.get("mode") ?? "") ? query.get("mode") : "auto",
+    // `?concurrency=2` (or 4): a child process runs in a worker of its own
+    // beside its parent, its memory counted against that worker rather than
+    // the engine's thread, which holds the parent's.
+    ...(["2", "4"].includes(query.get("concurrency") ?? "")
+      ? { concurrency: Number(query.get("concurrency")) } : {}),
     // `?guestCode=off`: Direct3D 8 and 9 trap every call rather than record
     // and answer in the guest, for telling a fault in that guest code apart.
     // `?guestTraps=getters,ring` keeps those parts of it, or methods named, as
