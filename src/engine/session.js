@@ -45,7 +45,7 @@ import { loadProviders, providerOf } from "../stores/providers.js";
 import { outOfMemoryNote, refusedMemory } from "./out-of-memory.js";
 import { phoneScreen, viewOf } from "../screen.js";
 import {
-  CHANGED, GPU_JOURNAL, SHADER_CHOICES, bottleConfigFor, displayScreen, driverRulesFor,
+  CHANGED, GPU_JOURNAL, SHADER_CHOICES, bottleConfigFor, buildFor, displayScreen, driverRulesFor,
   launchFor,
   loadSettings,
   multithreadingFor,
@@ -716,7 +716,7 @@ async function run({ bundle, media, canvas, report: show, silentInstall = false,
   // A 64-bit program the bottle also has a 32-bit build of starts as that build,
   // which cork runs faster (entry-twin.js): said, and the rest of the run is its.
   let twin = null;
-  if (bundle && !prefix && imageBits(executable) === 64) {
+  if (bundle && !prefix && buildFor(settings, bundle) === "x86" && imageBits(executable) === 64) {
     const read = await readBundle(kept ? blobRanges(await bottleFile(bundle.id, "bundle.btl"))
       : httpRanges(bundleUrl(bundle)));
     const path = twinOf(read.files.map((file) => file.path), bundle.entry);

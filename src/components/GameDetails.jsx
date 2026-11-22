@@ -121,6 +121,8 @@ export function BottleSettingsDialog({
     memoryChoices.some((one) => one.value === own.memory) ? own.memory : 0);
   // Kept in this browser as the memory is: a way to compare two answers, not the bottle's own.
   const [driverRules, setDriverRules] = useState(own.driverRules ?? "current");
+  // Which build a game that ships both starts: this browser's choice (`buildFor`).
+  const [build, setBuild] = useState(own.build === "amd64" ? "amd64" : "x86");
   // The program it starts and what with, over the manifest's: this browser's choice.
   const [entry, setEntry] = useState(own.entry ?? "");
   const [args, setArgs] = useState(own.args ?? "");
@@ -185,9 +187,11 @@ export function BottleSettingsDialog({
    * @param {object} config
    */
   const withMemory = (config) => {
-    const next = { ...config, memory, driverRules, touch, entry: entry.trim(), args: args.trim() };
+    const next = { ...config, memory, driverRules, build, touch, entry: entry.trim(),
+      args: args.trim() };
     if (!memory) delete next.memory;
     if (driverRules !== "legacy") delete next.driverRules;
+    if (build !== "amd64") delete next.build;
     if (!next.entry) delete next.entry;
     if (!next.args) delete next.args;
     return next;
@@ -339,6 +343,14 @@ export function BottleSettingsDialog({
             <TextField size="small" label="Architecture" disabled
               value={MACHINE_CHOICES.find((one) => one.value === machine)?.label}
               helperText="The machine the bottle was installed on; it cannot be changed" />
+            {machine === "amd64" && (
+              <TextField select size="small" label="Game build" value={build} disabled={saving}
+                helperText="For a game that ships both: the 32-bit build runs faster; kept in this browser"
+                onChange={(event) => setBuild(event.target.value)}>
+                <MenuItem value="x86">32-bit when the game has one</MenuItem>
+                <MenuItem value="amd64">64-bit</MenuItem>
+              </TextField>
+            )}
             <TextField select size="small" label="Memory" value={memory} disabled={saving}
               helperText={machine === "amd64" ? "4 or 8 GB on a 64-bit machine; kept in this browser"
                 : "Up to 2 GB on a 32-bit machine; kept in this browser"}

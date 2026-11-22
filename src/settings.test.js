@@ -331,6 +331,17 @@ test("a bottle's machine is the one it was installed on, and nothing here change
     "a machine is not a choice kept for a bottle");
 });
 
+test("a bottle starts a game's 32-bit build unless its settings say 64-bit, which only a 64-bit"
+  + " machine runs", async () => {
+  const { normalise, buildFor } = await fresh(11);
+  const settings = normalise({ bottleConfig: { wide: { build: "amd64" }, odd: { build: "arm" } } });
+  assert.deepEqual(settings.bottleConfig, { wide: { build: "amd64" } }, "only a build there is");
+  assert.equal(buildFor(settings, { id: "plain", machine: "amd64" }), "x86",
+    "the 32-bit build where the game ships one");
+  assert.equal(buildFor(settings, { id: "wide", machine: "amd64" }), "amd64", "as the person said");
+  assert.equal(buildFor(settings, { id: "wide" }), "x86", "a 32-bit machine runs no 64-bit build");
+});
+
 test("a bottle's driver rules are kept only as legacy, and read back as legacy or current", async () => {
   const { normalise, driverRulesFor } = await fresh(10);
   const settings = normalise({

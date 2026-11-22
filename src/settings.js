@@ -105,6 +105,8 @@ const SCREEN = Object.freeze({ width: 1024, height: 768, bitsPerPixel: 32 });
  * @property {number} [memory]    One of `MEMORY_CHOICES`, in megabytes; used where the
  *     bottle's machine offers it.
  * @property {string} [driverRules] One of `DRIVER_RULES_CHOICES`; absent, current.
+ * @property {"amd64"} [build]  A game's 64-bit build started where it ships a 32-bit one
+ *     too; absent, the 32-bit one (`buildFor`).
  * @property {boolean} [multithreading] Whether its threads run on several cores
  *     at once; absent, the manifest's, else they do.
  * @property {ReturnType<typeof touchLayout>} [touch] Its controls on a touch
@@ -416,6 +418,7 @@ function bottleConfigOf(raw) {
     if (SHADER_CHOICES.some((one) => one.value === config.shaders)) kept.shaders = config.shaders;
     if (offered(config.memory, "x86") || offered(config.memory, "amd64")) kept.memory = config.memory;
     if (config.driverRules === "legacy") kept.driverRules = config.driverRules;
+    if (config.build === "amd64") kept.build = config.build;
     if (typeof config.multithreading === "boolean") kept.multithreading = config.multithreading;
     const entry = typeof config.entry === "string" ? config.entry.trim().replace(/\//g, "\\") : "";
     // A program inside the bottle's folder: no drive, no way above it.
@@ -518,6 +521,20 @@ export function launchFor(settings, bundle) {
     ...(own.entry ? { entry: own.entry } : {}),
     ...(own.args ? { commandLine: own.args } : {}),
   };
+}
+
+/**
+ * Which build of a game a bottle starts where the game ships both: the 32-bit
+ * one, which cork runs faster (`engine/entry-twin.js`), unless its settings here
+ * say 64-bit -- which only a 64-bit machine runs.
+ *
+ * @param {RunSettings} settings
+ * @param {{ id: string, machine?: string }} bundle
+ * @returns {"x86" | "amd64"}
+ */
+export function buildFor(settings, bundle) {
+  return machineFor(settings, bundle) === "amd64" && settings.bottleConfig[bundle.id]?.build === "amd64"
+    ? "amd64" : "x86";
 }
 
 /**
