@@ -97,8 +97,11 @@ window.bottlifyRun = (wanted) => {
 };
 const ENGINE_URL = FROM_SOURCE ? "/source/modules/core/src/index.js" : "/engine/core.js";
 const MEDIA_WASM_URL = "/engine/vendor/video-decoder.wasm";
-/** Guest RAM for an installation: two gigabytes, the whole of a 32-bit user space. */
-const INSTALLER_MEMORY = 2 * 1024 * 1024 * 1024;
+/**
+ * Guest RAM for an installation, by its machine: two gigabytes, the whole of a
+ * 32-bit user space; four on a 64-bit machine.
+ */
+const INSTALLER_MEMORY = { x86: 2 * 1024 * 1024 * 1024, amd64: 4 * 1024 * 1024 * 1024 };
 const WORKLET_URL = FROM_SOURCE
   ? "/source/modules/core/src/layers/audio/output/worklet.js"
   : "/engine/worklet.js";
@@ -682,6 +685,8 @@ async function run({ bundle, media, canvas, report: show, silentInstall = false,
     })
     : null;
   const prefix = disc ?? (media ? prefixOptions(media) : null);
+  /** The machine an install runs on: the one chosen for it (`InstallScreen`), else x86. */
+  const installMachine = media?.machine === "amd64" ? "amd64" : "x86";
   // An installer runs with its own windows on the canvas, the person clicking
   // through it as on a real machine. Its silent mode is for installs with no
   // screen at all -- a terminal, a script -- and the launcher always has one.
@@ -990,6 +995,8 @@ async function run({ bundle, media, canvas, report: show, silentInstall = false,
     quantum: settings.quantum,
     // The Windows and the graphics API the bottle runs as (`bottleConfigFor`).
     ...(prefix || !bundle ? {} : bottleConfigFor(settings, bundle)),
+    // An install's machine, chosen before it starts and kept by the bottle it makes.
+    ...(prefix ? { machine: installMachine } : {}),
     // `?gpu=sm1` .. `sm4` or `host`: the video adapter's profile, over the bottle's.
     ...(SHADER_CHOICES.some((one) => one.value === query.get("gpu"))
       ? { gpuProfile: query.get("gpu") } : {}),
@@ -1089,7 +1096,7 @@ async function run({ bundle, media, canvas, report: show, silentInstall = false,
     // for more than the gigabyte a game gets. Reserved, not committed: only
     // what it touches costs anything.
     // A game, as much as the person gave it or its bottle.
-    ...(prefix ? { memorySize: INSTALLER_MEMORY }
+    ...(prefix ? { memorySize: INSTALLER_MEMORY[installMachine] }
       : memoryAsked > 0 ? { memorySize: memoryAsked }
         : bundle ? { memorySize: memorySizeFor(settings, bundle) } : {}),
   };

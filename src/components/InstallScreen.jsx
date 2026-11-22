@@ -13,6 +13,7 @@ import { collectFrom, publish, saveBottle, sizeOf } from "@bottlify/installer";
 import { bottlesFolder, localBottles } from "../engine/bottles.js";
 import { PlayScreen } from "./PlayScreen.jsx";
 import { KINDS, LABELS } from "../api/bundles.js";
+import { DEFAULT_MACHINE, MACHINE_CHOICES } from "../settings.js";
 
 /**
  * Adding a title by running its installer.
@@ -61,6 +62,11 @@ export function InstallScreen({ media, upload, onSaved, onClose }) {
   // sends it to the server, which is a choice only when one is configured.
   const [where, setWhere] = useState("browser");
   const [layers, setLayers] = useState(/** @type {string[]} */ ([]));
+  // The machine the install runs on, asked before it starts: the bottle keeps
+  // it for good (its manifest's `machine`), since what it installs lies where
+  // that Windows keeps it.
+  const [machine, setMachine] = useState(DEFAULT_MACHINE);
+  const [machineChosen, setMachineChosen] = useState(false);
 
   const onExited = useCallback(async (app, code, layersNeeded = []) => {
     // Read once, here: taking the tree out of the volume copies it, and the
@@ -110,6 +116,7 @@ export function InstallScreen({ media, upload, onSaved, onClose }) {
       title,
       entry: prefix.entry ?? executables[0],
       installedFrom: media.name,
+      machine,
       kind,
       labels: LABELS.map((one) => one.value).filter((value) => labels.includes(value)),
       // A runtime the install asked for (a .NET Framework setup), which the
@@ -144,11 +151,32 @@ export function InstallScreen({ media, upload, onSaved, onClose }) {
     setAsking(false);
   };
 
+  if (!machineChosen) {
+    return (
+      <Dialog open fullWidth maxWidth="xs" onClose={onClose}>
+        <DialogTitle>Machine</DialogTitle>
+        <DialogContent>
+          <TextField select fullWidth size="small" label="Architecture" value={machine} sx={{ mt: 1 }}
+            helperText="The bottle keeps it: it cannot be changed after the install"
+            onChange={(event) => setMachine(event.target.value)}>
+            {MACHINE_CHOICES.map((one) => <MenuItem key={one.value} value={one.value}>{one.label}</MenuItem>)}
+          </TextField>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={onClose}>Cancel</Button>
+          <Button variant="contained" onClick={() => setMachineChosen(true)}>
+            {media.prefix ? "Continue" : "Install"}
+          </Button>
+        </DialogActions>
+      </Dialog>
+    );
+  }
+
   return (
     <>
       {!media.prefix && (
         <PlayScreen
-          media={media}
+          media={{ ...media, machine }}
           title={`Installing — ${media.name}`}
           onClose={onClose}
           onExited={onExited}

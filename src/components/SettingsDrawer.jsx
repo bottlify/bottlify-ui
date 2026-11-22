@@ -313,22 +313,27 @@ function BottleSettings({ app, running, facts, settings, change }) {
       </Group>
 
       <Group title="Machine" note={NEXT_RUN}>
-        <Tooltip title={running ? APPLIES_NEXT_START : ""} disableHoverListener={!running}>
-          <TextField
-            select
-            fullWidth
-            size="small"
-            label="Memory"
-            value={settings.memory}
-            disabled={running}
-            onChange={(event) => change({ memory: Number(event.target.value) })}
-            helperText={"What every bottle's machine has unless its own settings say otherwise. "
-              + "Some games will not start with less; only what a game uses costs anything."}
-            sx={{ mt: 2 }}
-          >
-            {MEMORY_CHOICES.map((one) => <MenuItem key={one.value} value={one.value}>{one.label}</MenuItem>)}
-          </TextField>
-        </Tooltip>
+        {/* One for each machine a bottle may have been installed on: its own is what it gets. */}
+        {[["memory", "Memory, 32-bit machine", "x86", "Up to 2 GB: all a 32-bit Windows gives a program. "],
+          ["memory64", "Memory, 64-bit machine", "amd64", "4 or 8 GB. "]].map(([key, label, machine, note]) => (
+          <Tooltip key={key} title={running ? APPLIES_NEXT_START : ""} disableHoverListener={!running}>
+            <TextField
+              select
+              fullWidth
+              size="small"
+              label={label}
+              value={settings[key]}
+              disabled={running}
+              onChange={(event) => change({ [key]: Number(event.target.value) })}
+              helperText={`${note}What every bottle of this machine has unless its own settings say `
+                + "otherwise; only what a game uses costs anything."}
+              sx={{ mt: 2 }}
+            >
+              {MEMORY_CHOICES[machine].map((one) => (
+                <MenuItem key={one.value} value={one.value}>{one.label}</MenuItem>))}
+            </TextField>
+          </Tooltip>
+        ))}
         <Tooltip title={running ? APPLIES_NEXT_START : ""} disableHoverListener={!running}>
           <TextField
             select

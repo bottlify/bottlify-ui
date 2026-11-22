@@ -92,8 +92,9 @@ const SCREEN = Object.freeze({ width: 1024, height: 768, bitsPerPixel: 32 });
  *                                  id, over what its manifest says.
  * @property {string} display       The desktop's shape (`DISPLAY_CHOICES`), "auto" the
  *                                  browser screen's.
- * @property {number} memory        The guest's memory, in megabytes (`MEMORY_CHOICES`),
- *                                  for every bottle that does not choose its own.
+ * @property {number} memory        The guest's memory, in megabytes (`MEMORY_CHOICES.x86`),
+ *                                  for every 32-bit bottle that does not choose its own.
+ * @property {number} memory64      The same for every 64-bit bottle (`MEMORY_CHOICES.amd64`).
  */
 
 /**
@@ -101,7 +102,8 @@ const SCREEN = Object.freeze({ width: 1024, height: 768, bitsPerPixel: 32 });
  * @property {string} [windows]   One of `WINDOWS_CHOICES`.
  * @property {string} [graphics]  One of `GRAPHICS_CHOICES`, `all` for everything.
  * @property {string} [shaders]   One of `SHADER_CHOICES`, the video adapter's profile.
- * @property {number} [memory]    One of `MEMORY_CHOICES`, in megabytes.
+ * @property {number} [memory]    One of `MEMORY_CHOICES`, in megabytes; used where the
+ *     bottle's machine offers it.
  * @property {string} [driverRules] One of `DRIVER_RULES_CHOICES`; absent, current.
  * @property {boolean} [multithreading] Whether its threads run on several cores
  *     at once; absent, the manifest's, else they do.
@@ -172,19 +174,47 @@ export const DEFAULT_SHADERS = "host";
 export const DEFAULT_WINDOWS = "win7";
 
 /**
- * How much memory the guest machine has, in megabytes. A game sizes its caches
- * from it and some refuse to start below what they ask for; two gigabytes is
- * all a program on Windows XP may address, and four what a program linked
- * large-address-aware is given on a 64-bit Windows -- any other still has two.
- * The engine takes what a program is given, not the whole of it.
+ * The machine a bottle runs on, by the engine's names: the one its
+ * installation ran on, said in its manifest. It is never chosen afterwards: a
+ * bottle installed on one keeps its libraries where that Windows keeps them
+ * (a 32-bit one's in system32, which a 64-bit Windows hands a 32-bit program
+ * as SysWOW64), so on the other it does not find them.
  */
-export const MEMORY_CHOICES = [
-  { value: 512, label: "512 MB" },
-  { value: 1024, label: "1 GB" },
-  { value: 1536, label: "1.5 GB" },
-  { value: 2048, label: "2 GB" },
-  { value: 4096, label: "4 GB" },
+export const MACHINE_CHOICES = [
+  { value: "x86", label: "x86 (32-bit)" },
+  { value: "amd64", label: "x64 (64-bit)" },
 ];
+
+/** The machine of a bottle whose manifest names none: every bottle installed before the field. */
+export const DEFAULT_MACHINE = "x86";
+
+/**
+ * How much memory the guest machine has, in megabytes, by machine. A game sizes
+ * its caches from it and some refuse to start below what they ask for. Two
+ * gigabytes is all a 32-bit Windows gives a program; a 64-bit one has four or
+ * eight. The engine takes what a program is given, not the whole of it.
+ */
+export const MEMORY_CHOICES = {
+  x86: [
+    { value: 512, label: "512 MB" },
+    { value: 1024, label: "1 GB" },
+    { value: 1536, label: "1.5 GB" },
+    { value: 2048, label: "2 GB" },
+  ],
+  amd64: [
+    { value: 4096, label: "4 GB" },
+    { value: 8192, label: "8 GB" },
+  ],
+};
+
+/**
+ * @param {Record<string, any>} settings @param {"x86" | "amd64"} machine
+ * @returns {number} the general setting's memory for that machine, in megabytes
+ */
+export const memoryOf = (settings, machine) => (machine === "amd64" ? settings.memory64 : settings.memory);
+
+/** @param {number} value @param {"x86" | "amd64"} machine */
+const offered = (value, machine) => MEMORY_CHOICES[machine].some((one) => one.value === value);
 
 /**
  * The desktop a bottle's machine has, by shape: large, so a game that renders
@@ -239,10 +269,11 @@ export const DEFAULTS = Object.freeze({
   librarySort: SORTS[0].value,
   bottleFiles: {},
   bottleConfig: {},
-  // Four gigabytes: reserved, not committed, so it costs what the guest touches --
-  // and a title picks its whole preset from the physical memory it is told of,
-  // the lowest one below a gigabyte.
-  memory: 4096,
+  // The most of each machine's first: reserved, not committed, so it costs what
+  // the guest touches -- and a title picks its whole preset from the physical
+  // memory it is told of, the lowest one below a gigabyte.
+  memory: 2048,
+  memory64: 4096,
   display: "auto",
 });
 
@@ -359,8 +390,8 @@ export function normalise(raw) {
       ? source.librarySort : DEFAULTS.librarySort,
     bottleFiles: bottleFilesOf(source.bottleFiles),
     bottleConfig: bottleConfigOf(source.bottleConfig),
-    memory: MEMORY_CHOICES.some((one) => one.value === source.memory)
-      ? source.memory : DEFAULTS.memory,
+    memory: offered(source.memory, "x86") ? source.memory : DEFAULTS.memory,
+    memory64: offered(source.memory64, "amd64") ? source.memory64 : DEFAULTS.memory64,
     display: DISPLAY_CHOICES.some((one) => one.value === source.display)
       ? source.display : DEFAULTS.display,
   };
@@ -383,7 +414,7 @@ function bottleConfigOf(raw) {
     if (WINDOWS_CHOICES.some((one) => one.value === config.windows)) kept.windows = config.windows;
     if (GRAPHICS_CHOICES.some((one) => one.value === config.graphics)) kept.graphics = config.graphics;
     if (SHADER_CHOICES.some((one) => one.value === config.shaders)) kept.shaders = config.shaders;
-    if (MEMORY_CHOICES.some((one) => one.value === config.memory)) kept.memory = config.memory;
+    if (offered(config.memory, "x86") || offered(config.memory, "amd64")) kept.memory = config.memory;
     if (config.driverRules === "legacy") kept.driverRules = config.driverRules;
     if (typeof config.multithreading === "boolean") kept.multithreading = config.multithreading;
     const entry = typeof config.entry === "string" ? config.entry.trim().replace(/\//g, "\\") : "";
@@ -403,8 +434,8 @@ function bottleConfigOf(raw) {
  * adapter is shown with, which falls back to `DEFAULT_SHADERS` instead.
  *
  * @param {RunSettings} settings
- * @param {{ id: string, windows?: string, graphics?: string, shaders?: string }} bundle
- * @returns {{ windows?: string, graphicsApi?: string }}
+ * @param {{ id: string, windows?: string, graphics?: string, shaders?: string, machine?: string }} bundle
+ * @returns {{ windows?: string, graphicsApi?: string, machine: "x86" | "amd64" }}
  */
 export function bottleConfigFor(settings, bundle) {
   const own = settings.bottleConfig[bundle.id] ?? {};
@@ -415,7 +446,22 @@ export function bottleConfigFor(settings, bundle) {
     windows,
     ...(graphics && graphics !== "all" ? { graphicsApi: graphics } : {}),
     gpuProfile: shaders,
+    // Said, never worked out from the memory: the engine takes a machine past
+    // 2 GB for a 64-bit one.
+    machine: machineFor(settings, bundle),
   };
+}
+
+/**
+ * The machine a bottle runs on: the one its manifest says it was installed
+ * on, else `DEFAULT_MACHINE`. Nothing this browser keeps changes it.
+ *
+ * @param {RunSettings} _settings
+ * @param {{ machine?: string }} bundle
+ * @returns {"x86" | "amd64"}
+ */
+export function machineFor(_settings, bundle) {
+  return bundle.machine === "amd64" ? "amd64" : DEFAULT_MACHINE;
 }
 
 /**
@@ -476,13 +522,15 @@ export function launchFor(settings, bundle) {
 
 /**
  * The memory a bottle's machine has, in bytes for `createApp`: the bottle's own
- * choice, else the one in the general settings.
+ * choice where its machine offers it, else the general setting for its machine.
  *
  * @param {RunSettings} settings
- * @param {{ id: string }} bundle
+ * @param {{ id: string, machine?: string }} bundle
  */
 export function memorySizeFor(settings, bundle) {
-  return (settings.bottleConfig[bundle.id]?.memory ?? settings.memory) * 1024 * 1024;
+  const machine = machineFor(settings, bundle);
+  const own = settings.bottleConfig[bundle.id]?.memory;
+  return (own !== undefined && offered(own, machine) ? own : memoryOf(settings, machine)) * 1024 * 1024;
 }
 
 /**

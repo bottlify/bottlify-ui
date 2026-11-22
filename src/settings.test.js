@@ -274,13 +274,13 @@ test("a bottle's Windows and graphics are the person's, else its manifest's, els
     game: { graphics: "all" },
   }, "only names the engine knows are kept");
   assert.deepEqual(bottleConfigFor(settings, { id: "benchmark", windows: "win2000" }),
-    { windows: "win2000", graphicsApi: "directx7", gpuProfile: "host" });
+    { windows: "win2000", graphicsApi: "directx7", gpuProfile: "host", machine: "x86" });
   assert.deepEqual(bottleConfigFor(settings, { id: "game", graphics: "directx8" }),
-    { windows: "win7", gpuProfile: "host" }, "every API chosen over the manifest's one passes none");
+    { windows: "win7", gpuProfile: "host", machine: "x86" }, "every API chosen over the manifest's one passes none");
   assert.deepEqual(bottleConfigFor(settings, { id: "plain", graphics: "directx9" }),
-    { windows: "win7", graphicsApi: "directx9", gpuProfile: "host" },
+    { windows: "win7", graphicsApi: "directx9", gpuProfile: "host", machine: "x86" },
     "the manifest's own when the person chose nothing");
-  assert.deepEqual(bottleConfigFor(settings, { id: "plain" }), { windows: "win7", gpuProfile: "host" },
+  assert.deepEqual(bottleConfigFor(settings, { id: "plain" }), { windows: "win7", gpuProfile: "host", machine: "x86" },
     "Windows 7 and the browser's GPU unless a bottle chooses others");
   const chosen = normalise({ bottleConfig: { mine: { shaders: "sm1" }, junk: { shaders: "sm9" } } });
   assert.deepEqual(chosen.bottleConfig, { mine: { shaders: "sm1" } });
@@ -291,18 +291,44 @@ test("a bottle's Windows and graphics are the person's, else its manifest's, els
 
 test("a bottle's memory is its own, else the general setting's, and only a size offered", async () => {
   const { normalise, memorySizeFor, DEFAULTS } = await fresh(11);
-  assert.equal(DEFAULTS.memory, 4096, "four gigabytes: a title's preset reads physical memory");
+  assert.equal(DEFAULTS.memory, 2048, "a 32-bit machine's: all a 32-bit Windows gives a program");
   const settings = normalise({
-    memory: 2048,
+    memory: 1024,
     bottleConfig: { small: { memory: 512 }, odd: { memory: 3000 } },
   });
   assert.equal(memorySizeFor(settings, { id: "small" }), 512 * 1024 * 1024);
-  assert.equal(memorySizeFor(settings, { id: "odd" }), 2048 * 1024 * 1024,
+  assert.equal(memorySizeFor(settings, { id: "odd" }), 1024 * 1024 * 1024,
     "a size not offered is not kept");
-  assert.equal(memorySizeFor(settings, { id: "plain" }), 2048 * 1024 * 1024);
-  assert.equal(normalise({ memory: 999 }).memory, 4096);
-  assert.equal(normalise({ memory: 4096 }).memory, 4096,
-    "four gigabytes, for a program linked large-address-aware");
+  assert.equal(memorySizeFor(settings, { id: "plain" }), 1024 * 1024 * 1024);
+  assert.equal(normalise({ memory: 999 }).memory, 2048);
+});
+
+test("a bottle's machine is the one it was installed on, and nothing here changes it", async () => {
+  const { normalise, memorySizeFor, machineFor, bottleConfigFor, DEFAULTS } = await fresh(11);
+  const settings = normalise({
+    memory: 1536,
+    memory64: 8192,
+    bottleConfig: { old: { memory: 4096, machine: "amd64" }, wide: { memory: 2048 },
+      big: { memory: 8192, machine: "x86" } },
+  });
+  // A bottle that says nothing was installed on a 32-bit machine: every one before the field.
+  assert.equal(machineFor(settings, { id: "old" }), "x86", "a choice stored here does not widen it");
+  assert.equal(machineFor(settings, { id: "big", machine: "amd64" }), "amd64",
+    "nor narrow it");
+  assert.equal(bottleConfigFor(settings, { id: "big", machine: "amd64" }).machine, "amd64",
+    "the engine is told it rather than working it out from the memory");
+  assert.equal(bottleConfigFor(settings, { id: "old" }).machine, "x86");
+  // Memory of the machine's own: up to 2 GB on x86, 4 or 8 GB on x64.
+  assert.equal(memorySizeFor(settings, { id: "old" }), 1536 * 1024 * 1024,
+    "four gigabytes is no 32-bit machine's: the general setting");
+  assert.equal(memorySizeFor(settings, { id: "big", machine: "amd64" }), 8192 * 1024 * 1024);
+  assert.equal(memorySizeFor(settings, { id: "wide", machine: "amd64" }), 8192 * 1024 * 1024,
+    "two gigabytes is no 64-bit machine's: the general setting for one");
+  assert.equal(DEFAULTS.memory64, 4096);
+  assert.equal(normalise({ memory: 4096 }).memory, 2048, "a 32-bit machine has 2 GB at most");
+  assert.equal(normalise({ memory64: 2048 }).memory64, 4096);
+  assert.equal(normalise({ bottleConfig: { a: { machine: "amd64" } } }).bottleConfig.a, undefined,
+    "a machine is not a choice kept for a bottle");
 });
 
 test("a bottle's driver rules are kept only as legacy, and read back as legacy or current", async () => {

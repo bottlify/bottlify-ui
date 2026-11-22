@@ -18,8 +18,8 @@ import { residency } from "../engine/btl.js";
 import { mayNotFit, siteSpace, sizeText } from "../engine/stored.js";
 import { EDITABLE_TYPES } from "../api/config.js";
 import {
-  DEFAULT_SHADERS, DEFAULT_WINDOWS, DRIVER_RULES_CHOICES, GRAPHICS_CHOICES, MEMORY_CHOICES, SHADER_CHOICES,
-  WINDOWS_CHOICES, loadSettings,
+  DEFAULT_SHADERS, DEFAULT_WINDOWS, DRIVER_RULES_CHOICES, GRAPHICS_CHOICES, MACHINE_CHOICES,
+  MEMORY_CHOICES, SHADER_CHOICES, WINDOWS_CHOICES, loadSettings, machineFor, memoryOf,
   saveSettings,
 } from "../settings.js";
 import {
@@ -114,7 +114,11 @@ export function BottleSettingsDialog({
   const [multithreading, setMultithreading] = useState(
     ((onServer ? undefined : own.multithreading) ?? bundle.multithreading) !== false);
   // Zero follows the general setting; the choice is this browser's, whoever owns the bottle.
-  const [memory, setMemory] = useState(own.memory ?? 0);
+  // The machine the bottle was installed on: shown, never changed (`machineFor`).
+  const machine = machineFor(settings, bundle);
+  const memoryChoices = MEMORY_CHOICES[machine];
+  const [memory, setMemory] = useState(
+    memoryChoices.some((one) => one.value === own.memory) ? own.memory : 0);
   // Kept in this browser as the memory is: a way to compare two answers, not the bottle's own.
   const [driverRules, setDriverRules] = useState(own.driverRules ?? "current");
   // The program it starts and what with, over the manifest's: this browser's choice.
@@ -332,13 +336,17 @@ export function BottleSettingsDialog({
               <MenuItem value="off">Off (one core)</MenuItem>
               <MenuItem value="on">On (cores chosen by the engine)</MenuItem>
             </TextField>
+            <TextField size="small" label="Architecture" disabled
+              value={MACHINE_CHOICES.find((one) => one.value === machine)?.label}
+              helperText="The machine the bottle was installed on; it cannot be changed" />
             <TextField select size="small" label="Memory" value={memory} disabled={saving}
-              helperText="Some games will not start with less; kept in this browser"
+              helperText={machine === "amd64" ? "4 or 8 GB on a 64-bit machine; kept in this browser"
+                : "Up to 2 GB on a 32-bit machine; kept in this browser"}
               onChange={(event) => setMemory(Number(event.target.value))}>
               <MenuItem value={0}>
-              Default ({MEMORY_CHOICES.find((one) => one.value === settings.memory)?.label})
+              Default ({memoryChoices.find((one) => one.value === memoryOf(settings, machine))?.label})
               </MenuItem>
-              {MEMORY_CHOICES.map((one) => <MenuItem key={one.value} value={one.value}>{one.label}</MenuItem>)}
+              {memoryChoices.map((one) => <MenuItem key={one.value} value={one.value}>{one.label}</MenuItem>)}
             </TextField>
             <TextField select size="small" label="Driver rules" value={driverRules} disabled={saving}
               helperText="Where DirectX left a behaviour to the driver; kept in this browser"
