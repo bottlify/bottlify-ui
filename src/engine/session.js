@@ -877,11 +877,18 @@ async function run({ bundle, media, canvas, report: show, silentInstall = false,
     // not -- unless `?mode=compatible` or `?mode=isolated` forces one;
     // isolated on a page that cannot share memory is refused rather than run.
     mode: ["compatible", "isolated"].includes(query.get("mode") ?? "") ? query.get("mode") : "auto",
-    // `?concurrency=2` (or 4): a child process runs in a worker of its own
-    // beside its parent, its memory counted against that worker rather than
-    // the engine's thread, which holds the parent's.
-    ...(["2", "4"].includes(query.get("concurrency") ?? "")
-      ? { concurrency: Number(query.get("concurrency")) } : {}),
+    // Every process in a worker of its own, the engine's thread the system
+    // alone, wherever the page can share memory: each process's memory and
+    // its machine's objects are counted against its own worker, and a
+    // launcher that started its game and went takes its memory with it. With
+    // one at a time a child ran in its parent's place, the parent's memory
+    // held on the engine's thread beside the child's for the whole game, and
+    // that thread collected whole for half a second at a time. `?concurrency=`
+    // 1, 2 or 4 asks for that many.
+    ...(["1", "2", "4"].includes(query.get("concurrency") ?? "")
+      ? { concurrency: Number(query.get("concurrency")) }
+      : globalThis.crossOriginIsolated === true && query.get("mode") !== "compatible"
+        ? { concurrency: 2 } : {}),
     // `?guestCode=off`: Direct3D 8 and 9 trap every call rather than record
     // and answer in the guest, for telling a fault in that guest code apart.
     // `?guestTraps=getters,ring` keeps those parts of it, or methods named, as
