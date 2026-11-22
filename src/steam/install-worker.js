@@ -179,16 +179,17 @@ async function intoBottle(id, manifest, fill) {
  * @param {DepotOpening[]} task.depots
  * @param {import("@bottlify/core/steam").ContentServer[]} task.servers
  * @param {string} [task.installscript] @param {string} task.executable
+ * @param {"x86" | "amd64"} [task.machine]  The machine the redistributables install for.
  * @param {Record<string, unknown>} task.manifest  The bottle's description but for its bundle.
  * @param {MessagePort[]} task.ports
  * @param {MessagePort | null} [task.through]
  * @param {AbortSignal} signal
  */
-const install = ({ id, depots, servers, installscript, executable, manifest, ports, through },
-  signal) => intoBottle(id, manifest, async ({ handle, resume, onSave, onProgress }) => {
+const install = ({ id, depots, servers, installscript, executable, machine, manifest, ports,
+  through }, signal) => intoBottle(id, manifest, async ({ handle, resume, onSave, onProgress }) => {
   const { bundle, entry } = await installBundle({ handle, depots, servers, installscript,
-    executable, resume, signal, decode: decoders(ports), fetch: fetchThrough(through), onSave,
-    onProgress });
+    executable, machine, resume, signal, decode: decoders(ports), fetch: fetchThrough(through),
+    onSave, onProgress });
   return { bundle, entry };
 });
 

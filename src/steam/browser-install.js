@@ -18,6 +18,9 @@
 
 import { gamehub, storeFetch } from "../stores/gamehub.js";
 
+/** The machine a Steam game's bottle is installed on, and keeps (its manifest's `machine`). */
+const STEAM_MACHINE = "amd64";
+
 /** @typedef {import("../stores/providers.js").InstallProgress} InstallProgress */
 
 /** @param {number} bytes */
@@ -136,7 +139,10 @@ export async function installSteamGame({ store, game, download: plan, onProgress
           reject(data.stopped ? stopped() : new Error(data.error));
         }
       };
-      installer.postMessage({ install: { id, depots, servers, executable,
+      // A 64-bit machine, whatever the game's program: it holds both widths'
+      // runtimes, so a game that ships a 32-bit build beside its 64-bit one
+      // starts that build, which cork runs faster (engine/entry-twin.js).
+      installer.postMessage({ install: { id, depots, servers, executable, machine: STEAM_MACHINE,
         ...plan.installscript ? { installscript: plan.installscript } : {},
         manifest: {
           id,
@@ -144,6 +150,7 @@ export async function installSteamGame({ store, game, download: plan, onProgress
           kind: "game",
           labels: [],
           entry: executable,
+          machine: STEAM_MACHINE,
           revision: 1,
           // A demo shows in the library signed in or not (libraryView.js).
           store: { id: store, game, ...plan.demo ? { demo: true } : {} },

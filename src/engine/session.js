@@ -35,6 +35,7 @@ import { bundleStart } from "./bottle.js";
 import { layerBundles, layersOf, noteLayerNeeded } from "./layers.js";
 import { LAYER_RECIPES, buildLayer, keptLayer } from "./layer-build.js";
 import { blobRanges, bundleUrl, httpRanges, readBundle } from "./btl.js";
+import { imageBits, twinOf } from "./entry-twin.js";
 import { bottleFile } from "./bottles.js";
 import { shownToThePerson } from "./boxes.js";
 import { keepEnding, reportParts } from "./journal.js";
@@ -698,7 +699,7 @@ async function run({ bundle, media, canvas, report: show, silentInstall = false,
   const kept = !prefix && bundle?.local === true;
   // A program other than the one it was installed with is read out of the kept bundle.
   const keptEntry = kept && bundle.entry === installedEntry;
-  const executable = prefix
+  let executable = prefix
     ? prefix.executable
     : keptEntry
       ? new Uint8Array(await (await bottleFile(bundle.id, "entry")).arrayBuffer())
@@ -712,6 +713,21 @@ async function run({ bundle, media, canvas, report: show, silentInstall = false,
           throw failure("entry image could not be read",
             `${kept ? bundle.entry : bundleUrl(bundle)}: ${e.message}`);
         });
+  // A 64-bit program the bottle also has a 32-bit build of starts as that build,
+  // which cork runs faster (entry-twin.js): said, and the rest of the run is its.
+  let twin = null;
+  if (bundle && !prefix && imageBits(executable) === 64) {
+    const read = await readBundle(kept ? blobRanges(await bottleFile(bundle.id, "bundle.btl"))
+      : httpRanges(bundleUrl(bundle)));
+    const path = twinOf(read.files.map((file) => file.path), bundle.entry);
+    const bytes = path ? await read.read(path).catch(() => null) : null;
+    if (path && bytes && imageBits(bytes) === 32) {
+      executable = bytes;
+      twin = path;
+      report({ off: `Starting the 32-bit build, ${path}, rather than ${bundle.entry}: it runs faster.` });
+    }
+  }
+  const launched = twin ? { ...bundle, entry: twin } : bundle;
   // The program's own icon, for the tab and the home screen to show the game by.
   if (bundle) report({ icon: engine.programIcon?.(executable) ?? null });
   // Beside the bundle's manifest, never inside it -- absent for most bundles.
@@ -814,7 +830,7 @@ async function run({ bundle, media, canvas, report: show, silentInstall = false,
   // from (`bundleStart`). A distribution says where it was put instead,
   // because it reads its own file.
   const started = prefix ? null
-    : bundleStart(bundle, settings, kept ? await bottleFile(bundle.id, "bundle.btl") : null);
+    : bundleStart(launched, settings, kept ? await bottleFile(bundle.id, "bundle.btl") : null);
   // `?preload=1`, what the library's Download asks for: the bundle comes in
   // whole before the program starts, told as it goes.
   if (started && query.get("preload") === "1") started.bundle.preload = true;
