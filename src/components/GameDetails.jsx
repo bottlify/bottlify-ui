@@ -18,7 +18,7 @@ import { residency } from "../engine/btl.js";
 import { mayNotFit, siteSpace, sizeText } from "../engine/stored.js";
 import { EDITABLE_TYPES } from "../api/config.js";
 import {
-  DEFAULT_SHADERS, DRIVER_RULES_CHOICES, GRAPHICS_CHOICES, MACHINE_CHOICES, defaultWindowsFor,
+  DEFAULT_SHADERS, DEFAULT_WINDOWS, DRIVER_RULES_CHOICES, GRAPHICS_CHOICES, MACHINE_CHOICES,
   MEMORY_CHOICES, SHADER_CHOICES, WINDOWS_CHOICES, loadSettings, machineFor, memoryOf,
   saveSettings,
 } from "../settings.js";
@@ -105,7 +105,7 @@ export function BottleSettingsDialog({
   const [settings, setSettings] = useState(loadSettings);
   const own = settings.bottleConfig[bundle.id] ?? {};
   const [windows, setWindows] = useState(
-    (onServer ? undefined : own.windows) ?? bundle.windows ?? defaultWindowsFor(bundle));
+    (onServer ? undefined : own.windows) ?? bundle.windows ?? DEFAULT_WINDOWS);
   const [graphics, setGraphics] = useState(
     (onServer ? undefined : own.graphics) ?? bundle.graphics ?? "all");
   const [shaders, setShaders] = useState(
