@@ -19,6 +19,7 @@
 
 import { SORTS, isFilter } from "./api/libraryView.js";
 import { touchLayout } from "./engine/touch.js";
+import { storeOf } from "./stores/providers.js";
 
 const KEY = "bottlify.settings";
 
@@ -174,6 +175,17 @@ export const DEFAULT_SHADERS = "host";
 
 /** The Windows a bottle that names none runs as. */
 export const DEFAULT_WINDOWS = "win7";
+
+/**
+ * The Windows a bottle runs as when neither the person nor its manifest names
+ * one: a Steam game's is Windows 10, as Steam itself runs on 10 and later only
+ * and its games are built for that (a Unity player importing the Windows
+ * Runtime does not start on 7); any other's `DEFAULT_WINDOWS`.
+ *
+ * @param {Record<string, any>} bundle
+ */
+export const defaultWindowsFor = (bundle) => (storeOf(bundle) === "steam" ? "win10"
+  : DEFAULT_WINDOWS);
 
 /**
  * The machine a bottle runs on, by the engine's names: the one its
@@ -433,7 +445,7 @@ function bottleConfigOf(raw) {
 
 /**
  * What a bottle runs as, in `createApp`'s terms: the person's choice, else its
- * manifest's, else `DEFAULT_WINDOWS`; and the profile its video
+ * manifest's, else its default (`defaultWindowsFor`); and the profile its video
  * adapter is shown with, which falls back to `DEFAULT_SHADERS` instead.
  *
  * @param {RunSettings} settings
@@ -442,7 +454,7 @@ function bottleConfigOf(raw) {
  */
 export function bottleConfigFor(settings, bundle) {
   const own = settings.bottleConfig[bundle.id] ?? {};
-  const windows = own.windows ?? bundle.windows ?? DEFAULT_WINDOWS;
+  const windows = own.windows ?? bundle.windows ?? defaultWindowsFor(bundle);
   const graphics = own.graphics ?? bundle.graphics;
   const shaders = own.shaders ?? bundle.shaders ?? DEFAULT_SHADERS;
   return {

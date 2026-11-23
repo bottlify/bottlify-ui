@@ -260,7 +260,7 @@ test("an earlier launcher's file edits are kept by bundle until the patch takes 
 });
 
 test("a bottle's Windows and graphics are the person's, else its manifest's, else the defaults", async () => {
-  const { normalise, bottleConfigFor } = await fresh(10);
+  const { normalise, bottleConfigFor, defaultWindowsFor } = await fresh(10);
   const settings = normalise({
     bottleConfig: {
       benchmark: { windows: "win98", graphics: "directx7" },
@@ -282,6 +282,16 @@ test("a bottle's Windows and graphics are the person's, else its manifest's, els
     "the manifest's own when the person chose nothing");
   assert.deepEqual(bottleConfigFor(settings, { id: "plain" }), { windows: "win7", gpuProfile: "host", machine: "x86" },
     "Windows 7 and the browser's GPU unless a bottle chooses others");
+  // Steam runs on Windows 10 and later only, and its games are built for it:
+  // a Unity player that imports the Windows Runtime cannot start on 7.
+  assert.equal(bottleConfigFor(settings, { id: "steam-588430", store: { id: "steam", game: "588430" } })
+    .windows, "win10", "a Steam game's bottle is Windows 10 unless chosen otherwise");
+  assert.equal(bottleConfigFor(settings, { id: "steam-70", steam: { appId: 70 } }).windows, "win10",
+    "a Steam bottle installed before `store` was written too");
+  assert.equal(bottleConfigFor(settings, { id: "steam-70", windows: "winxp", steam: { appId: 70 } })
+    .windows, "winxp", "its manifest's own over the default");
+  assert.equal(defaultWindowsFor({ store: { id: "steam", game: "70" } }), "win10");
+  assert.equal(defaultWindowsFor({}), "win7");
   const chosen = normalise({ bottleConfig: { mine: { shaders: "sm1" }, junk: { shaders: "sm9" } } });
   assert.deepEqual(chosen.bottleConfig, { mine: { shaders: "sm1" } });
   assert.equal(bottleConfigFor(chosen, { id: "mine", shaders: "sm3" }).gpuProfile, "sm1",
