@@ -30,7 +30,7 @@ import { useT } from "../i18n.js";
 import { useSettings } from "../useSettings.js";
 import { INK } from "../theme.js";
 import { StatusLine } from "./GameGrid.jsx";
-import { Art, CloseButton, DialogHead, Icon, Segmented, useActionWidth } from "./kit.jsx";
+import { Art, CloseButton, DialogHead, Icon, Segmented, useEqualButtons } from "./kit.jsx";
 import { RateDialog } from "./Feedback.jsx";
 import { Confirm } from "./StorageSettings.jsx";
 import { installing } from "./Stores.jsx";
@@ -91,10 +91,9 @@ export function GameSheet({ item, stores, config, onClose, onPlay, onChanged, on
   const t = useT();
   const { developer, lastRun } = useSettings();
   const card = Boolean(item.store?.provider);
-  // The sheet's buttons share one width: the longest of the labels it shows.
-  const actionWidth = useActionWidth(card ? [t("button.install"), t("button.cancel")]
-    : [t("button.play"), t("button.settings"), t("button.rate"), t("button.delete")]);
-  const action = { width: actionWidth, px: 2 };
+  // The sheet's buttons share one width, the widest one's: again in another language, for
+  // another game, or as an install starts and ends.
+  const actions = useEqualButtons([t, item.id, developer, card, stores]);
   const [configuring, setConfiguring] = useState(false);
   const [rating, setRating] = useState(false);
   const [removing, setRemoving] = useState(false);
@@ -189,7 +188,7 @@ export function GameSheet({ item, stores, config, onClose, onPlay, onChanged, on
         </Typography>
       </Box>
 
-      <Box sx={{ px: { xs: 2.5, sm: 4.5 }, pt: 2, pb: 4.5 }}>
+      <Box ref={actions} sx={{ px: { xs: 2.5, sm: 4.5 }, pt: 2, pb: 4.5 }}>
         <Box sx={{ display: "flex", flexWrap: "wrap", gap: "10px 24px", color: "text.secondary", mt: 2, mb: 3,
           "& b": { color: "text.primary", fontWeight: 600 } }}>
           {facts.filter(Boolean).map((fact, at) => <Box component="span" key={at}>{fact}</Box>)}
@@ -201,13 +200,13 @@ export function GameSheet({ item, stores, config, onClose, onPlay, onChanged, on
         )}
 
         <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1.25,
-          "& > .MuiButton-root": action }}>
-          {card ? <StoreActions item={item} stores={stores} action={action} /> : (<>
-            <Button variant="contained" startIcon={<Icon name="play" />} onClick={() => onPlay(item)}>
+          "& > .MuiButton-root": { px: 2 } }}>
+          {card ? <StoreActions item={item} stores={stores} /> : (<>
+            <Button data-action variant="contained" startIcon={<Icon name="play" />} onClick={() => onPlay(item)}>
               {t("button.play")}
             </Button>
             {(own || developer) && (
-              <Button startIcon={<Icon name="gear" />} onClick={() => setConfiguring(true)}>
+              <Button data-action startIcon={<Icon name="gear" />} onClick={() => setConfiguring(true)}>
                 {t("button.settings")}
               </Button>
             )}
@@ -249,9 +248,9 @@ export function GameSheet({ item, stores, config, onClose, onPlay, onChanged, on
           </Box>
           {failure && <Alert severity="error" variant="outlined" sx={{ mt: 2 }}>{failure}</Alert>}
           <Box sx={{ display: "flex", justifyContent: "space-between", gap: 1.25, mt: 4.5, pt: 3,
-            borderTop: "1px solid", borderColor: "divider", "& .MuiButton-root": action }}>
-            <Button startIcon={<Icon name="star" />} onClick={() => setRating(true)}>{t("button.rate")}</Button>
-            <Button color="error" startIcon={<Icon name="cross" />} onClick={() => setRemoving(true)}>
+            borderTop: "1px solid", borderColor: "divider", "& .MuiButton-root": { px: 2 } }}>
+            <Button data-action startIcon={<Icon name="star" />} onClick={() => setRating(true)}>{t("button.rate")}</Button>
+            <Button data-action color="error" startIcon={<Icon name="cross" />} onClick={() => setRemoving(true)}>
               {t("button.delete")}
             </Button>
           </Box>
@@ -279,10 +278,9 @@ export function GameSheet({ item, stores, config, onClose, onPlay, onChanged, on
 /**
  * A store's game not installed here: Install, or the install's progress and Cancel.
  *
- * @param {{ item: any, stores: ReturnType<typeof import("./Stores.jsx").useStores>,
- *     action: { width: number, px: number } }} props  `action` the sheet's button size
+ * @param {{ item: any, stores: ReturnType<typeof import("./Stores.jsx").useStores> }} props
  */
-function StoreActions({ item, stores, action }) {
+function StoreActions({ item, stores }) {
   const t = useT();
   const { developer } = useSettings();
   const { provider, game } = item.store;
@@ -299,13 +297,13 @@ function StoreActions({ item, stores, action }) {
             {developer && job.message ? ` · ${job.message}` : ""}
           </Typography>
         </Box>
-        <Button sx={action} onClick={() => stores.cancel(provider, game)}>{t("button.cancel")}</Button>
+        <Button data-action sx={{ px: 2 }} onClick={() => stores.cancel(provider, game)}>{t("button.cancel")}</Button>
       </Box>
     );
   }
   return (<>
     <Button variant="contained" startIcon={<Icon name="download" />} disabled={!game.installable}
-      onClick={() => stores.install(provider, game)} sx={action}>
+      onClick={() => stores.install(provider, game)} data-action sx={{ px: 2 }}>
       {t("button.install")}
     </Button>
     {job?.state === "failed" && (

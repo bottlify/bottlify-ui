@@ -4,9 +4,9 @@
  * See LICENSE for details
  */
 
-import { useEffect, useState } from "react";
+import { useLayoutEffect, useRef } from "react";
 import { Box, IconButton, Switch, ToggleButton, ToggleButtonGroup, Typography } from "@mui/material";
-import { BODY_FONT, INK, STATUS_INK } from "../theme.js";
+import { INK, STATUS_INK } from "../theme.js";
 import { useArt } from "./useArt.js";
 
 /*
@@ -74,30 +74,31 @@ export function Icon({ name, size = 16 }) {
   );
 }
 
-/** Where a label is measured: one canvas for the page. @type {CanvasRenderingContext2D | null} */
-let measure = null;
-
 /**
- * The one width a row of buttons with an icon shares: its longest label as
- * this language writes it, the icon, the gap and a padding of 16 either
- * side. Measured again once the typeface has loaded.
+ * Buttons that share one width: the widest one's own, read from the buttons
+ * as drawn (each first at its natural width) and again once the typeface has
+ * loaded or what `deps` names changes - the language, which buttons show.
+ * The buttons are those under the returned ref marked `data-action`.
  *
- * @param {string[]} labels
- * @returns {number}
+ * @param {unknown[]} deps
+ * @returns {import("react").RefObject<HTMLElement | null>}
  */
-export function useActionWidth(labels) {
-  const [, loaded] = useState(0);
-  useEffect(() => {
+export function useEqualButtons(deps) {
+  const ref = useRef(/** @type {HTMLElement | null} */ (null));
+  useLayoutEffect(() => {
+    const fit = () => {
+      const buttons = /** @type {HTMLElement[]} */ ([...ref.current?.querySelectorAll("[data-action]") ?? []]);
+      for (const button of buttons) button.style.width = "";
+      const widest = Math.max(0, ...buttons.map((button) => button.getBoundingClientRect().width));
+      for (const button of buttons) button.style.width = `${Math.ceil(widest)}px`;
+    };
+    fit();
     let live = true;
-    document.fonts?.ready.then(() => live && loaded((n) => n + 1));
+    document.fonts?.ready.then(() => live && fit());
     return () => { live = false; };
-  }, []);
-  measure ??= document.createElement("canvas").getContext("2d");
-  if (!measure) return 0;
-  measure.font = `450 15px ${BODY_FONT}`;
-  const longest = Math.max(0, ...labels.map((label) => measure?.measureText(label).width ?? 0));
-  // Icon 16, gap 8, padding 16 twice, border 1 twice.
-  return Math.ceil(longest) + 16 + 8 + 32 + 2;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, deps);
+  return ref;
 }
 
 /** The plain cross a dialog or a sheet is closed with. @param {{ onClick: () => void, label: string }} props */
