@@ -4,8 +4,9 @@
  * See LICENSE for details
  */
 
+import { useEffect, useState } from "react";
 import { Box, IconButton, Switch, ToggleButton, ToggleButtonGroup, Typography } from "@mui/material";
-import { INK, STATUS_INK } from "../theme.js";
+import { BODY_FONT, INK, STATUS_INK } from "../theme.js";
 import { useArt } from "./useArt.js";
 
 /*
@@ -71,6 +72,32 @@ export function Icon({ name, size = 16 }) {
       {PATHS[name]}
     </Box>
   );
+}
+
+/** Where a label is measured: one canvas for the page. @type {CanvasRenderingContext2D | null} */
+let measure = null;
+
+/**
+ * The one width a row of buttons with an icon shares: its longest label as
+ * this language writes it, the icon, the gap and a padding of 16 either
+ * side. Measured again once the typeface has loaded.
+ *
+ * @param {string[]} labels
+ * @returns {number}
+ */
+export function useActionWidth(labels) {
+  const [, loaded] = useState(0);
+  useEffect(() => {
+    let live = true;
+    document.fonts?.ready.then(() => live && loaded((n) => n + 1));
+    return () => { live = false; };
+  }, []);
+  measure ??= document.createElement("canvas").getContext("2d");
+  if (!measure) return 0;
+  measure.font = `450 15px ${BODY_FONT}`;
+  const longest = Math.max(0, ...labels.map((label) => measure?.measureText(label).width ?? 0));
+  // Icon 16, gap 8, padding 16 twice, border 1 twice.
+  return Math.ceil(longest) + 16 + 8 + 32 + 2;
 }
 
 /** The plain cross a dialog or a sheet is closed with. @param {{ onClick: () => void, label: string }} props */

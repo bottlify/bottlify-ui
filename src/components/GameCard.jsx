@@ -27,7 +27,9 @@ export function GameCard({ item, note, onOpen }) {
         outlineOffset: "-1px" }}>
         <Art src={item.coverSmall ?? ""} fallback={item.coverFallback} title={item.title} ratio="2 / 3" />
       </Box>
-      <Typography sx={{ mt: 1.25, fontWeight: 600, lineHeight: 1.3, overflowWrap: "anywhere" }}>
+      {/* Two lines at most, the whole name on hover: a third would make the card taller than its row's. */}
+      <Typography title={item.title} sx={{ mt: 1.25, fontWeight: 600, lineHeight: 1.3, overflowWrap: "anywhere",
+        display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
         {item.title}
       </Typography>
       <Typography component="div" sx={{ fontSize: 13, color: "text.secondary" }}>{note}</Typography>
