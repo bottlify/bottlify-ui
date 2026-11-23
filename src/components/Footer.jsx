@@ -4,49 +4,38 @@
  * See LICENSE for details
  */
 
-import { Box, Divider, Link, Stack, Typography } from "@mui/material";
+import { Box, Link } from "@mui/material";
+import { useT } from "../i18n.js";
 
 const YEAR = new Date().getFullYear();
 
 /**
- * One line under every screen: the way to the credits, on the left; whose it
- * is, on the right, which leads to its source.
+ * One line under every page but a running game: the credits and the
+ * documentation on the left; whose it is, on the right, leading to its source.
  *
- * The credit to the projects Bottlify is built on is on the page the link
- * opens, with their licences, rather than one of them named in a line of its
- * own. A plain href, like the header's links: the app turns it into a history
- * entry, and a middle click still opens a tab.
+ * Plain hrefs: the app turns a same-origin one into a history entry, and a
+ * middle click still opens a tab. The documentation is a page the server hands
+ * out beside the app (`rel="external"`), which the app has no route for.
  */
 export function Footer() {
+  const t = useT();
+  const link = { color: "text.primary", textDecoration: "none", "&:hover": { textDecoration: "underline" } };
   return (
-    <Box component="footer" sx={{ mt: "auto" }}>
-      <Divider />
-      <Stack
-        direction="row"
-        justifyContent="space-between"
-        flexWrap="wrap"
-        gap={1}
-        sx={{ px: { xs: 3, md: 6 }, py: 2.5 }}
-      >
-        <Typography variant="body2" color="text.secondary">
-          <Link href="/license" underline="hover" sx={{ color: "text.primary" }}>
-            Credits &amp; licenses
-          </Link>
-        </Typography>
-        <Typography variant="body2" color="text.secondary">
-          © {YEAR}{" "}
-          <Link href="https://github.com/bottlify/bottlify" target="_blank" rel="noopener"
-            underline="hover" sx={{ color: "text.primary" }}>
-            Bottlify Project
-          </Link>
-          {" · "}
-          <Link href="https://github.com/bottlify/bottlify-ui" target="_blank" rel="noopener"
-            underline="hover" sx={{ color: "text.primary" }}>
-            Launcher source
-          </Link>
-        </Typography>
-      </Stack>
+    <Box component="footer" sx={{
+      mt: "auto", display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 1.25,
+      px: { xs: 2, md: 4.5 }, py: 2.25, borderTop: "1px solid", borderColor: "divider",
+      color: "text.secondary", fontSize: 14,
+    }}>
+      <Box sx={{ display: "flex", gap: 3 }}>
+        <Link href="/license" sx={link}>{t("footer.credits")}</Link>
+        <Link href="/docs/" rel="external" sx={link}>{t("footer.docs")}</Link>
+      </Box>
+      <Box component="span">
+        © {YEAR} Bottlify Project ·{" "}
+        <Link href="https://github.com/bottlify/bottlify" target="_blank" rel="noopener" sx={link}>
+          {t("footer.source")}
+        </Link>
+      </Box>
     </Box>
   );
 }
-

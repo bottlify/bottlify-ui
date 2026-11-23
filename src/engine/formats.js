@@ -23,21 +23,17 @@ export async function formatOf(file) {
 }
 
 /**
- * What the person is told about a file none of the kinds took. One named as a
- * disc image is one, just not of a disc Bottlify reads: the ISO 9660 file
- * system PC discs have is not on it -- a game console's disc, say -- and being
- * told .iso is taken would only contradict the name.
+ * Why a file none of the kinds took is refused, for the page to say in its
+ * language. One named as a disc image is one, just not of a disc Bottlify
+ * reads: the ISO 9660 file system PC discs have is not on it -- a game
+ * console's disc, say -- and being told .iso is taken would only contradict
+ * the name.
  *
  * @param {string} name
- * @returns {string}
+ * @returns {"not-a-pc-disc" | "unsupported"}
  */
-export function unsupportedNotice(name) {
-  if (/\.iso$/i.test(name)) {
-    return `${name} is not a disc Bottlify can read: it has no ISO 9660 file system, `
-      + "which PC discs have. It may be a game console's disc.";
-  }
-  return `${name}: unsupported format. Bottlify takes an installer (.exe), `
-    + "a zip, a disc image (.iso) or a bottle (.btl).";
+export function unsupportedReason(name) {
+  return /\.iso$/i.test(name) ? "not-a-pc-disc" : "unsupported";
 }
 
 /**

@@ -7,7 +7,8 @@
 import { Fragment } from "react";
 import { Box, Divider, Link, Typography } from "@mui/material";
 import notices from "virtual:notices";
-import { OWN_LICENSE_URL } from "../legal.js";
+import { LAUNCHER_CREDITS, OWN_LICENSE_URL } from "../legal.js";
+import { useT } from "../i18n.js";
 import { inlineOf, labelOf, parseNotices } from "../notices.js";
 
 // Read once, when the page is built: the engine's own file, so that what is
@@ -93,26 +94,41 @@ function NoticeBlock({ block, first }) {
  *     rights holder (`config.json`'s `takedownEmail`); none says nothing.
  */
 export function License({ takedownEmail = "" }) {
+  const t = useT();
   return (
     <Box component="main" sx={{ px: { xs: 3, md: 6 }, py: 4, maxWidth: 820, width: "100%", mx: "auto" }}>
-      <Link href="/" underline="hover" variant="body2"
-        sx={{ display: "inline-flex", alignItems: "center", gap: 0.75, mb: 2, color: "text.secondary" }}>
-        <span className="glyphicon glyphicon-chevron-left" style={{ fontSize: 11 }} />
-        Back
-      </Link>
-      <Typography variant="h4" component="h1" sx={{ fontWeight: 700, letterSpacing: "-0.02em" }}>
-        Credits &amp; licenses
+      <Typography variant="h4" component="h1" sx={{ fontWeight: 600 }}>
+        {t("license.title")}
       </Typography>
       <Typography color="text.secondary" sx={{ mt: 1.5, mb: 4 }}>
-        Bottlify is open source under the{" "}
+        {t("license.own")}{" "}
         <Link href={OWN_LICENSE_URL} target="_blank" rel="noreferrer" underline="hover">
           Mozilla Public License 2.0
         </Link>
-        . It stands on the work of others, and here is whose.
+        . {t("license.others")}
       </Typography>
 
-      <Typography variant="h5" component="h2" sx={{ mb: 2, fontWeight: 700 }}>
-        Third-party notices
+      <Typography variant="h5" component="h2" sx={{ mb: 2 }}>
+        {t("license.launcher")}
+      </Typography>
+      <Box component="ul" sx={{ m: 0, mb: 4, pl: 2.5 }}>
+        {LAUNCHER_CREDITS.map((credit) => (
+          <Typography key={credit.name} component="li" variant="body2" color="text.secondary" sx={{ mb: 0.75 }}>
+            <Box component="span" sx={{ color: "text.primary", fontWeight: 600 }}>{credit.name}: </Box>
+            {credit.by}, {credit.license}
+            {credit.text && (<>
+              {" ("}<Link href={credit.text} target="_blank" rel="external noreferrer" underline="hover">
+                {t("license.text")}</Link>{")"}
+            </>)}
+            {". "}
+            <Link href={credit.home} target="_blank" rel="noreferrer" underline="hover"
+              sx={{ wordBreak: "break-all" }}>{credit.home}</Link>
+          </Typography>
+        ))}
+      </Box>
+
+      <Typography variant="h5" component="h2" sx={{ mb: 2 }}>
+        {t("license.engine")}
       </Typography>
       {BLOCKS.map((block, at) => (
         <NoticeBlock key={at} block={block}
@@ -120,20 +136,15 @@ export function License({ takedownEmail = "" }) {
       ))}
 
       <Divider sx={{ mt: 4 }} />
-      <Typography variant="h6" component="h2" sx={{ mt: 3, mb: 1, fontWeight: 700 }}>
-        Games, covers and bundles
+      <Typography variant="h6" component="h2" sx={{ mt: 3, mb: 1 }}>
+        {t("license.games")}
       </Typography>
-      <Typography variant="body2" color="text.secondary">
-        The games in the library, their covers and their descriptions belong to their original
-        authors and rights holders. The library holds only demo versions that the rights holders
-        themselves distributed free of charge, and each entry names the year and the holder of the
-        rights. Bottlify claims no rights over them and sells nothing.
-      </Typography>
+      <Typography variant="body2" color="text.secondary">{t("license.gamesText")}</Typography>
       {takedownEmail && (
         <Typography variant="body2" color="text.secondary" sx={{ mt: 1.5 }}>
-          If you hold the rights to something here and it should not be here, write to{" "}
+          {t("license.takedown")}{" "}
           <Link href={`mailto:${takedownEmail}`} underline="hover">{takedownEmail}</Link>
-          {" "}and it will be taken down.
+          {t("license.takedownEnd")}
         </Typography>
       )}
     </Box>

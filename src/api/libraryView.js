@@ -4,76 +4,7 @@
  * See LICENSE for details
  */
 
-import { LABELS, STATUSES } from "./bundles.js";
 import { gameIdOf, storeOf } from "../stores/providers.js";
-
-/**
- * @typedef {{ key: string, title: string,
- *   options: { value: string, label: string }[],
- *   of: (bundle: import("./bundles.js").BundleManifest) => string[] }} FilterGroup
- */
-
-/** A store as a filter's value: `store:steam`. @param {string} id */
-const storeValue = (id) => `store:${id}`;
-
-/**
- * Where a bottle comes from: each store GameHub lists, or none of them. A
- * store's game counts as the store's whether installed or still only a card.
- *
- * @param {{ id: string, name: string }[]} stores
- * @returns {FilterGroup}
- */
-const sourceGroup = (stores) => ({
-  key: "source",
-  title: "Source",
-  options: [...stores.map(({ id, name }) => ({ value: storeValue(id), label: name })),
-    { value: "other", label: "Other" }],
-  of: (bundle) => {
-    const store = /** @type {any} */ (bundle).store?.provider ?? storeOf(bundle);
-    return [store ? storeValue(store) : "other"];
-  },
-});
-
-/**
- * What the library can be narrowed by, in groups: where a bottle comes from,
- * what kind of program it is (its kind and its labels), how far it was found
- * to run. `of` is what a bottle answers in that group.
- *
- * @param {{ id: string, name: string }[]} [stores]  The stores, which the sources name.
- * @returns {FilterGroup[]}
- */
-export const filterGroups = (stores = []) => [sourceGroup(stores), ...TAGS];
-
-/** @type {FilterGroup[]} */
-const TAGS = [
-  {
-    key: "kind",
-    title: "Kind",
-    options: [{ value: "game", label: "Game" }, { value: "application", label: "App" }, ...LABELS],
-    of: (bundle) => [bundle.kind, ...bundle.labels],
-  },
-  {
-    key: "status",
-    title: "Status",
-    options: [...STATUSES, { value: "unchecked", label: "Not checked" }],
-    of: (bundle) => [bundle.status ?? "unchecked"],
-  },
-];
-
-/** The groups with no store known yet. */
-export const FILTER_GROUPS = filterGroups();
-
-/** Every value a filter can hold but a store's, across the groups. */
-export const FILTERS = FILTER_GROUPS.flatMap((group) => group.options);
-
-/**
- * Whether a value is one a filter can hold: one of `FILTERS`, or a store's,
- * which GameHub names.
- *
- * @param {unknown} value
- */
-export const isFilter = (value) => typeof value === "string"
-  && (FILTERS.some((one) => one.value === value) || /^store:[a-z][a-z0-9]{0,31}$/.test(value));
 
 /**
  * The library with every store's games beside the bottles: a game not
@@ -108,59 +39,39 @@ export function withStoreGames(bundles, stores) {
       .map((game) => ({
         id: `${provider.id}:${game.id}`, title: game.name, version: "", labels: [], status: null,
         kind: "game", coverSmall: provider.getCover(game, "capsule"),
+        coverLarge: provider.getCover(game, "capsule"),
         coverFallback: provider.getCover(game, "header"),
+        wallpaper: provider.getCover(game, "hero"),
         store: { provider: provider.id, game },
       }))),
   ];
 }
 
-/** The orders the library can be put in. The first is how it opens. */
-export const SORTS = [
-  { value: "name", label: "Name A–Z" },
-  { value: "name-desc", label: "Name Z–A" },
-  { value: "year-desc", label: "Year, newest" },
-  { value: "year-asc", label: "Year, oldest" },
-];
-
 const byName = (a, b) => a.title.localeCompare(b.title, undefined, { numeric: true, sensitivity: "base" });
 
-// A bottle with no year goes last either way: it has no place on the line, and
-// putting it first would bury the ones that do.
-const byYear = (direction) => (a, b) => {
-  if (!a.year && !b.year) return byName(a, b);
-  if (!a.year) return 1;
-  if (!b.year) return -1;
-  return direction * (a.year - b.year) || byName(a, b);
-};
-
-const COMPARE = {
-  name: byName,
-  "name-desc": (a, b) => byName(b, a),
-  "year-desc": byYear(-1),
-  "year-asc": byYear(1),
-};
+/**
+ * What the library shows for a search: the titles that hold `query`, in any
+ * case, by name with numbers read as numbers. The list given is not reordered.
+ *
+ * @template {{ title: string }} T
+ * @param {T[]} items
+ * @param {string} query
+ * @returns {T[]}
+ */
+export function searchLibrary(items, query) {
+  const needle = query.trim().toLowerCase();
+  return items.filter((one) => needle === "" || one.title.toLowerCase().includes(needle)).sort(byName);
+}
 
 /**
- * What the library shows. The filters only ever add: within a group a bottle
- * shows when it answers any of the values checked there, across groups it has
- * to pass every group, and a group with nothing checked lets everything
- * through -- so with nothing checked at all the library is whole, and a
- * value added later cannot hide what nobody chose to hide. The search then keeps the
- * bottles whose title holds `query`. The result is in the order `sort` names.
+ * How far a bottle was found to run, as the library colours it: into its game
+ * and fine, into it with something wrong, or not into it; null while nobody
+ * has checked.
  *
- * @param {import("./bundles.js").BundleManifest[]} bundles
- * @param {{ query: string, filters: string[], sort: string, groups?: FilterGroup[] }} view
- *     `filters` the values checked; `groups` those offered (`filterGroups`).
- * @returns {import("./bundles.js").BundleManifest[]}
+ * @param {{ status?: string | null }} bundle
+ * @returns {"works" | "issues" | "fails" | null}
  */
-export function viewLibrary(bundles, { query, filters, sort, groups: offered = FILTER_GROUPS }) {
-  const needle = query.trim().toLowerCase();
-  const groups = offered
-    .map((group) => ({ of: group.of, checked: group.options.map((one) => one.value)
-      .filter((value) => filters.includes(value)) }))
-    .filter((group) => group.checked.length > 0);
-  return bundles
-    .filter((bundle) => (needle === "" || bundle.title.toLowerCase().includes(needle))
-      && groups.every((group) => group.of(bundle).some((value) => group.checked.includes(value))))
-    .sort(COMPARE[sort] ?? byName);
+export function statusOf(bundle) {
+  return { playable: "works", "start-only": "issues", "non-playable": "fails" }[bundle.status ?? ""]
+    ?? null;
 }

@@ -46,3 +46,10 @@ test("Steam's pictures are shown from Steam, GameHub opening them to the page", 
   assert.equal(describeBundle("x", { coverLarge: "https://example.com/apps/1/a.jpg" }).coverLarge,
     "https://example.com/apps/1/a.jpg", "another site's picture stays where it is");
 });
+
+test("a cover a person chose for a game of their own is the picture its manifest holds", () => {
+  const picture = "data:image/jpeg;base64,/9j/4AAQ";
+  const bottle = describeBundle("mine", { title: "Mine", coverLarge: picture, coverSmall: picture });
+  assert.equal(bottle.coverLarge, picture);
+  assert.equal(bottle.coverSmall, picture);
+});

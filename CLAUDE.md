@@ -11,7 +11,9 @@ Work is listed in `TODO.md`, a local file outside git (TODO and Done, a status o
 ## Layout
 
 - `src/` — the app. `App.jsx` routes; `components/` the screens (`Landing`, `GameGrid`,
-  `GameDetails`, `PlayScreen`, `InstallScreen`, `SettingsDrawer`, `PerfOverlay`, …);
+  `GameDetails` -- a game's sheet and its settings, `AddGame`, `PlayScreen`, `SettingsPanel`, and
+  `SettingsDrawer`, the engine's panel for developer mode), built from `components/kit.jsx`;
+  `i18n.js` every word a player reads, in Russian and English;
   `engine/session.js` starts a run through `@bottlify/core`'s `createApp`, `engine/overlay.js` and
   `engine/journal.js` read its diagnostics and journal; `api/` reads the bundle list and
   `public/config.json`.

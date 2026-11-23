@@ -10,8 +10,6 @@ import {
 } from "@mui/material";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FilesDialog } from "./FilesDialog.jsx";
-import { StorageSettings } from "./StorageSettings.jsx";
-import { NoGameHub, StoreAccount } from "./Stores.jsx";
 import { EDITABLE_TYPES } from "../api/config.js";
 import { mountOf } from "../engine/patches.js";
 import { bottleFiles, liveFiles } from "../engine/volumes.js";
@@ -80,8 +78,6 @@ const SECTIONS = [
   { key: "bottle", title: "Settings", says: "Logging, profiling, the quantum, the refresh rate" },
   { key: "logs", title: "Logs", says: "Everything the engine has said, as it says it" },
   { key: "files", title: "Files", says: "The bottle's volume, as the program sees it" },
-  { key: "storage", title: "Storage", says: "What each bottle keeps in this browser, and clearing it" },
-  { key: "accounts", title: "Game Accounts", says: "The stores you own games in, signed in here" },
 ];
 
 /** Said once per group rather than per control, where a group is all one answer. */
@@ -95,8 +91,10 @@ const NEXT_RUN = "Takes effect the next time a title starts.";
 const APPLIES_NEXT_START = "Applies to the next start.";
 
 /**
- * The panel behind the gear: a list of two sections, each of which takes over
- * the panel when it is pressed.
+ * The engine's own panel, for developer mode: its settings, its journal and the
+ * running bottle's files, each taking over the panel when it is pressed. Opened
+ * from Settings in the library and from the play screen's bar, where it sits
+ * beside the picture.
  *
  * The app is whatever engine is running right now, or null. It is read rather
  * than held: nothing here keeps a reference across a session, so a drawer left
@@ -123,13 +121,10 @@ const APPLIES_NEXT_START = "Applies to the next start.";
  * @param {import("../api/bundles.js").BundleManifest | null} [props.bundle]  Its
  *        manifest, for the files: where the game's directory is, and before a run
  *        what the game will see.
- * @param {ReturnType<typeof import("./Stores.jsx").useStores> | null} [props.stores]
- *        The game stores the library shows the games of; without them there is
- *        no Game Accounts section -- a running stage has no library to fill.
  */
 export function SettingsDrawer({
   open, onClose, app = null, running = false, facts = [], inline = false, start = null,
-  bundleId = "untitled", bundle = null, stores = null,
+  bundleId = "untitled", bundle = null,
 }) {
   const [section, setSection] = useState(start);
   // The one file editor: the running machine's volume while a title runs, what
@@ -141,7 +136,8 @@ export function SettingsDrawer({
   // without the panel being reopened.
   const [settings, setSettings] = useState(loadSettings);
   const change = useCallback((patch) => setSettings(saveSettings(patch)), []);
-  const sections = SECTIONS.filter((entry) => entry.key !== "accounts" || stores);
+  // The files are a bottle's: with none open there are none to show.
+  const sections = SECTIONS.filter((entry) => entry.key !== "files" || bundle);
   const here = sections.find((entry) => entry.key === section) ?? null;
 
   // Opening and closing put the panel back where it opens from, so reopening
@@ -195,14 +191,6 @@ export function SettingsDrawer({
       {section === "files" && files && (
         <FilesDialog title={bundle?.title ?? bundleId} files={files} editableTypes={EDITABLE_TYPES}
           onClose={() => setSection(null)} />
-      )}
-      {section === "storage" && <StorageSettings />}
-      {section === "accounts" && stores && (
-        <Stack gap={1.5} sx={{ p: 2, overflowY: "auto" }}>
-          {stores.gamehub === false ? <NoGameHub /> : stores.stores.map((store) => (
-            <StoreAccount key={store.provider.id} store={store} stores={stores} />
-          ))}
-        </Stack>
       )}
       {section === "files" && !files && (
         <Typography variant="body2" color="text.secondary" sx={{ p: 2 }}>

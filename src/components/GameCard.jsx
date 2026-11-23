@@ -4,152 +4,53 @@
  * See LICENSE for details
  */
 
-import { Box, Card, CardContent, CardMedia, Chip, Typography } from "@mui/material";
-import { LabelBadges, VersionBadge } from "./VersionBadge.jsx";
-import { useArt } from "./useArt.js";
+import { Box, ButtonBase, Typography } from "@mui/material";
+import { INK } from "../theme.js";
+import { Art } from "./kit.jsx";
 
 /**
- * One game in the library grid: cover (small) + title + version.
- *
- * The art is portrait, so the card can only be made to read less like a column
- * by giving it width and by keeping the text block from adding a fixed slab of
- * height underneath — which it does regardless of how wide the card gets, and
- * so weighs proportionally less the wider the card is.
+ * One game in the library: its cover, its name, and a line under it -- how it
+ * runs here, or what a store's game is. The whole of it opens the game.
  *
  * @param {Object} props
- * @param {import("../api/bundles.js").BundleManifest} props.bundle
- * @param {() => void} [props.onSelect]  Opening the card; a card without it is not opened.
- * @param {() => void} [props.onSettings]  The gear in the card's left corner: the
- *     bottle's settings, without opening the card.
- * @param {() => void} [props.onEdit]  The pencil in its right corner: the bottle's
- *     name, pictures and labels, as the card's details edit them.
- * @param {import("react").ReactNode} [props.footer]  What the card's foot adds -- a
- *     store's game not installed yet: its Install.
+ * @param {{ title: string, coverSmall?: string, coverFallback?: string }} props.item
+ * @param {import("react").ReactNode} props.note  The line under the name.
+ * @param {() => void} props.onOpen
  */
-export function GameCard({ bundle, onSelect, onSettings, onEdit, footer }) {
-  const small = useArt(bundle.coverSmall);
-  const fallback = useArt(bundle.coverFallback);
-  /**
-   * A round button in one of the card's top corners, which does its own thing
-   * and does not open the card.
-   *
-   * @param {"left" | "right"} side @param {string} label @param {string} glyph
-   * @param {() => void} action
-   */
-  const corner = (side, label, glyph, action) => (
-    <Box component="button" type="button" aria-label={label}
-      onClick={(/** @type {any} */ event) => {
-        event.stopPropagation();
-        action();
-      }}
-      sx={{
-        position: "absolute", top: 8, [side]: 8, zIndex: 1, width: 30, height: 30, p: 0,
-        border: 0, borderRadius: "50%", cursor: "pointer", display: "flex",
-        alignItems: "center", justifyContent: "center",
-        bgcolor: "rgba(16,17,19,0.8)", color: "text.primary",
-        "&:hover": { color: "primary.main" },
-      }}>
-      <span className={`glyphicon ${glyph}`} style={{ fontSize: 14 }} />
-    </Box>
-  );
-
+export function GameCard({ item, note, onOpen }) {
   return (
-    <Card
-      onClick={onSelect}
-      sx={{
-        position: "relative",
-        display: "flex",
-        // On a phone a row of the list: the cover on the left, the name whole beside it.
-        flexDirection: { xs: "row", sm: "column" },
-        cursor: onSelect ? "pointer" : "default",
-        border: "1px solid",
-        borderColor: "divider",
-        transition: "transform .2s, border-color .2s",
-        background: "background.paper",
-        "&:hover": onSelect ? { transform: "translateY(-4px)", borderColor: "primary.main" } : {},
-      }}
-    >
-      {onSettings && corner("left", "bottle settings", "glyphicon-cog", onSettings)}
-      {onEdit && corner("right", "edit bottle", "glyphicon-pencil", onEdit)}
-      {small ? (
-        <CardMedia
-          component="img"
-          image={small}
-          alt={bundle.title}
-          // Steam's and GOG's art from their CDNs, which answer any origin: asked
-          // with CORS, a cross-origin isolated page shows it without GameHub's headers.
-          {...(/^https:\/\/(shared\.steamstatic\.com|images(-\d+)?\.gog-statics\.com)\//.test(small)
-            ? { crossOrigin: "anonymous" } : {})}
-          // A store's game without a cover of its own shows the picture its
-          // store has of it instead (a Steam app's store header).
-          onError={(event) => {
-            const img = event.currentTarget;
-            if (fallback && img.src !== fallback) img.src = fallback;
-          }}
-          sx={{
-            // The art on disk is 3:4, so this crops nothing; it is declared so a
-            // cover of another shape is centred and trimmed rather than letting
-            // the card's height jump around the grid.
-            aspectRatio: "3 / 4",
-            width: { xs: 120, sm: "100%" },
-            flexShrink: 0,
-            objectFit: "cover",
-            objectPosition: "center",
-            bgcolor: "#101113",
-          }}
-        />
-      ) : (
-        // A bundle with no artwork yet: a fixed box where the cover would be,
-        // so the grid keeps its shape instead of a card collapsing around a
-        // broken image.
-        <Box
-          sx={{
-            aspectRatio: "3 / 4",
-            width: { xs: 120, sm: "100%" },
-            flexShrink: 0,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            bgcolor: "#101113",
-            color: "text.secondary",
-            opacity: 0.6,
-          }}
-        >
-          <span className="glyphicon glyphicon-picture" style={{ fontSize: 40 }} />
-        </Box>
-      )}
-      <CardContent sx={{ flex: 1, display: "flex", flexDirection: "column",
-        minWidth: 0, py: 1.25, px: { xs: 1.5, sm: 2 }, "&:last-child": { pb: 1.5 } }}>
-        {/* The title on its own line, the badges on the next: the name keeps
-            its width, the release reads on the left and the marks on the
-            right, as the build rather than as part of its name. */}
-        {/* At most two lines in the grid, four in a phone's row; the badges
-            keep to the card's foot, so they line up whatever the titles' lengths. */}
-        <Typography variant="subtitle1" title={bundle.title} sx={{
-          minWidth: 0, lineHeight: 1.3, overflow: "hidden",
-          display: "-webkit-box", WebkitBoxOrient: "vertical", WebkitLineClamp: { xs: 4, sm: 2 },
-          fontSize: { xs: "1.05rem", sm: "1rem" },
-          // Clear of the edit button, which sits over the text on a phone's row.
-          pr: { xs: onEdit ? 4 : 0, sm: 0 },
-        }}>
-          {bundle.title}
-        </Typography>
-        <Box sx={{ mt: "auto", pt: 1, display: "flex", alignItems: "center", gap: 0.5, minHeight: 20,
-          flexWrap: { xs: "wrap", sm: "nowrap" } }}>
-          <VersionBadge version={bundle.version} />
-          {bundle.local && (
-            <Chip label="LOCAL" size="small" color="info" variant="outlined"
-              title="Kept in this browser"
-              sx={{ height: 20, fontSize: 11, fontWeight: 700, letterSpacing: 0.5 }} />
-          )}
-          {/* Under the name on a phone's row, all to the left; to the right in the grid. */}
-          <Box sx={{ ml: { xs: 0, sm: "auto" }, display: "flex", flexWrap: "wrap", gap: 0.5,
-            justifyContent: { xs: "flex-start", sm: "flex-end" } }}>
-            <LabelBadges labels={bundle.status ? [...bundle.labels, bundle.status] : bundle.labels} />
-          </Box>
-        </Box>
-        {footer}
-      </CardContent>
-    </Card>
+    <ButtonBase onClick={onOpen} focusRipple sx={{
+      display: "block", textAlign: "left", borderRadius: "6px", width: "100%",
+      "&:hover .cover, &.Mui-focusVisible .cover": { outline: `2px solid ${INK.text}`, outlineOffset: 0 },
+    }}>
+      <Box className="cover" sx={{ borderRadius: "6px", overflow: "hidden", outline: `1px solid ${INK.line}`,
+        outlineOffset: "-1px" }}>
+        <Art src={item.coverSmall ?? ""} fallback={item.coverFallback} title={item.title} ratio="2 / 3" />
+      </Box>
+      <Typography sx={{ mt: 1.25, fontWeight: 600, lineHeight: 1.3, overflowWrap: "anywhere" }}>
+        {item.title}
+      </Typography>
+      <Typography component="div" sx={{ fontSize: 13, color: "text.secondary" }}>{note}</Typography>
+    </ButtonBase>
+  );
+}
+
+/**
+ * The last tile of the person's games: where a game of their own is added.
+ *
+ * @param {{ title: string, text: string, onAdd: () => void }} props
+ */
+export function AddTile({ title, text, onAdd }) {
+  return (
+    <ButtonBase onClick={onAdd} focusRipple sx={{
+      aspectRatio: "2 / 3", width: "100%", borderRadius: "6px", border: `1.5px dashed ${INK.line}`,
+      display: "grid", placeContent: "center", textAlign: "center", gap: 1.25, p: 2, color: "text.secondary",
+      "&:hover, &.Mui-focusVisible": { borderColor: INK.text },
+    }}>
+      <Typography component="strong" sx={{ color: "text.primary", fontSize: 16, fontWeight: 600 }}>
+        {title}
+      </Typography>
+      <Typography component="span" sx={{ fontSize: 13 }}>{text}</Typography>
+    </ButtonBase>
   );
 }

@@ -686,7 +686,7 @@ async function run({ bundle, media, canvas, report: show, silentInstall = false,
     })
     : null;
   const prefix = disc ?? (media ? prefixOptions(media) : null);
-  /** The machine an install runs on: the one chosen for it (`InstallScreen`), else x86. */
+  /** The machine an install runs on: the one chosen for it (`AddGame`), else x86. */
   const installMachine = media?.machine === "amd64" ? "amd64" : "x86";
   // An installer runs with its own windows on the canvas, the person clicking
   // through it as on a real machine. Its silent mode is for installs with no

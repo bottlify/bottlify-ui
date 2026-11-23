@@ -6,12 +6,14 @@
 
 import {
   Alert, Box, Breadcrumbs, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle,
-  IconButton, Link, List, ListItemButton, ListItemText, Menu, MenuItem, Stack, TextField,
+  Link, List, ListItemButton, ListItemText, Menu, MenuItem, Stack, TextField,
   Typography,
 } from "@mui/material";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { decodeText, encodeText } from "../engine/text.js";
 import { joinPath, parentOf } from "../engine/volumes.js";
+import { useT } from "../i18n.js";
+import { CloseButton } from "./kit.jsx";
 
 /** What a browser draws, by extension. */
 const IMAGES = new Map([
@@ -36,11 +38,12 @@ function sizeOf(bytes) {
 }
 
 /** Where a file comes from, as its chip says it; the bundle's own has none. */
+/** How a file differs from the bottle's own, by `files.state*` in the dictionary. */
 const STATES = {
-  saved: { label: "saved by the game", color: "default" },
-  changed: { label: "patched", color: "info" },
-  added: { label: "added", color: "success" },
-  deleted: { label: "deleted", color: "warning" },
+  saved: { color: "default" },
+  changed: { color: "info" },
+  added: { color: "success" },
+  deleted: { color: "warning" },
 };
 
 /** @typedef {import("../engine/volumes.js").VolumeFile} VolumeFile */
@@ -58,6 +61,7 @@ const STATES = {
  * @param {() => void} props.onClose
  */
 export function FilesDialog({ title, files, editableTypes, onClose }) {
+  const t = useT();
   const [dir, setDir] = useState(files.home);
   const [listing, setListing] = useState(
     /** @type {{ folders: string[], files: VolumeFile[] } | null} */ (null));
@@ -158,7 +162,7 @@ export function FilesDialog({ title, files, editableTypes, onClose }) {
   const makeFolder = (name) => act(async () => {
     setNaming(null);
     const clean = name.trim();
-    if (!clean || /[\\/:*?"<>|]/.test(clean)) throw new Error(`"${name}" is not a folder name`);
+    if (!clean || /[\\/:*?"<>|]/.test(clean)) throw new Error(t("files.badName", { name }));
     await files.createDirectory(joinPath(dir, clean));
     await refresh();
   });
@@ -179,10 +183,8 @@ export function FilesDialog({ title, files, editableTypes, onClose }) {
     <Dialog open fullWidth maxWidth="lg" onClose={busy ? undefined : onClose}
       PaperProps={{ sx: { height: "80vh" } }}>
       <DialogTitle sx={{ display: "flex", alignItems: "center", gap: 1, pr: 1 }}>
-        <Typography variant="h6" noWrap sx={{ flex: 1, minWidth: 0 }}>Files — {title}</Typography>
-        <IconButton aria-label="close" onClick={onClose} disabled={busy}>
-          <span className="glyphicon glyphicon-remove" />
-        </IconButton>
+        <Typography variant="h6" noWrap sx={{ flex: 1, minWidth: 0 }}>{t("files.title", { name: title })}</Typography>
+        {!busy && <CloseButton onClick={onClose} label={t("button.close")} />}
       </DialogTitle>
       <DialogContent dividers sx={{ display: "flex", p: 0, minHeight: 0 }}>
         <Box sx={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
@@ -196,7 +198,7 @@ export function FilesDialog({ title, files, editableTypes, onClose }) {
               ))}
             </Breadcrumbs>
             {naming !== null ? (
-              <TextField size="small" autoFocus placeholder="Folder name" value={naming}
+              <TextField size="small" autoFocus placeholder={t("files.folderName")} value={naming}
                 onChange={(event) => setNaming(event.target.value)}
                 onKeyDown={(event) => {
                   if (event.key === "Enter") void makeFolder(naming);
@@ -206,18 +208,18 @@ export function FilesDialog({ title, files, editableTypes, onClose }) {
             ) : (
               <Button size="small" variant="outlined" color="inherit" disabled={busy}
                 onClick={() => setNaming("")}>
-                New folder
+                {t("files.newFolder")}
               </Button>
             )}
             {/* Into the directory being looked at: an add-on is a folder of
                 its own under Interface\AddOns, and arrives as one. */}
             <Button size="small" variant="outlined" color="inherit" disabled={busy}
               onClick={() => filesInput.current?.click()}>
-              Add files
+              {t("files.addFiles")}
             </Button>
             <Button size="small" variant="outlined" color="inherit" disabled={busy}
               onClick={() => folderInput.current?.click()}>
-              Add folder
+              {t("files.addFolder")}
             </Button>
           </Stack>
           {failure && (
@@ -227,7 +229,7 @@ export function FilesDialog({ title, files, editableTypes, onClose }) {
           )}
           <List dense sx={{ flex: 1, overflowY: "auto", py: 0 }}>
             {listing === null && (
-              <Typography variant="body2" color="text.secondary" sx={{ p: 2 }}>Reading…</Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ p: 2 }}>{t("files.reading")}</Typography>
             )}
             {up !== null && (
               <ListItemButton onClick={() => go(up)}>
@@ -261,7 +263,7 @@ export function FilesDialog({ title, files, editableTypes, onClose }) {
                 />
                 {file.state !== "original" && (
                   <Chip size="small" variant="outlined" sx={{ mr: 1.5 }}
-                    label={STATES[file.state].label} color={/** @type {any} */ (STATES[file.state].color)} />
+                    label={t(`files.state.${file.state}`)} color={/** @type {any} */ (STATES[file.state].color)} />
                 )}
                 <Typography variant="caption" color="text.secondary" sx={{ minWidth: 72, textAlign: "right" }}>
                   {sizeOf(file.size)}
@@ -269,7 +271,7 @@ export function FilesDialog({ title, files, editableTypes, onClose }) {
               </ListItemButton>
             ))}
             {listing && listing.folders.length === 0 && listing.files.length === 0 && (
-              <Typography variant="body2" color="text.secondary" sx={{ p: 2 }}>Empty.</Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ p: 2 }}>{t("files.empty")}</Typography>
             )}
           </List>
         </Box>
@@ -287,13 +289,13 @@ export function FilesDialog({ title, files, editableTypes, onClose }) {
         {dir.toLowerCase() !== files.home.toLowerCase() && (
           <Button variant="text" color="inherit" onClick={() => go(files.home)} disabled={busy}
             sx={{ mr: "auto" }}>
-            The game&apos;s folder
+            {t("files.home")}
           </Button>
         )}
         {selected && !selected.folder && selected.state !== "deleted" && (
           <Button variant="outlined" color="inherit" onClick={download} disabled={busy}
             startIcon={<span className="glyphicon glyphicon-download-alt" />}>
-            Download
+            {t("files.download")}
           </Button>
         )}
       </DialogActions>
@@ -305,13 +307,13 @@ export function FilesDialog({ title, files, editableTypes, onClose }) {
             setMenu(null);
             go(selected.path);
           }}>
-            Open
+            {t("button.open")}
           </MenuItem>
         ) : [
-          <MenuItem key="edit" disabled={!editable} onClick={edit}>Edit</MenuItem>,
+          <MenuItem key="edit" disabled={!editable} onClick={edit}>{t("files.edit")}</MenuItem>,
           <MenuItem key="replace" disabled={selected?.state === "deleted"}
             onClick={() => { setMenu(null); replaceInput.current?.click(); }}>
-            Replace
+            {t("files.replace")}
           </MenuItem>,
         ]}
         {selected?.state !== "deleted" && (
@@ -322,7 +324,7 @@ export function FilesDialog({ title, files, editableTypes, onClose }) {
             await refresh();
             setSelected(null);
           })}>
-            Delete
+            {t("button.delete")}
           </MenuItem>
         )}
         {files.revert && selected && !selected.folder && (selected.state === "changed" || selected.state === "deleted" || selected.bundled) && (
@@ -333,7 +335,7 @@ export function FilesDialog({ title, files, editableTypes, onClose }) {
             setSelected(null);
             setPreview(null);
           })}>
-            {selected.state === "deleted" ? "Restore" : "Restore the bottle's own"}
+            {selected.state === "deleted" ? t("files.restore") : t("files.restoreOwn")}
           </MenuItem>
         )}
       </Menu>
@@ -387,6 +389,7 @@ export function FilesDialog({ title, files, editableTypes, onClose }) {
  * @param {() => void} props.onClose
  */
 function FileEditor({ path, initial, onSave, onClose }) {
+  const t = useT();
   const [text, setText] = useState(initial);
   const [saving, setSaving] = useState(false);
   const [failure, setFailure] = useState(/** @type {string | null} */ (null));
@@ -395,9 +398,7 @@ function FileEditor({ path, initial, onSave, onClose }) {
       PaperProps={{ sx: { height: "80vh" } }}>
       <DialogTitle sx={{ display: "flex", alignItems: "center", gap: 1, pr: 1 }}>
         <Typography noWrap sx={{ flex: 1, minWidth: 0, fontFamily: "monospace" }}>{path}</Typography>
-        <IconButton aria-label="close" onClick={onClose} disabled={saving}>
-          <span className="glyphicon glyphicon-remove" />
-        </IconButton>
+        {!saving && <CloseButton onClick={onClose} label={t("button.close")} />}
       </DialogTitle>
       <DialogContent dividers sx={{ p: 0, display: "flex", flexDirection: "column" }}>
         {failure && <Alert severity="error" variant="outlined" sx={{ m: 1 }}>{failure}</Alert>}
@@ -421,7 +422,7 @@ function FileEditor({ path, initial, onSave, onClose }) {
             setSaving(false);
           }
         }}>
-          Save
+          {t("button.save")}
         </Button>
       </DialogActions>
     </Dialog>

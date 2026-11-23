@@ -17,7 +17,6 @@
  * -- except the display, which follows the screen this page is on.
  */
 
-import { SORTS, isFilter } from "./api/libraryView.js";
 import { touchLayout } from "./engine/touch.js";
 
 const KEY = "bottlify.settings";
@@ -76,10 +75,14 @@ const SCREEN = Object.freeze({ width: 1024, height: 768, bitsPerPixel: 32 });
  *                                  person who never asked for it should pay
  *                                  nothing for it.
  * @property {boolean} profileCalls Whether every host call is timed as its own phase (next run)
- * @property {string[]} libraryFilters The library's filter values checked
- *                                  (`FILTERS`). They only add, so none checked is
- *                                  the whole library, which is how it opens.
- * @property {string} librarySort   The order the library is in (`SORTS` value).
+ * @property {"ru" | "en" | ""} language The interface's language as the header's switch
+ *                                  chose it; empty until it is used, the browser's own then.
+ * @property {boolean} developer    Developer mode: the engine's settings, its journal, the fps
+ *                                  meter and every bottle's own settings, which a player never needs.
+ * @property {boolean} pauseWhenHidden Pause a running game while the page is in the
+ *                                  background, and resume it when the page returns.
+ * @property {Record<string, number>} lastRun When each bottle last started, by its id, in
+ *                                  milliseconds since the epoch.
  * @property {Record<string, Record<string, string>>} bottleFiles
  *                                  The person's own edits to a title's files, by
  *                                  bundle id and then by path under the title's
@@ -272,8 +275,12 @@ export const DEFAULTS = Object.freeze({
   logShaders: false,
   overlayOn: false,
   profileCalls: false,
-  libraryFilters: [],
-  librarySort: SORTS[0].value,
+  language: "",
+  developer: false,
+  // Off unless chosen: a game paused behind another tab drops its connection to
+  // a server, and an install stops where it was.
+  pauseWhenHidden: false,
+  lastRun: {},
   bottleFiles: {},
   bottleConfig: {},
   // The most of each machine's first: reserved, not committed, so it costs what
@@ -385,16 +392,10 @@ export function normalise(raw) {
     logShaders: flag(source.logShaders, DEFAULTS.logShaders),
     overlayOn: flag(source.overlayOn, DEFAULTS.overlayOn),
     profileCalls: flag(source.profileCalls, DEFAULTS.profileCalls),
-    // Only values the library knows: one it has since dropped would narrow it
-    // behind a chip nobody can see to clear. The tags stored before
-    // (`libraryTags`) said what to hide rather than what to show, so they are
-    // not carried over -- read as filters they would hide all but the default
-    // "Game" -- and the library opens whole.
-    libraryFilters: Array.isArray(source.libraryFilters)
-      ? [...new Set(source.libraryFilters.filter(isFilter))]
-      : [],
-    librarySort: SORTS.some((one) => one.value === source.librarySort)
-      ? source.librarySort : DEFAULTS.librarySort,
+    language: LANGUAGES.includes(source.language) ? source.language : DEFAULTS.language,
+    developer: flag(source.developer, DEFAULTS.developer),
+    pauseWhenHidden: flag(source.pauseWhenHidden, DEFAULTS.pauseWhenHidden),
+    lastRun: lastRunOf(source.lastRun),
     bottleFiles: bottleFilesOf(source.bottleFiles),
     bottleConfig: bottleConfigOf(source.bottleConfig),
     memory: offered(source.memory, "x86") ? source.memory : DEFAULTS.memory,
@@ -402,6 +403,25 @@ export function normalise(raw) {
     display: DISPLAY_CHOICES.some((one) => one.value === source.display)
       ? source.display : DEFAULTS.display,
   };
+}
+
+/** The interface's languages, by the code the header's switch keeps. */
+export const LANGUAGES = ["ru", "en"];
+
+/**
+ * Only a bottle id mapping to a moment survives the read.
+ *
+ * @param {unknown} raw
+ * @returns {Record<string, number>}
+ */
+function lastRunOf(raw) {
+  /** @type {Record<string, number>} */
+  const out = {};
+  if (!raw || typeof raw !== "object") return out;
+  for (const [id, when] of Object.entries(raw)) {
+    if (Number.isFinite(when) && when > 0) out[id] = when;
+  }
+  return out;
 }
 
 /**

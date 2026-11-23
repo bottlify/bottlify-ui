@@ -134,44 +134,37 @@ test("a saved setting is what the next visit reads back", async () => {
   delete globalThis.localStorage;
 });
 
-test("the library opens whole, and what is checked after is kept", async () => {
+test("the language is the one the switch chose, or none until it is used", async () => {
   const { normalise, DEFAULTS, saveSettings } = await fresh(30);
-  assert.deepEqual(DEFAULTS.libraryFilters, []);
-  assert.equal(DEFAULTS.librarySort, "name");
-  assert.deepEqual(normalise({}).libraryFilters, []);
-  // Values the library does not have, repeats and a wrong shape are not passed on.
-  assert.deepEqual(normalise({ libraryFilters: ["test", "nonsense", "test", 7, "store:steam", "steam"] })
-    .libraryFilters, ["test", "store:steam"]);
-  assert.deepEqual(normalise({ libraryFilters: "demo" }).libraryFilters, []);
-  assert.equal(normalise({ librarySort: "random" }).librarySort, "name");
+  assert.equal(DEFAULTS.language, "");
+  assert.equal(normalise({ language: "ru" }).language, "ru");
+  assert.equal(normalise({ language: "de" }).language, "", "a language the interface lacks is none");
 
   const store = {};
   globalThis.localStorage = /** @type {any} */ (fakeStorage(store));
-  saveSettings({ libraryFilters: ["demo", "playable"], librarySort: "year-desc" });
+  saveSettings({ language: "en", developer: true });
   const next = await fresh(31);
-  assert.deepEqual(next.loadSettings().libraryFilters, ["demo", "playable"]);
-  assert.equal(next.loadSettings().librarySort, "year-desc");
+  assert.equal(next.loadSettings().language, "en");
+  assert.equal(next.loadSettings().developer, true);
   delete globalThis.localStorage;
 });
 
-test("the tags a browser kept before the filters are dropped, and the library opens whole", async () => {
-  // The old shape: what was on, with games-and-demos the default. Read as
-  // filters it would hide every application and benchmark.
-  const old = {
-    libraryTags: ["game", "demo", "playable", "start-only", "non-playable", "unchecked"],
-    libraryTagsKnown: ["game", "application", "demo", "benchmark", "test", "unchecked"],
-    librarySort: "year-asc",
-  };
-  const store = { "bottlify.settings": JSON.stringify(old) };
-  globalThis.localStorage = /** @type {any} */ (fakeStorage(store));
-  const { loadSettings, saveSettings } = await fresh(32);
-  assert.deepEqual(loadSettings().libraryFilters, []);
-  assert.equal(loadSettings().librarySort, "year-asc", "the order is the same setting and is kept");
-  saveSettings({ maxFps: 30 });
-  const written = JSON.parse(store["bottlify.settings"]);
-  assert.equal("libraryTags" in written, false);
-  assert.equal("libraryTagsKnown" in written, false);
-  delete globalThis.localStorage;
+test("developer mode and pausing behind another tab are off until chosen", async () => {
+  const { normalise } = await fresh(32);
+  assert.equal(normalise({}).developer, false);
+  assert.equal(normalise({}).pauseWhenHidden, false);
+  assert.equal(normalise({ developer: "yes" }).developer, false);
+  assert.equal(normalise({ pauseWhenHidden: true }).pauseWhenHidden, true);
+});
+
+test("a bottle's last start is kept only as a moment, and the filters kept before are dropped", async () => {
+  const { normalise } = await fresh(33);
+  assert.deepEqual(normalise({ lastRun: { a: 1700000000000, b: "yesterday", c: -1, d: null } }).lastRun,
+    { a: 1700000000000 });
+  assert.deepEqual(normalise({ lastRun: "now" }).lastRun, {});
+  const read = normalise({ libraryFilters: ["demo"], librarySort: "year-desc" });
+  assert.equal("libraryFilters" in read, false);
+  assert.equal("librarySort" in read, false);
 });
 
 test("a browser that keeps nothing still launches", async () => {

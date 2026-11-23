@@ -6,6 +6,7 @@
 
 import { Box } from "@mui/material";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useT } from "../i18n.js";
 import {
   OPACITIES, SIZES, TAP_MS, TAP_SLOP, createLook, createTouchpad, frameScale, keyChanges, keyTap,
   stickAxes, stickKeys, stickVector, tapEvents,
@@ -76,6 +77,7 @@ const holdEvent = (hold, down) => ({ ...hold, down });
  * @param {TouchKeyboard} props.keyboard  The engine's on-screen keyboard.
  */
 export function TouchControls({ send, layout, onLayout, canvas, frame, keyboard }) {
+  const t = useT();
   const [shown, setShown] = useState(true);
   const [setting, setSetting] = useState(false);
   const active = shown && layout.controls !== "off";
@@ -120,6 +122,7 @@ export function TouchControls({ send, layout, onLayout, canvas, frame, keyboard 
               gridTemplateColumns: `repeat(2, ${unit * (layout.controls === "mouse" ? 1.6 : 1.3)}px)` }}>
               {(BUTTONS[layout.controls] ?? BUTTONS.keys).map((button) => (
                 <HoldButton key={button.label} button={button} emit={emit}
+                  word={WORDS.includes(button.label) ? t(`touch.${button.label.toLowerCase()}`) : button.label}
                   unit={layout.controls === "mouse" ? unit * 0.75 : unit} />
               ))}
             </Box>
@@ -133,7 +136,7 @@ export function TouchControls({ send, layout, onLayout, canvas, frame, keyboard 
         {active && <TapButton label="Enter" unit={unit} onTap={() => keyTap("Enter").forEach(emit)} />}
         {active && <KeyboardButton unit={unit} keyboard={keyboard} />}
         {layout.controls !== "off" && (
-          <TapButton label={shown ? "Hide" : "Show"} unit={unit} onTap={() => setShown((on) => !on)} />
+          <TapButton label={shown ? t("touch.hide") : t("touch.show")} control={shown ? "Hide" : "Show"} unit={unit} onTap={() => setShown((on) => !on)} />
         )}
       </Box>
       {/* The gear alone in the other corner, away from the keys a game is played with. */}
@@ -222,7 +225,7 @@ function Stick({ emit, mode, move, size, side }) {
  *
  * @param {{ button: any, emit: (event: any) => void, unit: number }} props
  */
-function HoldButton({ button, emit, unit }) {
+function HoldButton({ button, emit, unit, word = button.label }) {
   const pointer = useRef(-1);
   const [down, setDown] = useState(false);
   const press = (event) => {
@@ -257,7 +260,7 @@ function HoldButton({ button, emit, unit }) {
         border: "2px solid rgba(255,255,255,0.4)",
         bgcolor: down ? "rgba(255,255,255,0.35)" : "rgba(0,0,0,0.25)",
         pointerEvents: "auto", touchAction: "none" }}>
-      {button.label}
+      {word}
     </Box>
   );
 }
@@ -297,6 +300,7 @@ function TapButton({ label, unit, onTap, control = label, on = false, disabled =
  * @param {{ emit: (event: any) => void, scale: () => { x: number, y: number }, unit: number }} props
  */
 function Touchpad({ emit, scale, unit }) {
+  const t = useT();
   const pad = useRef(createTouchpad());
   // A button held for a drag goes up when the pad goes away.
   useEffect(() => () => pad.current.cancel().forEach(emit), [emit]);
@@ -316,16 +320,16 @@ function Touchpad({ emit, scale, unit }) {
         display: "flex", alignItems: "flex-end", justifyContent: "center", pb: `${unit * 0.1}px`,
         color: "rgba(255,255,255,0.4)", fontSize: unit * 0.2, fontWeight: 700,
         pointerEvents: "auto", touchAction: "none" }}>
-      Mouse
+      {t("touch.mouse")}
     </Box>
   );
 }
 
 /** What the controls can be, as the settings over the game name them. */
-const CONTROL_CHOICES = [
-  { value: "keys", label: "Keys" }, { value: "mouse", label: "Mouse" },
-  { value: "pad", label: "Gamepad" }, { value: "off", label: "Off" },
-];
+const CONTROL_CHOICES = ["keys", "mouse", "pad", "off"];
+
+/** The hold buttons whose label is a word, said in the page's language; the rest are keys' names. */
+const WORDS = ["Fire", "Jump", "Crouch", "Next"];
 
 /**
  * The controls' settings, over the game: what they are -- a stick and buttons
@@ -340,6 +344,7 @@ const CONTROL_CHOICES = [
  *     onLayout: (patch: object) => void, unit: number, onClose: () => void }} props
  */
 function TouchSettings({ layout, onLayout, unit, onClose }) {
+  const t = useT();
   const stick = layout.controls !== "off";
   const row = (/** @type {string} */ name, /** @type {React.ReactNode} */ choices) => (
     <Box sx={{ display: "flex", alignItems: "center", gap: `${unit * 0.15}px`, flexWrap: "wrap" }}>
@@ -354,34 +359,35 @@ function TouchSettings({ layout, onLayout, unit, onClose }) {
       bgcolor: "rgba(20,21,23,0.94)", border: "1px solid rgba(255,255,255,0.2)",
       maxWidth: "calc(100% - 24px)", maxHeight: "calc(100% - 24px)", overflow: "auto",
       pointerEvents: "auto", touchAction: "manipulation" }}>
-      {row("Controls", CONTROL_CHOICES.map((choice) => (
-        <TapButton key={choice.value} label={choice.label} control={`controls-${choice.value}`} unit={unit}
-          on={layout.controls === choice.value} onTap={() => onLayout({ controls: choice.value })} />
+      {row(t("gameSettings.touch"), CONTROL_CHOICES.map((choice) => (
+        <TapButton key={choice} label={t(`touch.${choice}`)} control={`controls-${choice}`} unit={unit}
+          on={layout.controls === choice} onTap={() => onLayout({ controls: choice })} />
       )))}
-      {row("Stick keys", [["wasd", "W A S D"], ["arrows", "Arrows"]].map(([value, label]) => (
+      {row(t("gameSettings.stickKeys"), [["wasd", "W A S D"], ["arrows", t("touch.arrows")]].map(([value, label]) => (
         <TapButton key={value} label={label} control={`move-${value}`} unit={unit}
           disabled={layout.controls !== "keys" && layout.controls !== "mouse"}
           on={layout.move === value} onTap={() => onLayout({ move: value })} />
       )))}
-      {row("Stick", [["right", "Left"], ["left", "Right"]].map(([hand, label]) => (
-        <TapButton key={hand} label={label} control={`stick-${label.toLowerCase()}`} unit={unit}
+      {row(t("gameSettings.stickHand"), [["right", "left", t("touch.leftThumb")],
+        ["left", "right", t("touch.rightThumb")]].map(([hand, side, label]) => (
+        <TapButton key={hand} label={label} control={`stick-${side}`} unit={unit}
           disabled={!stick} on={layout.hand === hand} onTap={() => onLayout({ hand })} />
       )))}
-      {row("Size", SIZES.map((size, index) => (
-        <TapButton key={size} label={["Small", "Medium", "Large"][index]} control={`size-${size}`}
+      {row(t("gameSettings.size"), SIZES.map((size, index) => (
+        <TapButton key={size} label={t(["touch.small", "touch.medium", "touch.large"][index])} control={`size-${size}`}
           unit={unit} disabled={!stick} on={layout.size === size} onTap={() => onLayout({ size })} />
       )))}
-      {row("Cursor", [["program", "Game's"], ["always", "Always"]].map(([value, label]) => (
+      {row(t("touch.cursor"), [["program", t("touch.cursorGame")], ["always", t("touch.cursorAlways")]].map(([value, label]) => (
         <TapButton key={value} label={label} control={`cursor-${value}`} unit={unit}
           on={layout.cursor === value} onTap={() => onLayout({ cursor: value })} />
       )))}
-      {row("Opacity", OPACITIES.map((opacity) => (
+      {row(t("touch.opacity"), OPACITIES.map((opacity) => (
         <TapButton key={opacity} label={`${Math.round(opacity * 100)}%`} control={`opacity-${opacity}`}
           unit={unit} disabled={!stick} on={layout.opacity === opacity}
           onTap={() => onLayout({ opacity })} />
       )))}
       <Box sx={{ display: "flex", justifyContent: "flex-end" }}>
-        <TapButton label="Done" unit={unit} onTap={onClose} />
+        <TapButton label={t("touch.done")} control="Done" unit={unit} onTap={onClose} />
       </Box>
     </Box>
   );
@@ -395,8 +401,9 @@ function TouchSettings({ layout, onLayout, unit, onClose }) {
  * @param {{ unit: number, keyboard: TouchKeyboard }} props
  */
 function KeyboardButton({ unit, keyboard }) {
+  const t = useT();
   return (
-    <TapButton label="Keys" unit={unit} onTap={() => {
+    <TapButton label={t("touch.keyboard")} control="Keys" unit={unit} onTap={() => {
       if (keyboard.shown()) keyboard.hide();
       else keyboard.show();
     }} />

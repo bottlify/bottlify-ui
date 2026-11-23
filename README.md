@@ -35,15 +35,14 @@ port, so a launcher moved to another port or from https to http starts empty.
 ## Configure
 
 `public/config.json` is read at run time and is absent by default; without it the page offers the
-library and nothing else. `public/config.example.json` shows the fields:
+library and a person's own games, which stay in their browser. `public/config.example.json` shows
+the fields:
 
 | Field | What it turns on |
 |---|---|
-| `allowInstall` | installing a program from a setup, a disc image or an archive, and importing a `.btl` |
 | `networking` | the network relay beside the page (`/networking/`, `/relay`) |
-| `libraryTags` | filtering the library by kind, labels and status |
 | `preloadBottles` | offering to download a bottle whole before it starts |
-| `server` | the bottle server (`url`, `token`) that keeps bottles for everyone who opens the library |
+| `server` | the bottle server (`url`, `token`) that keeps bottles for everyone who opens the library; developer mode describes and removes its bottles |
 | `editableTypes` | the file extensions the file explorer opens in its editor |
 | `cork` | translator settings laid over every run |
 

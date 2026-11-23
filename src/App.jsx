@@ -4,69 +4,51 @@
  * See LICENSE for details
  */
 
-import { Alert, Box, CircularProgress, Typography } from "@mui/material";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Alert, Box, CircularProgress, Snackbar, Typography } from "@mui/material";
+import { useCallback, useEffect, useState } from "react";
 import { getAvailableBundles, getUnlistedBundle } from "./api/bundles.js";
-import { importBottle } from "./engine/bottles.js";
 import { opensAsPage } from "./engine/bookmark.js";
-import { formatOf, unsupportedNotice } from "./engine/formats.js";
 import { residency } from "./engine/btl.js";
 import { webgpuStatus } from "./engine/webgpu.js";
-import { DownloadDialog } from "./components/DownloadDialog.jsx";
 import { getConfig } from "./api/config.js";
-import { readFile } from "./api/readFile.js";
-import {
-  archiveDisc, isDiscImage, isZipArchive, readZip, storageHeadroom,
-} from "@bottlify/installer";
-import { ArchiveDialog } from "./components/ArchiveDialog.jsx";
-import { AddDialog } from "./components/AddDialog.jsx";
+import { gameIdOf, storeOf } from "./stores/providers.js";
+import { useT } from "./i18n.js";
+import { AddGame } from "./components/AddGame.jsx";
 import { AppHeader } from "./components/AppHeader.jsx";
+import { DownloadDialog } from "./components/DownloadDialog.jsx";
 import { Footer } from "./components/Footer.jsx";
-import { InstallScreen } from "./components/InstallScreen.jsx";
 import { GameHubNeeded, StoreSignIn, useStores } from "./components/Stores.jsx";
 import { Landing } from "./components/Landing.jsx";
 import { License } from "./components/License.jsx";
-import { BottleSettingsDialog, GameDetails } from "./components/GameDetails.jsx";
+import { GameSheet } from "./components/GameDetails.jsx";
 import { GameGrid } from "./components/GameGrid.jsx";
 import { PlayScreen } from "./components/PlayScreen.jsx";
-import { ReadingDialog } from "./components/ReadingDialog.jsx";
 import { SettingsDrawer } from "./components/SettingsDrawer.jsx";
+import { SettingsPanel } from "./components/SettingsPanel.jsx";
 
 /**
- * The mini library:
- *  - home grid of games from the local bundles;
- *  - click → details panel slides in over the blurred grid;
- *  - Play → fullscreen stage with a top header (settings / pause / close).
- *
- * Adding a title by running its installer is a developer feature and appears
- * only where the configuration turns it on. Absent, nothing about it is here.
+ * The launcher: the front page, the library, a game's sheet over the library,
+ * and a run, which is a page of its own.
  */
 export default function App() {
-  const [bundles, setBundles] = useState([]);
-  const [error, setError] = useState(null);
-  const [selected, setSelected] = useState(null);
+  const t = useT();
+  const [bundles, setBundles] = useState(/** @type {any[]} */ ([]));
+  const [loaded, setLoaded] = useState(false);
+  const [error, setError] = useState(/** @type {string | null} */ (null));
+  // A bottle, or a store's game not installed, opened from the library.
+  const [selected, setSelected] = useState(/** @type {any} */ (null));
   // Whether a game can start here at all: asked before the library fills.
-  const [gpu, setGpu] = useState(null);
+  const [gpu, setGpu] = useState(/** @type {{ ok: boolean, reason?: string } | null} */ (null));
   useEffect(() => {
     webgpuStatus().then(setGpu);
   }, []);
-  const [config, setConfig] = useState(null);
-  const [media, setMedia] = useState(null);
-  // An unpacked archive waiting for the person to pick the program it starts.
-  const [archive, setArchive] = useState(null);
-  const [notice, setNotice] = useState(null);
-  // Open or not, or the section it opens onto.
-  const [settings, setSettings] = useState(/** @type {boolean | string} */ (false));
-  // The bottle a card's gear opened the settings of, or its pencil the
-  // name and pictures of.
-  const [editingBundle, setEditingBundle] = useState(
-    /** @type {{ bundle: any, mode: "machine" | "describe" } | null} */ (null));
-  const chooser = useRef(null);
+  const [config, setConfig] = useState(/** @type {import("./api/config.js").AppConfig | null} */ (null));
+  const [query, setQuery] = useState("");
+  // The settings panel's section while it is open.
+  const [settingsTab, setSettingsTab] = useState(/** @type {string | null} */ (null));
+  const [engineOpen, setEngineOpen] = useState(false);
   const [adding, setAdding] = useState(false);
-  // Add's choice: a file, or a store's game, signed in to under Game Accounts.
-  // The file being looked at and read, and the way to stop that.
-  const [reading, setReading] = useState(null);
-  const readingAbort = useRef(null);
+  const [notice, setNotice] = useState(/** @type {string | null} */ (null));
   // A few pages only, so the path is routing enough: no dependency, and the back
   // button and a copied address keep working. Links stay plain anchors; one
   // listener turns a same-origin click into a history entry instead of a load.
@@ -81,8 +63,8 @@ export default function App() {
 
   useEffect(() => {
     const onPop = () => setPath(window.location.pathname);
-    const onClick = (event) => {
-      const anchor = event.target.closest?.("a[href]");
+    const onClick = (/** @type {MouseEvent} */ event) => {
+      const anchor = /** @type {HTMLAnchorElement | null} */ (/** @type {Element} */ (event.target).closest?.("a[href]"));
       // `rel="external"`: a page the server hands out beside the app (the docs),
       // which the app has no route for.
       if (!anchor || anchor.target || anchor.origin !== window.location.origin
@@ -100,15 +82,16 @@ export default function App() {
     };
   }, []);
 
-  // Raised by every bottle saved, so the library lists it at once -- the
-  // server's and this browser's alike -- without a reload.
+  // Raised by every bottle added or removed, so the library lists it at once.
   const [libraryRevision, setLibraryRevision] = useState(0);
   const libraryChanged = useCallback(() => setLibraryRevision((n) => n + 1), []);
   useEffect(() => {
     let cancelled = false;
     getAvailableBundles()
       .then((list) => {
-        if (!cancelled) setBundles(list);
+        if (cancelled) return;
+        setBundles(list);
+        setLoaded(true);
       })
       .catch((err) => {
         if (!cancelled) setError(err.message);
@@ -152,21 +135,21 @@ export default function App() {
     else navigate(to);
   };
   /** A bottle not here whole, and how much of it is: Download or Play anyway. */
-  const [asking, setAsking] = useState(null);
-  const handlePlay = async () => {
-    if (!selected) return;
+  const [asking, setAsking] = useState(/** @type {any} */ (null));
+  /** @param {any} bundle */
+  const handlePlay = async (bundle) => {
     // Where a download is offered, a bottle kept in this browser is here whole
     // already; one from the server is asked about unless every block of it is
     // here. Not knowing -- no origin storage, an index that would not come --
     // is no reason to keep the person from playing.
-    if (config?.preloadBottles && !selected.local) {
-      const held = await residency(selected).catch(() => null);
+    if (config?.preloadBottles && !bundle.local) {
+      const held = await residency(bundle).catch(() => null);
       if (held && held.residentBytes < held.bytes) {
-        setAsking({ bundle: selected, held });
+        setAsking({ bundle, held });
         return;
       }
     }
-    play(selected);
+    play(bundle);
   };
   const handleClosePlay = () => {
     if (playBundle && opensAsPage(playBundle)) {
@@ -177,150 +160,65 @@ export default function App() {
     setSelected(null);
   };
 
-  /**
-   * The chosen file. An installer is read whole: the guest opens it, so it has
-   * to be bytes. A disc image -- told apart by its contents, the volume
-   * descriptor every ISO 9660 image has -- is not read at all here: the engine
-   * mounts the file itself as a drive and reads it a range at a time.
-   */
-  const handleChosen = (event) => {
-    const file = event.target.files?.[0];
-    // Cleared so choosing the same file twice still fires a change.
-    event.target.value = "";
-    if (file) openFile(file);
-  };
-  /** @param {File} file  Chosen in the picker or dropped on Add. */
-  const openFile = async (file) => {
-    // Up before anything is awaited: the checks and the read below take
-    // seconds for a large file, and nothing on the page may stay unchanged
-    // through them.
-    const attempt = new AbortController();
-    readingAbort.current = attempt;
-    setNotice(null);
-    setReading({ name: file.name, size: file.size, read: null });
-    try {
-      const disc = await isDiscImage(file).catch(() => false);
-      // Four kinds are taken, each told by its own bytes rather than its name:
-      // a disc image, a zip, a program, a bottle. Anything else -- another
-      // archive format among them -- is said to be unsupported up front, not
-      // started as a program and failed.
-      const kind = disc ? "iso" : await formatOf(file);
-      if (kind === null) {
-        setNotice(unsupportedNotice(file.name));
-        return;
-      }
-      // A bottle made elsewhere: kept in this browser as it is.
-      if (kind === "btl") {
-        const { manifest } = await importBottle(file, (read, size) =>
-          setReading({ name: file.name, size, read }));
-        setNotice(`${manifest.title} is in the library, kept in this browser.`);
-        setLibraryRevision((n) => n + 1);
-        return;
-      }
-
-      // What an install will need is unknowable; that it needs at least the size
-      // of its own distribution is not, so that much is checked while it is still
-      // a question rather than at ninety per cent of the way through.
-      const room = await storageHeadroom();
-      if (room && room.available < file.size) {
-        setNotice(`${file.name} is ${(file.size / (1 << 20)).toFixed(0)} MB and this origin has `
-          + `${(room.available / (1 << 20)).toFixed(0)} MB left, which is not enough to hold `
-          + (disc ? "what an install from it writes." : "the distribution, let alone what it installs."));
-        return;
-      }
-      if (disc) {
-        setMedia({ name: file.name, disc: file });
-        return;
-      }
-      // An archive is the disc it stands in for, once unpacked; which of its
-      // programs to start is asked, since it has no autorun.inf to say.
-      if (await isZipArchive(file).catch(() => false)) {
-        const entries = await readZip(file, (done, total) =>
-          setReading({ name: file.name, size: total, read: done, files: true }));
-        // Unpacking cannot be stopped part way; a cancel drops what it made.
-        if (!attempt.signal.aborted) setArchive({ name: file.name, entries });
-        return;
-      }
-      setReading({ name: file.name, size: file.size, read: 0 });
-      const bytes = await readFile(
-        file,
-        (read) => setReading({ name: file.name, size: file.size, read }),
-        { signal: attempt.signal },
-      );
-      setMedia({ name: file.name, bytes });
-    } catch (e) {
-      // Cancelled by the person: nothing to say. Anything else is said.
-      if (e?.name !== "AbortError") setNotice(`${file.name} could not be read: ${e?.message ?? e}`);
-    } finally {
-      setReading(null);
-    }
-  };
-
-  const blurred = selected !== null || playing || media !== null;
   const inLibrary = path.startsWith("/library");
   const inLicense = path.startsWith("/license");
-  // A run covers the whole window; the library under it is not drawn at all,
-  // or it is still there to scroll beneath the stage.
-  const covered = playing || media !== null;
-  const editable = Boolean(config?.allowInstall && config?.upload);
+  // A store's game opened before its install: once installed, the sheet is its bottle's.
+  const opened = selected?.store?.provider
+    ? bundles.find((one) => storeOf(one) === selected.store.provider
+      && gameIdOf(one) === selected.store.game.id) ?? selected
+    : selected && (bundles.find((one) => one.id === selected.id) ?? null);
   /** @param {import("./api/bundles.js").BundleManifest} saved */
-  const changed = (saved) => {
-    setBundles((list) => list.map((one) => (one.id === saved.id ? saved : one)));
-    setSelected((now) => (now?.id === saved.id ? saved : now));
-  };
-  /** @param {string} id */
-  const deleted = (id) => {
-    setBundles((list) => list.filter((one) => one.id !== id));
-    setSelected((now) => (now?.id === id ? null : now));
-  };
+  const changed = (saved) => setBundles((list) => list.map((one) => (one.id === saved.id ? saved : one)));
+  const openSettings = (/** @type {string} */ tab) => setSettingsTab(tab);
+  const gamehubLink = typeof (/** @type {any} */ (config))?.gamehubUrl === "string"
+    ? /** @type {any} */ (config).gamehubUrl : null;
 
   return (
     <Box sx={{ minHeight: "100vh", display: "flex", flexDirection: "column" }}>
-      {!covered && (<>
-        {/* Adding and settings are about runs, so they exist only where a run
-          can be started; on the front page they would be controls over
-          nothing. */}
+      {!playing && (<>
         <AppHeader
-          onAdd={inLibrary && config?.allowInstall ? () => setAdding(true) : null}
-          onSettings={inLibrary ? () => setSettings(true) : null}
-          onStorage={inLibrary ? () => setSettings("storage") : null}
-        />
-        {config?.allowInstall && (
-          <Box
-            component="input"
-            type="file"
-            // What can be installed or opened: a setup, a disc image, an
-            // archive, a bottle. The rest is not offered in the picker at all.
-            accept=".exe,.iso,.zip,.btl"
-            ref={chooser}
-            onChange={handleChosen}
-            sx={{ display: "none" }}
-          />
-        )}
+          query={inLibrary ? query : null}
+          onQuery={setQuery}
+          settingsOpen={settingsTab !== null}
+          onSettings={() => setSettingsTab((open) => (open === null ? "general" : null))}
+        >
+          {settingsTab !== null && (
+            <SettingsPanel tab={settingsTab} onTab={setSettingsTab} onClose={() => setSettingsTab(null)}
+              stores={stores} library={bundles} onLibraryChanged={libraryChanged} gamehubLink={gamehubLink}
+              onEngine={() => {
+                setSettingsTab(null);
+                setEngineOpen(true);
+              }} />
+          )}
+        </AppHeader>
 
-        {notice && (
-          <Alert severity="warning" variant="outlined" sx={{ mx: 4, mt: 2 }}
-            onClose={() => setNotice(null)}>
-            {notice}
+        {inLicense ? (
+          <License takedownEmail={config?.takedownEmail} />
+        ) : !inLibrary ? (
+          <Landing />
+        ) : gpu === null ? (
+          <Box sx={{ p: 4, display: "flex", justifyContent: "center", flex: 1 }}>
+            <CircularProgress />
+          </Box>
+        ) : !gpu.ok ? (
+          <Alert severity="error" variant="outlined" sx={{ m: 4 }}>
+            {t("app.noWebgpu")}
           </Alert>
+        ) : error ? (
+          <Typography color="error" sx={{ p: 4 }}>{t("app.libraryFailed", { reason: error })}</Typography>
+        ) : !loaded ? (
+          <Box sx={{ p: 4, display: "flex", justifyContent: "center", flex: 1 }}>
+            <CircularProgress />
+          </Box>
+        ) : (
+          <GameGrid bundles={bundles} stores={stores} query={query}
+            blurred={opened !== null || adding || asking !== null}
+            onOpen={setSelected} onAdd={() => setAdding(true)} />
         )}
 
-        {adding && (
-          <AddDialog
-            onChoose={() => {
-              setAdding(false);
-              chooser.current?.click();
-            }}
-            onDrop={(file) => {
-              setAdding(false);
-              openFile(file);
-            }}
-            onAccounts={() => {
-              setAdding(false);
-              setSettings("accounts");
-            }}
-            onClose={() => setAdding(false)}
-          />
+        {opened && (
+          <GameSheet item={opened} stores={stores} config={config} onClose={() => setSelected(null)}
+            onPlay={handlePlay} onChanged={changed} onLibraryChanged={libraryChanged} />
         )}
 
         {asking && (
@@ -339,88 +237,36 @@ export default function App() {
           />
         )}
 
-        {inLicense ? (
-          <License takedownEmail={config?.takedownEmail} />
-        ) : !inLibrary ? (
-          <Landing />
-        ) : gpu === null ? (
-          <Box sx={{ p: 4, display: "flex", justifyContent: "center" }}>
-            <CircularProgress />
-          </Box>
-        ) : !gpu.ok ? (
-          <Alert severity="error" variant="outlined" sx={{ m: 4 }}>
-            {gpu.reason} Bottlify draws everything through WebGPU, so no game will start in this
-            browser. Use a current Chrome or Edge with hardware acceleration on.
-          </Alert>
-        ) : error ? (
-          <Typography color="error" sx={{ p: 4 }}>
-          Could not load the library: {error}
-          </Typography>
-        ) : bundles.length === 0 ? (
-          <Box sx={{ p: 4, display: "flex", justifyContent: "center" }}>
-            <CircularProgress />
-          </Box>
-        ) : (
-          <GameGrid
-            bundles={bundles}
-            blurred={blurred}
-            onSelect={setSelected}
-            onSettings={(bundle) => setEditingBundle({ bundle, mode: "machine" })}
-            onEdit={(bundle) => setEditingBundle({ bundle, mode: "describe" })}
-            editable={editable}
-            tagged={config?.libraryTags === true}
-            stores={stores}
-          />
+        {adding && (
+          <AddGame onClose={() => setAdding(false)} onAdded={(title) => {
+            setAdding(false);
+            setNotice(t("add.added", { name: title }));
+            libraryChanged();
+          }} />
         )}
 
-        {selected && !playing && (
-          <GameDetails
-            bundle={selected}
-            onClose={() => setSelected(null)}
-            onPlay={handlePlay}
-            editable={editable}
-            upload={config?.upload ?? null}
-            onChanged={changed}
-            onDeleted={deleted}
-            editableTypes={config?.editableTypes}
-          />
-        )}
+        {/* Developer mode: the engine's own settings and journal. With no run
+          the journal says so rather than showing an empty one; a running game
+          has the panel beside its picture instead. */}
+        <SettingsDrawer open={engineOpen} onClose={() => setEngineOpen(false)} />
 
-        {editingBundle && (
-          <BottleSettingsDialog
-            bundle={editingBundle.bundle}
-            mode={editingBundle.mode}
-            editable={editable && Boolean(config?.upload)}
-            upload={config?.upload ?? null}
-            onSaved={changed}
-            onDeleted={deleted}
-            onClose={() => setEditingBundle(null)}
-          />
-        )}
-
-        {/* Opened from the library, where no engine exists yet: the Logs section
-          says so rather than showing an empty journal. The running one has a
-          gear of its own, because the stage covers this header. */}
-        <SettingsDrawer
-          open={settings !== false}
-          start={typeof settings === "string" ? settings : null}
-          onClose={() => setSettings(false)}
-          facts={[{ label: "Library", value: `${bundles.length} title${bundles.length === 1 ? "" : "s"}` }]}
-          stores={stores}
-        />
-
-        {/* Install pressed on a store's card signed out: its sign-in, then the
+        {/* Install pressed on a store's game signed out: its sign-in, then the
           library's cards are read again; or, without GameHub, the extension first. */}
         {stores.signInFor && (stores.signInFor.available
           ? <StoreSignIn provider={stores.signInFor.provider} onSignedIn={stores.signInDone}
             onClose={stores.closeSignIn} />
-          : <GameHubNeeded provider={stores.signInFor.provider}
-            link={typeof config?.gamehubUrl === "string" ? config.gamehubUrl : null}
+          : <GameHubNeeded provider={stores.signInFor.provider} link={gamehubLink}
             onAccounts={() => {
               stores.closeSignIn();
-              setSettings("accounts");
+              setSelected(null);
+              openSettings("accounts");
             }}
             onClose={stores.closeSignIn} />)}
+
+        <Snackbar open={notice !== null} autoHideDuration={4000} onClose={() => setNotice(null)}
+          anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
+          message={notice} slotProps={{ content: { sx: { bgcolor: "text.primary", color: "background.default",
+            fontWeight: 600, fontSize: 15 } } }} />
 
         <Footer />
       </>)}
@@ -428,62 +274,13 @@ export default function App() {
       {playBundle && <PlayScreen key={playBundle.id} bundle={playBundle} onClose={handleClosePlay} />}
       {playing && !playBundle && (
         <Box sx={{ p: 4, display: "flex", justifyContent: "center" }}>
-          {unlisted?.id === playId && (error || bundles.length > 0) ? (
+          {unlisted?.id === playId && (error || loaded) ? (
             <Typography color="error">
-              No bottle {playId} in the library. <a href="/library">Back to the library</a>
+              {t("app.notFound")} <a href="/library">{t("app.backToLibrary")}</a>
             </Typography>
           ) : <CircularProgress />}
         </Box>
       )}
-
-      {reading && (
-        <ReadingDialog reading={reading} onCancel={() => readingAbort.current?.abort()} />
-      )}
-
-      {archive && (
-        <ArchiveDialog
-          name={archive.name}
-          entries={archive.entries}
-          onInstall={(entry) => {
-            // The program by its path on the disc the archive becomes.
-            setMedia({ ...archiveDisc(archive.name, archive.entries, entry),
-              unpacked: archive.entries });
-            setArchive(null);
-          }}
-          onSave={(entry) => {
-            setMedia({ name: archive.name, prefix: archivePrefix(archive.entries, entry) });
-            setArchive(null);
-          }}
-          onClose={() => setArchive(null)}
-        />
-      )}
-
-      {media && (
-        <InstallScreen
-          media={media}
-          upload={config?.upload ?? null}
-          onSaved={() => setLibraryRevision((n) => n + 1)}
-          onClose={() => setMedia(null)}
-        />
-      )}
     </Box>
   );
 }
-
-/**
- * An archive kept as it stands, for a game shipped unpacked: its tree is the
- * bottle, under the directory a bottle's files live in, and the program picked
- * out of it is the entry point.
- *
- * @param {import("@bottlify/installer").ArchiveEntry[]} entries
- * @param {string} entry
- */
-function archivePrefix(entries, entry) {
-  return {
-    root: "C:\\App",
-    files: entries.filter((one) => one.bytes !== null).map(({ path, bytes }) => ({ path, bytes })),
-    outside: [],
-    entry,
-  };
-}
-

@@ -5,83 +5,85 @@
  */
 
 import {
-  Box, Button, ClickAwayListener, IconButton, Link, Paper, Popper, Slider, Stack, Tooltip, Typography,
+  Box, ClickAwayListener, IconButton, InputBase, Link, Paper, Popper, Slider, Tooltip,
 } from "@mui/material";
-import { useEffect, useRef, useState } from "react";
-import { CHANGED, loadSettings, saveSettings } from "../settings.js";
-import { SpaceIndicator } from "./StorageSettings.jsx";
+import { useRef, useState } from "react";
+import logo from "../assets/logo.svg";
+import { useT } from "../i18n.js";
+import { saveSettings } from "../settings.js";
+import { useSettings } from "../useSettings.js";
+import { INK, LOGO_FONT } from "../theme.js";
+import { Icon, Segmented } from "./kit.jsx";
 
 /**
- * The bar carried by both the landing page and the library.
+ * The bar over every page but a running game: the name leading home, the
+ * search where there is a library to search, the language, and the one way to
+ * the settings. The settings hang from it (`children`), so the bar is what they
+ * are placed against.
  *
- * Navigation is plain hrefs rather than callbacks so the header stays
- * ignorant of who renders it, and so a link is still a link: middle-click,
- * copy address and the back button all behave.
+ * Navigation is a plain href, so a link is still a link: middle-click, copy
+ * address and the back button all behave.
  *
  * @param {Object} props
- * @param {(() => void) | null} [props.onAdd]  Absent means the button is not there
- *        at all -- installing is configuration, not a disabled control.
- * @param {(() => void) | null} [props.onSettings]  Absent likewise: the settings
- *        are about runs, and belong only where a run can be started.
- * @param {(() => void) | null} [props.onStorage]  Absent likewise: the room this
- *        site has left, which opens what each bottle keeps here.
+ * @param {string | null} [props.query]  The library's search; null where there is none.
+ * @param {(query: string) => void} [props.onQuery]
+ * @param {boolean} props.settingsOpen
+ * @param {() => void} props.onSettings
+ * @param {import("react").ReactNode} [props.children]  What hangs from the bar.
  */
-export function AppHeader({ onAdd, onSettings, onStorage }) {
+export function AppHeader({ query = null, onQuery, settingsOpen, onSettings, children }) {
+  const t = useT();
   return (
     <Box
       component="header"
       sx={{
-        position: "sticky",
-        top: 0,
-        zIndex: 10,
-        px: { xs: 2.5, md: 6 },
-        py: 1.5,
-        display: "flex",
-        alignItems: "center",
-        gap: 2,
-        borderBottom: "1px solid",
-        borderColor: "divider",
-        // The grid scrolls under the bar, so it needs a ground of its own.
-        bgcolor: "rgba(30,32,34,0.82)",
-        backdropFilter: "blur(12px)",
+        position: "sticky", top: 0, zIndex: 10,
+        display: "flex", alignItems: "center", gap: { xs: 1.5, md: 3 },
+        px: { xs: 2, md: 4.5 }, py: 2,
+        borderBottom: "1px solid", borderColor: "divider", bgcolor: INK.ground,
       }}
     >
-      <Link
-        href="/"
-        underline="none"
-        sx={{ display: "flex", alignItems: "center", gap: "4px", color: "text.primary" }}
-      >
-        <img src="/favicon.svg" alt="" width={34} height={34} style={{ objectFit: "contain" }} />
-        <Typography variant="h6" sx={{ fontWeight: 700, letterSpacing: "-0.02em" }}>
+      <Link href="/" underline="none" aria-label={t("header.home")}
+        sx={{ display: "inline-flex", alignItems: "center", gap: 1.25, color: "text.primary", flex: "none" }}>
+        <img src={logo} alt="" width={30} height={30} />
+        <Box component="span" sx={{ font: `700 21px/1 ${LOGO_FONT}`, letterSpacing: "-0.02em",
+          display: { xs: "none", sm: "inline" } }}>
           Bottlify
-        </Typography>
+        </Box>
       </Link>
 
-      <Stack direction="row" spacing={1} sx={{ ml: "auto" }} alignItems="center">
-        <Button size="small" href="/docs/" rel="external" sx={{ color: "text.primary" }}>
-          Docs
-        </Button>
-        {onStorage && <SpaceIndicator onOpen={onStorage} />}
-        {onAdd && (
-          <Button
-            size="small"
-            variant="outlined"
-            onClick={onAdd}
-            startIcon={<span className="glyphicon glyphicon-plus" />}
-            sx={{ color: "text.primary" }}
-          >
-            Add
-          </Button>
-        )}
-        {onSettings && (
-          <Tooltip title="Settings">
-            <IconButton size="small" aria-label="settings" onClick={onSettings}>
-              <span className="glyphicon glyphicon-cog" />
-            </IconButton>
-          </Tooltip>
-        )}
-      </Stack>
+      {query !== null && (
+        <InputBase
+          value={query}
+          onChange={(event) => onQuery?.(event.target.value)}
+          placeholder={t("header.search")}
+          inputProps={{ "aria-label": t("header.search"), type: "search" }}
+          sx={{ flex: 1, maxWidth: 420, minWidth: 0, height: 44, px: 1.75, borderRadius: "9px",
+            border: "1px solid", borderColor: "divider", bgcolor: INK.surface, fontSize: 15 }}
+        />
+      )}
+
+      <Box sx={{ ml: "auto", display: "flex", alignItems: "center", gap: { xs: 1, md: 1.5 } }}>
+        <LanguageSwitch />
+        <IconButton aria-label={t("header.settings")} aria-expanded={settingsOpen} onClick={onSettings}
+          data-settings-toggle
+          sx={{ border: "1px solid", borderColor: settingsOpen ? "text.primary" : "divider",
+            bgcolor: settingsOpen ? INK.raised : "transparent" }}>
+          <Icon name="gear" size={20} />
+        </IconButton>
+      </Box>
+      {children}
     </Box>
+  );
+}
+
+/** RU or EN, kept for the next visit; the interface follows at once. */
+function LanguageSwitch() {
+  const t = useT();
+  return (
+    <Segmented value={t.lang} label={t("header.language")}
+      options={[{ value: "ru", label: "RU" }, { value: "en", label: "EN" }]}
+      onChange={(language) => saveSettings({ language })} />
   );
 }
 
@@ -95,51 +97,36 @@ export function AppHeader({ onAdd, onSettings, onStorage }) {
  *
  * Muting is its own flag rather than a volume of zero, so the slider comes
  * back to wherever it was left rather than to silence.
+ *
+ * @param {{ sx?: import("@mui/material").SxProps }} props
  */
-export function VolumeControl() {
-  const [settings, setSettings] = useState(loadSettings);
+export function VolumeControl({ sx = {} }) {
+  const t = useT();
+  const settings = useSettings();
   const [open, setOpen] = useState(false);
   const anchor = useRef(null);
-  const change = (patch) => setSettings(saveSettings(patch));
-  useEffect(() => {
-    const sync = () => setSettings(loadSettings());
-    window.addEventListener(CHANGED, sync);
-    return () => window.removeEventListener(CHANGED, sync);
-  }, []);
   const silent = settings.muted || settings.volume === 0;
+  const label = !open ? t("play.volume") : settings.muted ? t("play.unmute") : t("play.mute");
 
   return (
     <ClickAwayListener onClickAway={() => setOpen(false)}>
       <Box ref={anchor} sx={{ display: "inline-flex" }}>
-        {/* Beside the button and never in the way: under it is where the
-            slider opens, and a tip there takes the pointer off it. */}
-        <Tooltip title={!open ? "Volume" : settings.muted ? "Unmute" : "Mute"} placement="left"
-          disableInteractive>
-          <IconButton
-            size="small"
-            aria-label={!open ? "volume" : settings.muted ? "unmute" : "mute"}
-            onClick={() => (open ? change({ muted: !settings.muted }) : setOpen(true))}
-            sx={{ color: "text.primary" }}
-          >
-            <span
-              className={`glyphicon glyphicon-volume-${
-                silent ? "off" : settings.volume < 0.5 ? "down" : "up"}`}
-            />
+        <Tooltip title={label} disableInteractive>
+          <IconButton aria-label={label} sx={sx}
+            onClick={() => (open ? saveSettings({ muted: !settings.muted }) : setOpen(true))}>
+            <Icon name={silent ? "mute" : "sound"} size={18} />
           </IconButton>
         </Tooltip>
-        {/* Kept inside the box the click-away watches, and above the stage
-            the transport row sits over. */}
-        <Popper open={open} anchorEl={anchor.current} placement="bottom" disablePortal
-          sx={{ zIndex: 10 }}>
+        <Popper open={open} anchorEl={anchor.current} placement="bottom" disablePortal sx={{ zIndex: 10 }}>
           <Paper variant="outlined" sx={{ mt: 1, px: 2, py: 1, width: 160 }}>
             <Slider
               size="small"
-              aria-label="volume"
+              aria-label={t("play.volume")}
               min={0}
               max={1}
               step={0.01}
               value={settings.muted ? 0 : settings.volume}
-              onChange={(_event, value) => change({ volume: value, muted: false })}
+              onChange={(_event, value) => saveSettings({ volume: /** @type {number} */ (value), muted: false })}
               sx={{ color: "text.primary", display: "block" }}
             />
           </Paper>

@@ -6,7 +6,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { formatOf, likelyProgram, unsupportedNotice } from "./formats.js";
+import { formatOf, likelyProgram, unsupportedReason } from "./formats.js";
 
 test("a chosen file is told by its first bytes, and anything else is unsupported", async () => {
   const of = (/** @type {number[]} */ bytes) => formatOf(new Blob([Uint8Array.from(bytes)]));
@@ -19,8 +19,8 @@ test("a chosen file is told by its first bytes, and anything else is unsupported
 });
 
 test("a disc image none of the kinds took is said to be no PC disc, not an unsupported format", () => {
-  assert.match(unsupportedNotice("Preview Disc.ISO"), /^Preview Disc\.ISO is not a disc .* no ISO 9660/);
-  assert.match(unsupportedNotice("game.rar"), /^game\.rar: unsupported format\./);
+  assert.equal(unsupportedReason("Preview Disc.ISO"), "not-a-pc-disc");
+  assert.equal(unsupportedReason("game.rar"), "unsupported");
 });
 
 test("an archive's setup.exe, or its only program, is chosen for the person", () => {

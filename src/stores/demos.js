@@ -35,7 +35,8 @@ export const STEAM_DEMOS = Object.freeze([
  * @returns {import("./providers.js").StoreGame[]}
  */
 export const steamDemoGames = () => STEAM_DEMOS.map(({ id, name, game }) => ({
-  id, name, bytes: 0, exact: false, installable: true, demo: true,
+  // A free game is its own game; a demo is of another.
+  id, name, bytes: 0, exact: false, installable: true, demo: true, free: id === game,
   covers: { header: `${ART}/${id}/header.jpg`, capsule: `${ART}/${game}/library_600x900.jpg`,
     hero: `${ART}/${game}/library_hero.jpg` },
 }));

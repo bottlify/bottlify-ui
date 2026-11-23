@@ -1,7 +1,5 @@
 {
-  "allowInstall": true,
   "networking": true,
-  "libraryTags": true,
   "preloadBottles": true,
   "gamehub": {
     "steam": true

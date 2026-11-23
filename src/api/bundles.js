@@ -183,7 +183,7 @@ export async function saveBundleArt(upload, id, slot, file) {
 }
 
 /**
- * Resolves a cover href: absolute hrefs are used as-is, `./name`
+ * Resolves a cover href: absolute hrefs and pictures held in the manifest itself are used as-is, `./name`
  * is a file in the bottle's own directory -- where a picture set from the
  * launcher is kept -- and other relative ones are files under `/covers/`.
  *
@@ -195,8 +195,9 @@ function coverHref(href, id) {
   if (!href) return "";
   if (href.startsWith("./")) return `/bundles/${encodeURIComponent(id)}/${href.slice(2)}`;
   // A store's art too: GameHub gives its responses the headers
-  // this cross-origin isolated page needs of a picture from elsewhere.
-  if (href.startsWith("/") || href.startsWith("http")) return href;
+  // this cross-origin isolated page needs of a picture from elsewhere. A
+  // picture a person chose for a game of their own is kept in its manifest.
+  if (href.startsWith("/") || href.startsWith("http") || href.startsWith("data:image/")) return href;
   return `/covers/${href}`;
 }
 

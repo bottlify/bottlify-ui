@@ -6,6 +6,7 @@
 
 import { Box, Button, Divider, Typography } from "@mui/material";
 import { useEffect, useRef, useState } from "react";
+import { useT } from "../i18n.js";
 import glowMask from "../assets/hero-glow-mask.png";
 import hero600 from "../assets/hero-600.webp";
 import hero900 from "../assets/hero-900.webp";
@@ -81,6 +82,7 @@ export function Landing() {
 }
 
 function Hero() {
+  const t = useT();
   const art = useRef(null);
   // The picture is the painting, the glass over its eyes and the mask of its
   // light, each its own file; shown as they come, a part floats over nothing
@@ -120,9 +122,9 @@ function Hero() {
           const px = (pointer.x - (box.left + box.width / 2)) / scale;
           const py = (pointer.y - (box.top + box.height / 2)) / scale;
           // Into the window's frame, then no further than the rim in that direction.
-          const t = (eye.angle * Math.PI) / 180;
-          dx = px * Math.cos(t) + py * Math.sin(t);
-          dy = -px * Math.sin(t) + py * Math.cos(t);
+          const turn = (eye.angle * Math.PI) / 180;
+          dx = px * Math.cos(turn) + py * Math.sin(turn);
+          dy = -px * Math.sin(turn) + py * Math.cos(turn);
           const k = Math.hypot(dx / eye.travel.x, dy / eye.travel.y);
           if (k > 1) {
             dx /= k;
@@ -172,32 +174,22 @@ function Hero() {
         <Typography
           variant="h1"
           sx={{
-            fontWeight: 800,
-            letterSpacing: "-0.035em",
-            lineHeight: 1.02,
-            fontSize: { xs: "2.6rem", sm: "3.4rem", md: "4.2rem" },
+            fontWeight: 700,
+            letterSpacing: "-0.025em",
+            lineHeight: 1.08,
+            fontSize: { xs: "2.4rem", sm: "3rem", md: "3.4rem" },
+            maxWidth: "16ch",
           }}
         >
-          Original Windows games,
-          <Box component="span" sx={{ color: "text.secondary" }}> in a browser tab.</Box>
+          {t("home.title")}
+          <Box component="span" sx={{ color: "text.secondary" }}> {t("home.titleMuted")}</Box>
         </Typography>
-        <Typography
-          variant="h6"
-          color="text.secondary"
-          sx={{ mt: 3, maxWidth: 620, fontWeight: 400, lineHeight: 1.6 }}
-        >
-          Nothing to install on your computer, and no picture streamed from a server. The game
-          installs into the browser, and its own code, the same x86 executable it shipped with,
-          runs on your machine, inside the page.
+        <Typography color="text.secondary" sx={{ mt: 3, maxWidth: "46ch", fontSize: 18, lineHeight: 1.6 }}>
+          {t("home.subtitle")}
         </Typography>
 
-        <Button
-          href="/library"
-          size="large"
-          variant="contained"
-          sx={{ mt: 5, px: 3.5, fontWeight: 700, bgcolor: "text.primary", color: "#1e2022" }}
-        >
-          Open the library
+        <Button href="/library" variant="contained" sx={{ mt: 4.5 }}>
+          {t("home.open")}
         </Button>
       </Box>
 
@@ -338,6 +330,7 @@ function Hero() {
  * around it is. Beside it, in plain words, where the project stands.
  */
 function Post() {
+  const t = useT();
   const lines = [
     ["BottliROM", "64 KiB, own firmware, BIOS", "SECURED"],
     ["CPU", "x86 32-bit, cork-x32", "OK"],
@@ -388,7 +381,7 @@ function Post() {
       <Box
         component="a"
         href="/library"
-        aria-label="open the library"
+        aria-label={t("home.open")}
         sx={{
           display: "block",
           minWidth: 0,
@@ -441,14 +434,12 @@ function Post() {
       </Box>
 
       <Box>
-        <Typography variant="h4" sx={{ fontWeight: 700, letterSpacing: "-0.02em" }}>
-          Under construction.
+        <Typography component="h2" sx={{ fontSize: 28, fontWeight: 700, letterSpacing: "-0.01em",
+          lineHeight: 1.2 }}>
+          {t("home.devTitle")}
         </Typography>
-        <Typography variant="body1" color="text.secondary" sx={{ mt: 2, lineHeight: 1.75 }}>
-          Bottlify is in an active phase of development. Most games do not yet run out of the
-          box: what runs today runs through a reimplementation of Windows and DirectX that is
-          still being built, one API at a time. Expect rough edges: a title that starts may
-          stall, draw wrongly or go quiet. Expect them to be fixed rather than worked around.
+        <Typography color="text.secondary" sx={{ mt: 2, lineHeight: 1.7, maxWidth: "60ch" }}>
+          {t("home.devText")}
         </Typography>
       </Box>
     </Box>

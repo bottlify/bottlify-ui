@@ -5,13 +5,15 @@
  */
 
 import {
-  Alert, Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle,
-  LinearProgress, Stack, Typography,
+  Alert, Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, Typography,
 } from "@mui/material";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { NEEDS_GAMEHUB, knownProviders, loadProviders, storeProvider } from "../stores/providers.js";
+import { knownProviders, loadProviders, storeProvider } from "../stores/providers.js";
 import { steamDemoGames } from "../stores/demos.js";
 import { gamehub as greetGameHub, signedInName } from "../stores/gamehub.js";
+import { useT } from "../i18n.js";
+import { useSettings } from "../useSettings.js";
+import { DialogHead, SectionTitle } from "./kit.jsx";
 
 /** @typedef {import("../stores/providers.js").StoreProvider} StoreProvider */
 /** @typedef {import("../stores/providers.js").StoreGame} StoreGame */
@@ -36,12 +38,8 @@ import { gamehub as greetGameHub, signedInName } from "../stores/gamehub.js";
  * @property {boolean} syncing
  */
 
-/** @param {number} bytes */
-const size = (bytes) => (bytes >= 1 << 30 ? `${(bytes / (1 << 30)).toFixed(1)} GB`
-  : `${Math.max(1, Math.round(bytes / (1 << 20)))} MB`);
-
-/** @param {InstallJob | undefined} job */
-const busy = (job) => job?.state === "downloading" || job?.state === "packing";
+/** Whether an install is going on. @param {InstallJob | undefined} job */
+export const installing = (job) => job?.state === "downloading" || job?.state === "packing";
 
 /**
  * The account and games a store last answered, kept in this browser so a
@@ -238,9 +236,9 @@ export function useStores(onInstalled, load = loadProviders, active = true) {
 
 /**
  * A store's sign-in: GameHub's own page for the store in a frame -- a QR code,
- * or the account name and password with the store's second step. The page
- * is the extension's: what is typed there and the session it ends in stay in
- * GameHub, and this page is told the account's name.
+ * or the account name and password with the store's second step -- or a window
+ * of the store's own site. The page is the extension's: what is typed there and
+ * the session it ends in stay in GameHub, and this page is told the account's name.
  *
  * @param {Object} props
  * @param {StoreProvider} props.provider
@@ -248,6 +246,8 @@ export function useStores(onInstalled, load = loadProviders, active = true) {
  * @param {() => void} props.onClose
  */
 export function StoreSignIn({ provider, onSignedIn, onClose }) {
+  const t = useT();
+  const { developer } = useSettings();
   const [page, setPage] = useState(/** @type {string | null | undefined} */ (undefined));
   /** A sign-in in a window of the store's site: going on, or what it ended in. */
   const [inWindow, setInWindow] = useState(/** @type {string | null} */ (null));
@@ -289,26 +289,24 @@ export function StoreSignIn({ provider, onSignedIn, onClose }) {
   }, [page, provider, onSignedIn]);
   return (
     <Dialog open onClose={onClose} maxWidth="xs" fullWidth>
-      <DialogTitle>Sign in to {provider.name}</DialogTitle>
-      <DialogContent dividers sx={{ p: 0 }}>
-        {inWindow === "" && <Typography sx={{ m: 2 }}>
-          A {provider.name} window has opened: sign in there. It closes once you are signed in.
-        </Typography>}
-        {inWindow && <Alert severity="warning" sx={{ m: 2 }}>{inWindow}</Alert>}
+      <DialogHead title={t("accounts.signInTo", { store: provider.name })} onClose={onClose}
+        closeLabel={t("button.close")} />
+      <DialogContent sx={{ px: 4 }}>
+        {inWindow === "" && <Typography>{t("accounts.windowOpened", { store: provider.name })}</Typography>}
+        {inWindow && <Alert severity="warning" variant="outlined">{inWindow}</Alert>}
         {page === undefined && inWindow === null
           && <Box sx={{ display: "flex", justifyContent: "center", py: 4 }}><CircularProgress /></Box>}
-        {page === null && <Alert severity="warning" sx={{ m: 2 }}>
-          This version of the Bottlify GameHub extension cannot sign in here; update it.
-          {said && <Typography variant="caption" component="p">{said}</Typography>}</Alert>}
-        {page && <iframe src={page} title={`Sign in to ${provider.name}`}
-          style={{ display: "block", width: "100%", height: 480, border: 0 }} />}
-        <Typography variant="caption" color="text.secondary" component="p" sx={{ px: 2, py: 1 }}>
-          This sign-in is the Bottlify GameHub extension's: your password and the session stay in
-          it, out of this page's reach; your games then show in the library.
+        {page === null && <Alert severity="warning" variant="outlined">
+          {t("accounts.updateGameHub")}
+          {developer && said && <Typography variant="caption" component="p">{said}</Typography>}</Alert>}
+        {page && <iframe src={page} title={t("accounts.signInTo", { store: provider.name })}
+          style={{ display: "block", width: "100%", height: 480, border: 0, borderRadius: 9 }} />}
+        <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
+          {t("accounts.kept")}
         </Typography>
       </DialogContent>
-      <DialogActions>
-        <Button onClick={onClose}>Cancel</Button>
+      <DialogActions sx={{ px: 4 }}>
+        <Button onClick={onClose}>{t("button.cancel")}</Button>
       </DialogActions>
     </Dialog>
   );
@@ -321,42 +319,40 @@ export function StoreSignIn({ provider, onSignedIn, onClose }) {
  * @param {Object} props
  * @param {StoreProvider} props.provider
  * @param {string | null} [props.link]  Where GameHub is got, where the site says.
- * @param {() => void} props.onAccounts  Opens Settings → Game Accounts.
+ * @param {() => void} props.onAccounts  Opens Settings → Accounts.
  * @param {() => void} props.onClose
  */
 export function GameHubNeeded({ provider, link = null, onAccounts, onClose }) {
+  const t = useT();
   return (
     <Dialog open onClose={onClose} maxWidth="xs" fullWidth>
-      <DialogTitle>Sign in to {provider.name} to play</DialogTitle>
-      <DialogContent dividers>
-        <Typography gutterBottom>
-          This game is installed from your {provider.name} account. Add the Bottlify GameHub
-          extension to this browser, reload the page, and sign in to {provider.name}: then
-          Install downloads it.
-        </Typography>
-        <Typography variant="caption" color="text.secondary" component="p">
-          Your password and the session stay in the extension, out of this page's reach.
-        </Typography>
+      <DialogHead title={t("accounts.needSignIn", { store: provider.name })} onClose={onClose}
+        closeLabel={t("button.close")} />
+      <DialogContent sx={{ px: 4 }}>
+        <Typography>{t("accounts.needGameHub", { store: provider.name })}</Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mt: 1.5 }}>{t("accounts.kept")}</Typography>
       </DialogContent>
-      <DialogActions>
-        {link && <Button href={link} target="_blank" rel="noopener">Get GameHub</Button>}
-        <Button variant="contained" onClick={onAccounts}>Game Accounts</Button>
+      <DialogActions sx={{ px: 4 }}>
+        {link && <Button href={link} target="_blank" rel="noopener">{t("accounts.getGameHub")}</Button>}
+        <Button variant="contained" onClick={onAccounts}>{t("settings.accounts")}</Button>
       </DialogActions>
     </Dialog>
   );
 }
 
 /**
- * A store in Settings → Game Accounts: the account signed in in this browser,
- * Sync and Sign out, or Sign in; or what it needs to be used here; and what it
- * last answered wrong, since the library shows only the games and would
- * otherwise just be missing them.
+ * A store in Settings → Accounts: the account signed in in this browser and
+ * Sign out, or Sign in; or what it needs to be used here; and what it last
+ * answered wrong, since the library shows only the games and would otherwise
+ * just be missing them.
  *
  * @param {Object} props
  * @param {StoreState} props.store
  * @param {ReturnType<typeof useStores>} props.stores
+ * @param {string | null} [props.link]  Where GameHub is got, where the site says.
  */
-export function StoreAccount({ store, stores }) {
+export function StoreAccount({ store, stores, link = null }) {
+  const t = useT();
   const [signingIn, setSigningIn] = useState(false);
   const { provider } = store;
   const { signedIn } = stores;
@@ -365,111 +361,35 @@ export function StoreAccount({ store, stores }) {
     await signedIn(provider.id);
   }, [signedIn, provider]);
   return (
-    <Box sx={{ border: "1px solid", borderColor: "divider", borderRadius: 1, p: 1.5 }}>
-      <Stack direction="row" alignItems="center" gap={1} sx={{ flexWrap: "wrap" }}>
-        <Box sx={{ flex: 1, minWidth: 0 }}>
-          <Typography variant="subtitle2">{provider.name}</Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ wordBreak: "break-word" }}>
-            {store.account
-              ? `Signed in as ${store.account} · ${store.games.length} games`
-                + (store.syncing ? " · syncing…" : "")
-              : store.syncing ? "Connecting…"
-                : !store.available ? provider.unavailable : "Not signed in"}
-          </Typography>
-        </Box>
-        {store.account && (
-          <Button size="small" variant="outlined" color="inherit" disabled={store.syncing}
-            onClick={() => stores.sync(provider.id)}>
-            {store.syncing ? "Syncing…" : "Sync"}
-          </Button>
-        )}
-        {store.available && (store.account
-          ? <Button size="small" variant="outlined" color="inherit"
-            onClick={() => stores.signOut(provider.id)}>Sign out</Button>
-          : <Button size="small" variant="contained" onClick={() => setSigningIn(true)}>Sign in</Button>)}
-      </Stack>
-      <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 1 }}>
-        {!store.available
-          ? "Add the Bottlify GameHub extension to this browser, then reload: sign-in, your games and "
-            + "their installs all go through it."
-          : store.account
-            ? "Your games are in the library, each with Install. The session is kept by the "
-              + "Bottlify GameHub extension in this browser."
-            : `Sign in with the ${provider.name} app on your phone or with your password: the games `
-              + "you own show in the library, each with Install. The session is kept by the Bottlify "
-              + "GameHub extension in this browser."}
+    <Box component="section" sx={{ py: 2, borderBottom: "1px solid", borderColor: "divider",
+      "&:last-of-type": { borderBottom: 0 } }}>
+      <SectionTitle>{provider.name}</SectionTitle>
+      <Typography color="text.secondary" sx={{ mb: 2, mt: 0.5 }}>
+        {!store.available && !store.syncing ? t("accounts.needExtension")
+          : store.account ? t("accounts.signedInAs", { name: store.account })
+            : store.syncing ? t("accounts.connecting") : t("accounts.why", { store: provider.name })}
       </Typography>
+      <Box sx={{ display: "flex", gap: 1.25, flexWrap: "wrap" }}>
+        {store.available && (store.account ? (<>
+          <Button disabled={store.syncing} onClick={() => stores.sync(provider.id)}>
+            {store.syncing ? t("accounts.syncing") : t("accounts.sync")}
+          </Button>
+          <Button onClick={() => stores.signOut(provider.id)}>{t("accounts.signOut")}</Button>
+        </>) : (
+          <Button variant="contained" onClick={() => setSigningIn(true)}>
+            {t("accounts.signIn", { store: provider.name })}
+          </Button>
+        ))}
+        {!store.available && !store.syncing && link && (
+          <Button href={link} target="_blank" rel="noopener">{t("accounts.getGameHub")}</Button>
+        )}
+      </Box>
       {store.error && (
         <Alert severity="warning" variant="outlined" sx={{ mt: 1.5 }}>
-          {provider.name} answered with an error: {store.error}
+          {t("accounts.error", { store: provider.name, reason: store.error })}
         </Alert>
       )}
       {signingIn && <StoreSignIn provider={provider} onSignedIn={done} onClose={() => setSigningIn(false)} />}
-    </Box>
-  );
-}
-
-/**
- * Settings → Game Accounts without GameHub: no store can be signed in to here.
- */
-export function NoGameHub() {
-  return (
-    <Box sx={{ border: "1px solid", borderColor: "divider", borderRadius: 1, p: 1.5 }}>
-      <Typography variant="subtitle2">Game stores</Typography>
-      <Typography variant="body2" color="text.secondary">{NEEDS_GAMEHUB}</Typography>
-      <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 1 }}>
-        Add the Bottlify GameHub extension to this browser, then reload: sign-in, your games and
-        their installs all go through it.
-      </Typography>
-    </Box>
-  );
-}
-
-/**
- * The foot of a store game's card in the library while it is not installed:
- * its size, and Install, or its download's progress with Cancel.
- *
- * @param {Object} props
- * @param {StoreGame} props.game
- * @param {InstallJob | undefined} props.job
- * @param {() => void} props.onInstall
- * @param {() => void} props.onCancel
- */
-export function StoreInstall({ game, job, onInstall, onCancel }) {
-  return (
-    <Box sx={{ pt: 1, display: "flex", flexDirection: "column", gap: 0.5 }}>
-      <Typography variant="caption" color="text.secondary">
-        {/* "~" while it is the depots added up, before its files are measured. */}
-        {game.bytes > 0 ? `${game.exact ? "" : "~"}${size(game.bytes)}` : "size unknown"}
-      </Typography>
-      {job && busy(job) ? (
-        <Box>
-          <LinearProgress
-            variant={job.total > 0 && job.state === "downloading" ? "determinate" : "indeterminate"}
-            value={job.total > 0 ? Math.min(100, (100 * job.done) / job.total) : 0} />
-          <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
-            <Typography variant="caption" color="text.secondary" noWrap title={job.message}
-              sx={{ flex: 1, minWidth: 0 }}>
-              {job.state === "downloading" && job.total > 0
-                ? `${job.done} / ${job.total} MB · ${job.message}` : job.message}
-            </Typography>
-            <Button size="small" color="inherit" onClick={onCancel} sx={{ minWidth: 0, px: 1 }}>
-              Cancel
-            </Button>
-          </Box>
-        </Box>
-      ) : (
-        <>
-          <Button size="small" variant="outlined" onClick={onInstall} disabled={!game.installable}>
-            {!game.installable ? "No Windows build" : "Install"}
-          </Button>
-          {job?.state === "failed" && (
-            <Typography variant="caption" color="error" title={job.message} noWrap>
-              {job.message}
-            </Typography>
-          )}
-        </>
-      )}
     </Box>
   );
 }

@@ -4,12 +4,9 @@
  * See LICENSE for details
  */
 
-import {
-  Button, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle,
-} from "@mui/material";
-
-/** @param {number} bytes */
-const megabytes = (bytes) => `${Math.max(1, Math.round(bytes / (1 << 20)))} MB`;
+import { Button, Dialog, DialogActions, DialogContent, Typography } from "@mui/material";
+import { useT } from "../i18n.js";
+import { DialogHead } from "./kit.jsx";
 
 /**
  * Asked before a bottle that is not on this device whole starts: what it
@@ -24,22 +21,21 @@ const megabytes = (bytes) => `${Math.max(1, Math.round(bytes / (1 << 20)))} MB`;
  * @param {() => void} props.onClose
  */
 export function DownloadDialog({ bundle, held, onDownload, onPlay, onClose }) {
-  const missing = held.bytes - held.residentBytes;
+  const t = useT();
   return (
     <Dialog open onClose={onClose} maxWidth="xs" fullWidth>
-      <DialogTitle>Not downloaded yet</DialogTitle>
-      <DialogContent>
-        <DialogContentText>
+      <DialogHead title={t("download.title")} onClose={onClose} closeLabel={t("button.close")} />
+      <DialogContent sx={{ px: 4 }}>
+        <Typography color="text.secondary">
           {held.residentBytes > 0
-            ? `${megabytes(missing)} of ${bundle.title} is not on this device yet.`
-            : `${bundle.title} is not on this device yet (${megabytes(held.bytes)}).`}
-          {" "}&quot;Play anyway&quot; loads it while you play, and the game can stutter or
-          pause while it waits. Download first to play without delays.
-        </DialogContentText>
+            ? t("download.part", { name: bundle.title, missing: t.bytes(held.bytes - held.residentBytes) })
+            : t("download.whole", { name: bundle.title, size: t.bytes(held.bytes) })}
+          {" "}{t("download.why")}
+        </Typography>
       </DialogContent>
-      <DialogActions>
-        <Button onClick={onPlay}>Play anyway</Button>
-        <Button variant="contained" onClick={onDownload} autoFocus>Download</Button>
+      <DialogActions sx={{ px: 4 }}>
+        <Button onClick={onPlay}>{t("download.playAnyway")}</Button>
+        <Button variant="contained" onClick={onDownload} autoFocus>{t("download.download")}</Button>
       </DialogActions>
     </Dialog>
   );
