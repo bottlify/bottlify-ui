@@ -73,6 +73,8 @@ export default function App() {
       event.preventDefault();
       window.history.pushState(null, "", anchor.href);
       onPop();
+      // A new page opens at its top, as a loaded one would; the footer's links are at the bottom.
+      window.scrollTo(0, 0);
     };
     window.addEventListener("popstate", onPop);
     document.addEventListener("click", onClick);

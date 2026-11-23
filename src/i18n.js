@@ -62,7 +62,7 @@ export const STRINGS = {
 
     "library.mine": "Мои игры",
     "library.own": "Своя игра",
-    "library.ownText": "Установщик, образ диска, архив или папка",
+    "library.ownText": "Установщик, образ диска, архив или бутылка",
     "library.noMatch": "Среди ваших игр такой нет.",
     "library.freeIn": "Бесплатно в {store}",
     "library.freeNote": "Демо и бесплатные игры. Для установки нужен вход в {store}.",
@@ -447,7 +447,7 @@ export const STRINGS = {
 
     "library.mine": "My games",
     "library.own": "Your own game",
-    "library.ownText": "An installer, a disc image, an archive or a folder",
+    "library.ownText": "An installer, a disc image, an archive or a bottle",
     "library.noMatch": "None of your games is called that.",
     "library.freeIn": "Free on {store}",
     "library.freeNote": "Demos and free games. Installing them needs a {store} sign-in.",

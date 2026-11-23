@@ -216,11 +216,15 @@ export function SwitchRow({ title, text, checked, onChange, disabled = false }) 
       </Box>
       <Switch checked={checked} disabled={disabled} onChange={(event) => onChange(event.target.checked)}
         sx={{
-          flex: "none", mt: -0.5,
-          "& .MuiSwitch-switchBase.Mui-checked": { color: INK.ground },
-          "& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track": { bgcolor: INK.text, opacity: 1 },
-          "& .MuiSwitch-switchBase:not(.Mui-checked)": { color: INK.muted },
-          "& .MuiSwitch-track": { bgcolor: INK.raised, opacity: 1, border: `1px solid ${INK.line}` },
+          // The board's own switch: a pill of 46 x 28, white when on, its knob the board's.
+          flex: "none", width: 46, height: 28, p: 0, mt: -0.25,
+          "& .MuiSwitch-switchBase": { p: "5px", color: INK.muted,
+            "&.Mui-checked": { transform: "translateX(18px)", color: INK.ground } },
+          "& .MuiSwitch-thumb": { width: 18, height: 18, boxShadow: "none" },
+          "& .MuiSwitch-track": { borderRadius: 14, bgcolor: INK.raised, opacity: 1,
+            border: `1px solid ${INK.line}`, boxSizing: "border-box" },
+          "& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track": { bgcolor: INK.text, opacity: 1,
+            borderColor: INK.text },
         }} />
     </Box>
   );

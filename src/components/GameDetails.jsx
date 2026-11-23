@@ -173,7 +173,9 @@ export function GameSheet({ item, stores, config, onClose, onPlay, onChanged, on
         <CloseButton onClick={onClose} label={t("button.close")} />
       </Box>
       <Art src={heroOf(item)} title={item.title} ratio="3840 / 1240" fit="contain" />
-      <Box sx={{ display: "flex", alignItems: "flex-end", gap: 3, px: { xs: 2.5, sm: 4.5 }, mt: "-120px",
+      <Box sx={{ display: "flex", alignItems: "flex-end", gap: 3, px: { xs: 2.5, sm: 4.5 },
+        // Over the art's lower edge, never past its top: on a phone the art is a third as tall.
+        mt: { xs: "-56px", sm: "-120px" },
         position: "relative" }}>
         <Box sx={{ width: { xs: 110, sm: 150 }, flex: "none", borderRadius: "6px", overflow: "hidden",
           boxShadow: "0 12px 28px rgba(0,0,0,0.5)", outline: `1px solid ${INK.line}` }}>
