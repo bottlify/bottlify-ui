@@ -186,8 +186,9 @@ function Hero() {
           color="text.secondary"
           sx={{ mt: 3, maxWidth: 620, fontWeight: 400, lineHeight: 1.6 }}
         >
-          Nothing is installed and nothing is streamed from a server. The game&apos;s own code,
-          the same x86 executable it shipped with, runs on your machine, inside the page.
+          Nothing to install on your computer, and no picture streamed from a server. The game
+          installs into the browser, and its own code, the same x86 executable it shipped with,
+          runs on your machine, inside the page.
         </Typography>
 
         <Button
