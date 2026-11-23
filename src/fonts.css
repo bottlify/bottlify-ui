@@ -1,0 +1,38 @@
+/*
+ * Copyright © 2026 Bottlify Project
+ * Licensed under the Mozilla Public License, version 2.0
+ * See LICENSE for details
+ *
+ * The interface's two typefaces, served with the app rather than fetched from a
+ * font service: nothing in the product loads its own parts from elsewhere.
+ * Golos Text and Sora are under the SIL Open Font License 1.1, whose text is
+ * beside the files (/fonts/*-OFL.txt); the License page credits them.
+ */
+
+/* Golos Text, a variable font, in the two scripts the interface speaks. */
+@font-face {
+  font-family: "Golos Text";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400 900;
+  src: url("/fonts/golos-text-cyrillic-wght-normal.woff2") format("woff2");
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+@font-face {
+  font-family: "Golos Text";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400 900;
+  src: url("/fonts/golos-text-latin-wght-normal.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304,
+    U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+/* Sora sets the logo's word alone, so its Latin bold is all there is of it. */
+@font-face {
+  font-family: "Sora";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 700;
+  src: url("/fonts/sora-latin-700-normal.woff2") format("woff2");
+}

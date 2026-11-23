@@ -9,6 +9,7 @@ import { createRoot } from "react-dom/client";
 import { ThemeProvider, CssBaseline } from "@mui/material";
 import App from "./App.jsx";
 import { theme } from "./theme.js";
+import "./fonts.css";
 import "./glyphicons.css";
 
 const root = document.getElementById("root");
