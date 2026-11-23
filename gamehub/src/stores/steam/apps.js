@@ -172,17 +172,20 @@ export function describeApp(info, language = LANGUAGE){
 }
 
 /**
- * The demos the library offers any signed-in account, whatever it owns: Steam
- * grants a free licence to each on asking (`requestFreeLicense`), as its
- * store's "Download demo" does. A game's demo is named in the store's own
- * description of the game (`appdetails`' `demos`), not in what PICS tells of
- * it, so they are listed here, each with its game: an account that owns the
- * game is offered the game, not its demo.
+ * The demos and free games the library offers any signed-in account, whatever
+ * it owns: Steam grants a free licence to each on asking (`requestFreeLicense`),
+ * as its store's "Download demo" or "Play game" does. A game's demo is named in
+ * the store's own description of it (`appdetails`' `fullgame`), not in what PICS
+ * tells of it, so they are listed here, each with its game: an account that owns
+ * the game is offered the game, not its demo. A free game is its own.
  */
 export const DEMOS = Object.freeze([
+    Object.freeze({ demo: 410, game: 400 }), // Portal: First Slice
     Object.freeze({ demo: 219, game: 220 }), // Half-Life 2
-    Object.freeze({ demo: 479030, game: 379720 }), // DOOM
-    Object.freeze({ demo: 2407990, game: 668580 }), // Atomic Heart
+    Object.freeze({ demo: 22010, game: 22000 }), // World of Goo
+    Object.freeze({ demo: 3592, game: 3590 }), // Plants vs. Zombies
+    Object.freeze({ demo: 1721470, game: 1721470 }), // Poppy Playtime, free
+    Object.freeze({ demo: 588430, game: 588430 }), // Fallout Shelter, free
 ]);
 
 /**

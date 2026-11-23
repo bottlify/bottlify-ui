@@ -10,12 +10,15 @@
  * account token it takes.
  */
 
+import { DEMOS } from './apps.js';
+
 export const TOKEN = 'eyJhbGciOiJFZERTQSJ9.eyJzdWIiOiI3NjU2MTE5Nzk2MDI2NTcyOSJ9.secret-signature';
 
 /** The demos the store offers (apps.js DEMOS), each Steam's to grant for free. */
-const DEMO_APPS = [219, 479030, 2407990];
+/** @type {number[]} */
+const DEMO_APPS = DEMOS.map(one=>one.demo);
 /** A demo whose depots and launch Steam shows only to an account holding it. */
-const HIDDEN_DEMO = 479030;
+const HIDDEN_DEMO = 3592;
 
 /** What Steam tells anyone of an app. @param {number} app */
 const appInfo = app=>(DEMO_APPS.includes(app) ? {
@@ -37,7 +40,7 @@ const appInfo = app=>(DEMO_APPS.includes(app) ? {
 /** What an account holding the hidden demo is told of it. */
 const heldDemoInfo = ()=>({
     common: { type: 'Demo', name: `Demo ${HIDDEN_DEMO}` },
-    config: { launch: { 0: { executable: 'DOOMx64.exe' } } },
+    config: { launch: { 0: { executable: 'PlantsVsZombies.exe' } } },
     depots: { [HIDDEN_DEMO + 1]: { manifests: { public: { gid: '8', size: '300' } } } },
 });
 

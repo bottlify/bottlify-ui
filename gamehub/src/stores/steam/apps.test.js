@@ -35,10 +35,10 @@ test('an install takes the depots of other apps the app names, at their owners\'
     });
 
 test('a demo\'s tall cover and background are its game\'s: Steam has none of its own', ()=>{
-    assert.deepEqual(steamArt(2407990), {
-        header: 'https://shared.steamstatic.com/store_item_assets/steam/apps/2407990/header.jpg',
-        cover: 'https://shared.steamstatic.com/store_item_assets/steam/apps/668580/library_600x900.jpg',
-        hero: 'https://shared.steamstatic.com/store_item_assets/steam/apps/668580/library_hero.jpg',
+    assert.deepEqual(steamArt(3592), {
+        header: 'https://shared.steamstatic.com/store_item_assets/steam/apps/3592/header.jpg',
+        cover: 'https://shared.steamstatic.com/store_item_assets/steam/apps/3590/library_600x900.jpg',
+        hero: 'https://shared.steamstatic.com/store_item_assets/steam/apps/3590/library_hero.jpg',
     });
     assert.match(steamArt(70).cover, /\/70\/library_600x900\.jpg$/, 'a game\'s own');
 });

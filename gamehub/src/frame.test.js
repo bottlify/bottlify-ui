@@ -146,8 +146,8 @@ test('every op an account has: the token in nothing the page is posted', async()
     const steam = fakeSteam();
     const { page, ask, frame } = rig(steam);
     assert.deepEqual((await ask('account', { store: 'steam' })).result, { name: 'someone' });
-    assert.equal((await ask('list', { store: 'steam' })).result.length, 5,
-        'two games, three demos');
+    assert.equal((await ask('list', { store: 'steam' })).result.length, 7,
+        'two games, five demos and free games (Portal\'s demo not: Portal is owned)');
     const download = (await ask('download', { store: 'steam', game: '70' })).result;
     assert.equal(download.depots.length, 2, 'keys and codes given');
     const run = (await ask('runData', { store: 'steam', game: '400' })).result.win32.steam;

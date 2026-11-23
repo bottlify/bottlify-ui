@@ -16,11 +16,17 @@
 /** Steam's art for its apps, which its CDN serves to any origin (CORS `*`). */
 const ART = "https://shared.steamstatic.com/store_item_assets/steam/apps";
 
-/** Each demo, with the game it is of: a demo has a header of its own, the game the rest. */
+/**
+ * Each demo, with the game it is of: a demo has a header of its own, the game
+ * the rest. A free game is its own game. The same apps as GameHub's `DEMOS`.
+ */
 export const STEAM_DEMOS = Object.freeze([
+  Object.freeze({ id: "410", name: "Portal: First Slice", game: "400" }),
   Object.freeze({ id: "219", name: "Half-Life 2: Demo", game: "220" }),
-  Object.freeze({ id: "479030", name: "DOOM Demo", game: "379720" }),
-  Object.freeze({ id: "2407990", name: "Atomic Heart Demo", game: "668580" }),
+  Object.freeze({ id: "22010", name: "World of Goo Demo", game: "22000" }),
+  Object.freeze({ id: "3592", name: "Plants vs. Zombies Demo", game: "3590" }),
+  Object.freeze({ id: "1721470", name: "Poppy Playtime", game: "1721470" }),
+  Object.freeze({ id: "588430", name: "Fallout Shelter", game: "588430" }),
 ]);
 
 /**

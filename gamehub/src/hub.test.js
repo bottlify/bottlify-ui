@@ -65,13 +65,13 @@ test('the account the worker keeps: its name answered, its token in nothing give
     assert.equal(await ask('account'), null);
 });
 
-/** The demos as the fixture describes them, by name. */
-const DEMO_CARDS = [
-    { id: '219', name: 'Demo 219', bytes: 100, exact: false, installable: true, demo: true },
-    { id: '2407990', name: 'Demo 2407990', bytes: 100, exact: false, installable: true,
-        demo: true },
-    { id: '479030', name: 'Demo 479030', bytes: 0, exact: false, installable: true, demo: true },
-];
+/**
+ * The demos and free games as the fixture describes them, by name: Portal's
+ * demo (410) left out, the account owning Portal (400).
+ */
+const DEMO_CARDS = ['1721470', '219', '22010', '3592', '588430'].map(id=>({ id,
+    name: `Demo ${id}`, bytes: id === '3592' ? 0 : 100, exact: false, installable: true,
+    demo: true }));
 
 /** A list as compared: its covers left out. @param {any[]} list */
 const cards = list=>list.map(game=>({ ...game, covers: undefined }));
@@ -91,7 +91,7 @@ test('the list is the account\'s games, as Steam tells anyone of them, and the d
     ], 'by name; an app Steam does not describe left out');
     assert.equal(list[1].covers.capsule, await ask('cover', { game: '70', kind: 'capsule' }));
     assert.deepEqual(steam.asked, ['logOn someone true', 'anonymous',
-        'info anonymous 70,400,999,219,479030,2407990'],
+        'info anonymous 70,400,999,219,22010,3592,1721470,588430'],
     'product info over an anonymous logon of its own beside the account\'s');
     await ask('list');
     assert.equal(steam.asked.length, 3, 'read a while ago: not asked again');
@@ -101,27 +101,28 @@ test('the list is the account\'s games, as Steam tells anyone of them, and the d
 
 test('an account that owns a demo\'s game is offered the game, not the demo', async()=>{
     const { steam, kept, ask } = hubOver();
-    steam.ownedApps = async()=>[70, 219, 220, 479030];
+    steam.ownedApps = async()=>[70, 219, 220, 3592];
     kept.session = { accountName: 'someone', refreshToken: TOKEN };
     assert.deepEqual((await ask('list')).map((/** @type {any} */ game)=>game.id),
-        ['220', '70', '2407990', '479030'],
-        'Half-Life 2 owned: its demo goes, held or not; DOOM\'s demo held: listed once');
+        ['220', '70', '1721470', '22010', '3592', '410', '588430'],
+        'Half-Life 2 owned: its demo goes, held or not; Plants vs. Zombies\' demo held:'
+            + ' listed once');
 });
 
 test('a demo installs for any account signed in: a free licence asked first', async()=>{
     const { steam, kept, ask } = hubOver();
-    await assert.rejects(ask('download', { game: '479030' }), /sign in to Steam/,
+    await assert.rejects(ask('download', { game: '3592' }), /sign in to Steam/,
         'nobody signed in: a sign-in first');
     kept.session = { accountName: 'someone', refreshToken: TOKEN };
-    const answer = await ask('download', { game: '479030' });
+    const answer = await ask('download', { game: '3592' });
     assert.deepEqual(steam.asked.filter(one=>/^(free|key|info account)/.test(one)),
-        ['free 479030', 'info account 479030', 'key 479030 479031'],
+        ['free 3592', 'info account 3592', 'key 3592 3593'],
         'the licence, then what Steam shows only an account holding the demo, then its key');
-    assert.deepEqual(answer.launch, { executable: 'DOOMx64.exe', arguments: '' });
+    assert.deepEqual(answer.launch, { executable: 'PlantsVsZombies.exe', arguments: '' });
     assert.deepEqual(answer.depots.map((/** @type {any} */ one)=>[one.depot, one.gid]),
-        [[479031, '8']]);
+        [[3593, '8']]);
     const list = await ask('list', { fresh: true });
-    assert.equal(list.filter((/** @type {any} */ game)=>game.id === '479030').length, 1,
+    assert.equal(list.filter((/** @type {any} */ game)=>game.id === '3592').length, 1,
         'held now: listed once');
     await assert.rejects(ask('download', { game: '480' }), /granted no licence to app 480/,
         'a game that is not free is not installed for an account without it');
